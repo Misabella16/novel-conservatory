@@ -16,9 +16,9 @@
 <label class="field" for="nu-url">Novel Updates series URL</label><input type="url" id="nu-url" placeholder="https://www.novelupdates.com/series/..." style="width:100%">
 <div class="row"><button type="button" id="lookup-nu">Retrieve Novel Updates metadata</button></div>
 <p class="muted" id="nu-status">Not retrieved yet.</p></div>
-<div class="row"><button id="save">Save as review draft</button><button id="approve" class="secondary">Approve reviewed metadata</button></div>
+<div class="row"><button id="save" type="button">Save as review draft</button><button id="approve" class="secondary" type="button">Approve reviewed metadata</button><button id="apply" type="button" disabled>Apply approved metadata privately</button></div>
 <label class="check"><input id="rights" type="checkbox"> I confirm that the imported synopsis and tags are authorized for use in my catalogue.</label>
-<p class="muted">Approval marks the draft reviewed. It does not publish anything. A separate existing catalogue editor controls publication.</p>
+<p class="muted">Approval saves a reviewed draft. Click Apply to update the private catalogue only. Public publication remains a separate action.</p>
 </div>
 <div id="status" class="status" role="status">Choose a stored EPUB.</div>
 </section></div><p class="footer">Your private EPUBs, member details and raw content are not accessible from the public Conservatory.</p>
