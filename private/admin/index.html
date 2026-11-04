@@ -1,0 +1,302 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Novel Conservatory · Edit Library</title>
+<style>
+:root{--ink:#283b37;--green:#205b53;--paper:#f7f8f5;--line:#dae3dd;--muted:#687871;--gold:#ad8050}*{box-sizing:border-box}body{margin:0;background:var(--paper);font:14px/1.5 system-ui,-apple-system,sans-serif;color:var(--ink)}button,input,textarea,select{font:inherit}button{cursor:pointer;border:1px solid #bdd0c7;background:white;color:var(--green);padding:10px 14px;border-radius:8px;font-weight:700}button.primary{background:var(--green);border-color:var(--green);color:white}button:disabled{opacity:.5;cursor:wait}label{font-weight:700;font-size:12px;display:block;margin-bottom:4px}input,textarea,select{width:100%;border:1px solid #bacbc1;border-radius:8px;background:#fff;padding:10px;color:var(--ink)}textarea{resize:vertical;min-height:105px}.top{background:#153a33;color:#f9f2e6;padding:20px max(20px,calc((100vw - 1350px)/2));display:flex;justify-content:space-between;align-items:center;gap:10px}.top h1{font:400 clamp(24px,4vw,35px) Georgia,serif;margin:0}.top p{margin:4px 0;color:#c5d8ce;font-size:12px}.top a{color:#fff;font-size:12px}.page{max-width:1350px;margin:24px auto;padding:0 20px}.auth{display:flex;flex-wrap:wrap;align-items:end;gap:10px;border:1px solid #d6c7a6;background:#fff9ed;border-radius:10px;padding:15px;margin-bottom:20px}.auth label{margin:0}.auth input{max-width:310px}.status{font-size:12px;color:var(--muted);flex:1;min-width:190px}.grid{display:grid;grid-template-columns:300px minmax(0,1fr);gap:20px}.panel{border:1px solid var(--line);background:#fff;border-radius:12px;overflow:hidden}.panel h2{font:400 23px Georgia,serif;margin:0}.panelhead{padding:17px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;justify-content:space-between}.sidebar input{margin:12px;width:calc(100% - 24px)}.titles{max-height:70vh;overflow:auto}.bookrow{border:0;border-bottom:1px solid #ebefeb;border-radius:0;width:100%;text-align:left;padding:11px 15px;font-weight:600;display:flex;align-items:flex-start;gap:9px}.bookrow:hover,.bookrow.active{background:#e5f1ea}.bookrow small{font-weight:400;display:block;color:var(--muted);margin-top:1px}.bookrow .pill{font-size:10px;background:#daeadd;border-radius:4px;padding:2px 5px;font-weight:700;flex-shrink:0}.main{padding:20px}.tabs{display:flex;gap:9px;margin-bottom:18px;flex-wrap:wrap}.tabs button[aria-selected=true]{background:var(--green);color:white}.two{display:grid;grid-template-columns:1.4fr 1fr;gap:18px}.fields{display:grid;gap:12px}.half{display:grid;grid-template-columns:1fr 1fr;gap:12px}.coverbox{background:#f2f4f0;border:1px dashed #c3cdc4;padding:16px;border-radius:10px;text-align:center}.coverbox img{width:140px;height:200px;object-fit:cover;background:#d5dfd7;border:1px solid #aebbb3;border-radius:5px;display:block;margin:0 auto 10px}.coverbox .empty{display:grid;place-items:center;width:140px;height:200px;margin:0 auto 10px;background:#2b534d;color:#fff;font:30px Georgia,serif}.coverbox input{font-size:12px}.coverbox small{font-size:11px;color:var(--muted)}#hero-image-preview{width:min(100%,340px);height:165px;object-fit:cover}.actions{position:sticky;bottom:0;background:#fffefa;border-top:1px solid var(--line);margin:20px -20px -20px;padding:14px 20px;display:flex;align-items:center;gap:12px}.actions .status{color:var(--green)}.hidden{display:none!important}.hint{color:var(--muted);font-size:12px;margin:4px 0 12px}.home{max-width:790px}.checkrow{display:flex;gap:8px;align-items:center;font-size:12px}.checkrow input{width:auto}.danger{color:#9b492b;font-size:12px}.chip{background:#e9eef8;border:1px solid #bdcae0;border-radius:3px;padding:3px 6px;font-size:10px;display:inline-flex;margin:2px}.help{background:#e9f3ed;border:1px solid #c7e0d0;border-radius:8px;padding:12px;font-size:12px;margin-top:15px}.counter{color:var(--muted);font-size:11px}.copyright{font-size:11px;color:#786543;line-height:1.45}.teamline{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid var(--line)}.teamline small{display:block;font-size:11px;color:var(--muted);margin-top:3px}.auditline{padding:7px 0;border-bottom:1px solid var(--line);font-size:11px;overflow-wrap:anywhere}
+@media(max-width:860px){.grid{grid-template-columns:1fr}.titles{max-height:230px}.two{grid-template-columns:1fr}.top{padding:18px}.page{padding:0 12px}.half{grid-template-columns:1fr}}
+.private-epub{border:1px solid #dfd5c5;background:#fffcf5;border-radius:12px;margin:23px 0 0;padding:18px}.private-epub h3{font:normal 22px Georgia,serif;margin:0 0 10px}.epub-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:13px 0}.epub-row input[type=file]{max-width:400px}.epub-row a{font-size:12px;font-weight:700;color:var(--green)}.private-epub #epub-extras{padding:12px;background:#eff5ec;border-radius:7px}</style></head><body><header class="top"><div><h1>❀ Edit Library</h1><p>The Novel Conservatory · per-person editorial permissions</p></div><a href="/">← See the reader website</a></header><div class="page"><section class="auth"><div><strong id="identity">Checking Cloudflare login…</strong><div class="hint" id="identity-role">Personal editor access. No shared password.</div></div><span id="connection" class="status">Edits appear on the site without a deployment.</span></section><div class="grid"><section class="panel sidebar"><div class="panelhead"><h2>Books</h2><span class="counter" id="count">Loading…</span></div><input id="find" type="search" placeholder="Search title, author or original title"><div id="titles" class="titles"></div></section><section class="panel"><div class="main"><div style="padding:10px 0 15px"><a id="invitations-link" class="hidden" href="/admin/invitations.html" style="display:inline-block;margin:9px 8px 0 0;padding:8px 13px;border-radius:9px;text-decoration:none;color:#245749;background:#e9f2e9;border:1px solid #bdd6c4;font-weight:700">✉ Friends &amp; Invitations</a> <a href="/admin/community.html" style="display:inline-block;margin:9px 8px 0 0;padding:8px 13px;border-radius:9px;text-decoration:none;color:#245749;background:#e9f2e9;border:1px solid #bdd6c4;font-weight:700">💬 Moderate reviews &amp; submissions</a> <a href="/admin/epub-artwork.html">🖼️ Change novel covers</a> · <a href="/admin/cover-sync.html" style="display:inline-block;margin:9px 8px;padding:8px 13px;border:1px solid #c6d8cb;border-radius:9px;color:#205b53;background:#eff6ef;text-decoration:none">⇄ Sync public covers</a> · <a href="/admin/add-novels.html" style="display:inline-block;margin:9px 8px;padding:8px 13px;border-radius:9px;text-decoration:none;color:#205b53;background:#e9f2e9;border:1px solid #bdd6c4;font-weight:700">＋ Add non-CG novels &amp; EPUBs</a> · <a href="/admin/editions.html" style="display:inline-block;margin:9px 8px;padding:8px 13px;border:1px solid #c6d8cb;border-radius:9px;color:#205b53;background:#eff6ef;text-decoration:none">📚 Bulk translation EPUBs (200+)</a> <a href="/follows/" style="display:inline-block;margin:9px 8px;padding:8px 13px;border:1px solid #c6d8cb;border-radius:9px;color:#205b53;background:#eff6ef;text-decoration:none">🔔 Follows &amp; notifications</a> <a href="/admin/link-reports.html" style="display:inline-block;margin:9px 8px 0 0;padding:8px 13px;border-radius:9px;text-decoration:none;color:#245749;background:#e9f2e9;border:1px solid #bdd6c4;font-weight:700">⚑ Reader link reports</a> <a href="/admin/library-tools.html" style="display:inline-block;margin:9px 8px 0 0;padding:8px 13px;border-radius:9px;text-decoration:none;color:#245749;background:#e9f2e9;border:1px solid #bdd6c4;font-weight:700">⇄ Sheets &amp; backups</a> <a href="/admin/translator-import.html" style="display:inline-block;color:#205b53;background:#eef5ed;padding:10px 14px;border-radius:8px;border:1px solid #c6d8cb;font-weight:700">🌐 Import translator sites and historical relocation links</a></div><div class="tabs"><button id="book-tab" aria-selected="true">Edit a novel</button><button id="home-tab" aria-selected="false">Edit homepage</button><button id="bulk-tab" class="hidden" aria-selected="false">📦 Legacy single-file importer</button><button id="team-tab" class="hidden" aria-selected="false">Manage editors</button><button id="readers-tab" class="hidden" aria-selected="false">📖 Approved readers</button></div><div id="book-page"><h2 id="selected-heading">Choose a book</h2><p class="hint">Edits save to a separate database. Your original Google Sheet is unchanged.</p><p class="hint" style="background:#fbf4f8;border:1px solid #eadde8;border-radius:9px;padding:10px 12px;margin-top:8px"><strong>🌸 Illustrated tags are automatic.</strong> Add ordinary labels such as <span style="background:#e9effc;border-radius:99px;padding:3px 8px">🌙 Science fiction</span>, <span style="background:#f3e8fa;border-radius:99px;padding:3px 8px">🧬 Omegaverse</span>, or <span style="background:#e5f4e9;border-radius:99px;padding:3px 8px">✅ Completed</span>. No need to type emojis. New tags receive a default floral icon until mapped.</p><div class="two"><div class="fields"><div><label for="title">English title</label><input id="title" /></div><div class="half"><div><label for="author">Author</label><input id="author" /></div><div><label for="original">Original title</label><input id="original" /></div></div><div><label for="short">Short hover summary and synopsis</label><textarea id="short" placeholder="Write a concise two-sentence reading hook"></textarea></div><div><label for="genres">Genres <span class="counter">horror, fantasy, sci-fi, mystery, romance, etc. · comma-separated</span></label><input id="genres" placeholder="Fantasy, Romance, Horror"></div><div><label for="tags">Story tags <span class="counter">childhood friends, enemies to lovers, survival, etc. · comma-separated</span></label><details class="vocabulary-helper" style="margin:13px 0;background:#f4f0f9;padding:13px;border-radius:10px;border:1px solid #e1d6ed"><summary style="cursor:pointer;font-weight:700">✧ Browse hundreds of genres and story tags (click to add)</summary><p style="font-size:12px;color:#665b73">Novel Updates–informed suggestions, not automatic labels. Check each book first, then add the relevant terms.</p><div class="half"><div><label for="vocab-search">Find a tag</label><input id="vocab-search" type="search" placeholder="rivals, survival, rebirth…"></div><div><label for="vocab-category">Category</label><select id="vocab-category"><option value="all">All categories</option></select></div></div><div class="hint" id="vocab-count">Loading suggestions…</div><div id="vocab-tips" style="max-height:330px;overflow:auto;padding:7px 0;color:#54446d;font-size:13px"></div></details><input id="tags" placeholder="Slow burn, Unlimited flow"></div><div><label for="warnings">Content warnings <span class="counter">comma-separated</span></label><input id="warnings" placeholder="Violence, Body horror"></div><div class="half"><div><label for="translation">Translation status</label><select id="translation"><option value="completed">Completed</option><option value="ongoing">Ongoing</option><option value="incomplete">Incomplete</option><option value="dropped">Dropped</option><option value="original">Original</option><option value="licensed">Licensed</option><option value="unconfirmed">Unknown</option></select></div><div><label for="nu">Novel Updates link</label><input id="nu" type="url" placeholder="https://..." /></div></div><div class="translation-editor" id="translation-editions" style="margin:20px 0;padding:16px;background:#f5f3f0;border:1px solid #dad5ce;border-radius:12px">
+  <h3 style="margin:0 0 7px;font-family:Georgia,serif;font-size:21px">🌐 Translation editions &amp; translator sites</h3>
+  <p class="hint">Add a separate entry for each translation of the same novel. Link directly to the translation and optionally to the translator's homepage. These are external links, not EPUB uploads.</p>
+  <div id="translation-rows" aria-live="polite"></div>
+  <button id="add-translation" type="button" style="margin-top:12px">＋ Add another translation</button>
+  <p class="counter">Up to 12 editions per novel. Only HTTPS links are accepted. Existing one-name translator information is suggested here until you save.</p>
+</div><label class="checkrow"><input id="reviewed" type="checkbox"> I reviewed this synopsis, genre and warning metadata</label></div><aside><div class="coverbox"><div class="empty" id="fallback">文</div><img id="cover-preview" class="hidden" alt="Book cover preview"/><label for="image-file">Upload a cover image</label><input type="file" id="image-file" accept="image/jpeg,image/png,image/webp,image/gif"><button id="upload" style="margin:8px 0">Upload image</button><p class="counter">JPG/PNG/WebP/GIF up to 6 MB. Requires Cloudflare R2.</p><label for="cover-url">Or paste an approved image URL</label><input type="url" id="cover-url" placeholder="https://publisher.example/cover.jpg"/><p class="copyright">An image being on the internet does not necessarily mean you can republish it. Confirm permission or an applicable usage policy before enabling it.</p><label class="checkrow"><input type="checkbox" id="cover-rights"> I have checked this cover's permitted use</label></div></aside></div><section class="private-epub hidden" id="private-epub">
+<h3>📖 My private EPUB &amp; online reader</h3>
+<p class="hint">The owner can upload and manage these EPUB files. Friends cannot open them unless you separately approve EPUB reading and confirm you have rights to share the files.</p>
+<div class="epub-row"><label for="epub-file">Select an EPUB for this novel</label><input type="file" id="epub-file" accept=".epub,application/epub+zip" /></div>
+<div class="epub-row"><button type="button" id="inspect-epub">Extract available EPUB metadata</button><button type="button" id="save-epub" class="primary">Upload privately &amp; enable reading</button></div>
+<p class="status" id="epub-inspection">Some EPUBs include a cover, title, author, description, and subject tags; not all do.</p>
+<div id="epub-extras" class="hidden"><button type="button" id="use-epub-metadata">Fill empty fields &amp; add EPUB tags</button><button type="button" id="use-epub-cover">Use EPUB cover (with rights confirmation)</button></div>
+<div class="epub-row"><span id="epub-storage-status" class="status">Checking your private EPUB…</span><a id="read-epub-link" class="hidden" target="_blank" rel="noopener noreferrer">Read online ↗</a><a id="download-epub-link" class="hidden">Download EPUB ↓</a><button type="button" class="hidden" id="remove-epub">Remove private EPUB</button></div>
+<p class="copyright">Extracting a cover does not establish permission to display it. Uploaded EPUBs are owner-only and are not published to the public showcase. No text is sent to a summarization service.</p>
+</section><div class="actions"><button id="save-novel" class="primary">Save novel</button><span id="book-feedback" class="status">Choose a book to begin.</span></div></div><div id="home-page" class="home hidden"><h2>Homepage text</h2><p class="hint">Change these whenever you like. No ZIP or deployment required after setup.</p><div class="fields"><div><label for="hero">Main heading</label><input id="hero" placeholder="Stories worth getting lost in."></div><div><label for="intro">Homepage introduction</label><textarea id="intro"></textarea></div><div><label for="feature-title">Featured shelf heading</label><input id="feature-title" /></div><div><label for="announcement">Announcement banner (optional)</label><textarea id="announcement" rows="2"></textarea></div><div><label for="hero-image-url">Homepage banner image URL (optional)</label><input id="hero-image-url" type="url" placeholder="https://..." /></div><div class="coverbox"><div class="empty" id="hero-fallback">圖</div><img id="hero-image-preview" class="hidden" alt="Homepage hero image preview"/><label for="hero-image-file">Upload a homepage banner image</label><input type="file" id="hero-image-file" accept="image/jpeg,image/png,image/webp,image/gif"><button id="upload-hero" style="margin:8px 0">Upload banner image</button> <button id="clear-hero" type="button" style="margin:8px 0">Use original green banner</button><p class="counter">If you upload here, Save homepage changes to publish it.</p></div><div><label for="featured">Featured book IDs <span class="counter">comma-separated, e.g. 431, 184, 289</span></label><input id="featured" placeholder="431, 184, 289"/></div></div><div class="help">You can find each book's ID in the catalogue sidebar. Featured books will appear in the order you enter.</div><div class="actions"><button id="save-home" class="primary">Publish homepage changes</button><span id="home-feedback" class="status">Press Save when ready.</span></div></div><div id="bulk-page" class="hidden"><div style="padding:14px;background:#edf5e8;border:1px solid #c9d9c4;border-radius:9px;margin-bottom:14px"><strong>Have an EPUB that is not in Chrysanthemum Garden?</strong><p class="hint">Create its full novel entry first, then attach as many translation EPUBs as you like. Your original homepage and catalogue entries stay unchanged.</p><a href="/admin/add-novels.html" style="display:inline-block;padding:10px 14px;color:white;background:#205b53;border-radius:7px;text-decoration:none">Open Add non-CG Novels &amp; EPUBs →</a></div><h2>📚 Bulk private EPUB uploads</h2><p class="hint">Select a batch of your EPUB files and inspect the proposed matches before anything uploads. Stored files remain owner-only unless the owner explicitly enables reading for approved people. EPUB summaries and tags can be imported into visible book profiles; EPUB files remain owner-only. Covers are not auto-published.</p><div class="fields"><div class="half"><div><label for="bulk-files">Choose multiple EPUBs</label><input id="bulk-files" type="file" accept=".epub,application/epub+zip" multiple></div><div><label for="bulk-folder">Or choose an EPUB folder (supported browsers)</label><input id="bulk-folder" type="file" webkitdirectory multiple></div></div><div class="epub-row"><button id="bulk-scan" type="button">1 · Review files &amp; match novels</button><label class="checkrow" style="margin-left:10px"><input id="bulk-replace" type="checkbox"> Allow replacing existing private EPUBs</label></div><label class="checkrow" style="margin:10px 0;padding:10px;background:#edf5e8;border:1px solid #c8d9c7;border-radius:9px"><input id="bulk-auto-metadata" type="checkbox" checked> <strong>Automatically add EPUB summaries and tags after upload</strong> (you can delete or edit them later)</label><p class="hint">Existing summaries are preserved. New EPUB subject tags are merged into your catalogue; duplicates are skipped. Imported fields are marked unreviewed until you confirm them.</p><div id="bulk-feedback" class="status" aria-live="polite">Choose a few EPUBs to begin. Up to 200 at a time, max 30 MB each.</div><div id="bulk-progress" class="hidden"><progress id="bulk-bar" max="100" value="0" style="width:100%;height:16px"></progress><p id="bulk-count" class="status"></p></div><div style="max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:10px"><table id="bulk-table" style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:9px">EPUB file</th><th style="text-align:left;padding:9px">Match a novel</th><th style="text-align:left;padding:9px">Status</th></tr></thead><tbody id="bulk-rows"><tr><td colspan="3" style="padding:16px">No files selected.</td></tr></tbody></table></div><datalist id="bulk-book-choices"></datalist><div class="epub-row"><button type="button" id="bulk-start" class="primary" disabled>2 · Upload EPUBs and import metadata</button><button id="bulk-stop" type="button" disabled>Stop after current upload</button></div><p class="copyright">Existing EPUB files are not replaced by default, but you can add their embedded metadata without reuploading them. Matching by exact normalized title only happens automatically when there is one unambiguous match. Review the rest before uploading. Back up original EPUBs; the site does not synchronize to your Google Sheet. Summaries and subject tags found inside EPUB packages are imported by default when the file uploads. They are clearly marked unreviewed. Nothing is fabricated if a field is missing. Covers are never auto-published.</p></div></div><div id="readers-page" class="home hidden"><h2>📖 Approved EPUB readers</h2><p class="hint">Give specific people reading access to the entire private EPUB collection. They cannot edit books, upload files, or manage permissions.</p><div class="help"><strong>Two steps for every person:</strong> once Cloudflare Access is configured for authenticated invitations, you can send links from Friends & Invitations. Keep this separate EPUB permission switch for works you are authorized to share.</div><div class="fields" style="margin-top:18px"><div class="coverbox" style="text-align:left"><h2 style="font-size:20px">Sharing switch</h2><p class="hint">OFF by default. When enabled, every already-uploaded and future EPUB becomes readable by every email approved below. Only enable this for works you are authorized to share.</p><label class="checkrow"><input id="sharing-rights" type="checkbox"> I confirm I have permission to share the EPUB files that will be available to these readers.</label><div class="epub-row" style="margin-top:12px"><button id="sharing-enable" class="primary" type="button">Enable library reading</button><button id="sharing-disable" type="button">Disable reading for everyone</button></div><p id="sharing-status" class="status">Checking sharing status…</p></div><div><label for="reader-email">Invite an approved reader by email</label><input id="reader-email" type="email" placeholder="friend@example.com" autocomplete="off"></div><div><button id="add-reader" type="button" class="primary">Grant library reading</button></div><p id="readers-feedback" class="status"></p><div><h2 style="font-size:21px">Approved readers</h2><div id="readers-list"></div></div></div></div><div id="team-page" class="home hidden"><h2>Who can edit?</h2><p class="hint">You control the editors. Other invited friends remain readers.</p><div class="help"><strong>Two separate permissions:</strong> Cloudflare Access still authenticates editors. After the one-time invitation login setup, an owner can grant editing access here without updating the Cloudflare email allowlist each time.</div><div class="fields" style="margin-top:17px"><div><label for="editor-email">Invite an editor by email</label><input id="editor-email" type="email" placeholder="friend@example.com" autocomplete="off" /></div><div><button class="primary" id="add-editor">Grant editing rights</button></div><div id="team-feedback" class="status"></div><div><h2 style="font-size:21px;margin:14px 0 8px">Authorized editors</h2><div id="editors-list"></div></div><div><h2 style="font-size:21px;margin:14px 0 8px">Recent changes</h2><div id="audit-list" class="hint">Loading…</div></div></div></div></div></section></div></div>
+<script src="/vendor/jszip.min.js"></script>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+let books=[],edits={},home={},selected=null,currentRole='reader',currentEmail='';
+const trim=(x,max=1000)=>String(x||'').slice(0,max);
+const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const parseTags=x=>x.split(',').map(v=>v.trim()).filter(Boolean);
+const feedback=(id,msg,good=true)=>{const el=$(id);el.textContent=msg;el.style.color=good?'#205b53':'#b34328'};
+async function init(){
+  try{
+    const meResponse=await fetch('/api/me',{cache:'no-store'});
+    if(!meResponse.ok)throw Error('Could not verify your Cloudflare Access login.');
+    const me=await meResponse.json();currentRole=me.role;currentEmail=me.email;
+    if(!['owner','editor'].includes(currentRole))throw Error('This email is not an authorized editor.');
+    $('identity').textContent=me.email;
+    $('identity-role').textContent=(me.role==='owner'?'Owner':'Editor')+' · Verified Cloudflare login';
+    $('invitations-link').classList.toggle('hidden',me.role!=='owner');$('team-tab').classList.toggle('hidden',me.role!=='owner');$('readers-tab').classList.toggle('hidden',me.role!=='owner');$('bulk-tab').classList.toggle('hidden',me.role!=='owner');$('private-epub').classList.toggle('hidden',me.role!=='owner');
+    if(!me.configured)feedback('connection','D1 database not connected. Configure DB before saving changes.',false);
+    else feedback('connection','Connected. Your changes publish when you save.');
+    books=await (await fetch('/admin/catalogue.json',{cache:'no-store'})).json();renderSidebar();selectBook(books[0]?.id);
+    const r=await fetch('/api/content',{cache:'no-store'});if(r.ok){const j=await r.json();for(const item of(j.edits||[]))edits[item.id]=item.patch;home=j.homepage||{}; if(!j.configured)feedback('connection','Database not connected yet. Create D1 and bind DB before saving.',false);renderSidebar();if(selected)selectBook(selected);fillHome();}
+  }catch(e){feedback('connection',e.message||'Could not load the dashboard.',false)}
+}
+function renderSidebar(){const q=$('find').value.trim().toLowerCase();const items=books.filter(b=>{const view={...b,...(edits[b.id]||{})};const editions=legacyEditionRows(view);return [view.title,view.originalTitle,view.author,view.translator,...editions.map(x=>x.name)].join(' ').toLowerCase().includes(q)});$('count').textContent=items.length+' novels';$('titles').innerHTML=items.slice(0,200).map(b=>`<button type="button" class="bookrow ${b.id===selected?'active':''}" data-id="${b.id}"><span class="pill">#${b.id}</span><span>${esc((edits[b.id]?.title)||b.title)}<small>${esc((edits[b.id]?.author)||b.author||b.language)}</small></span></button>`).join('');$('titles').querySelectorAll('[data-id]').forEach(btn=>btn.addEventListener('click',()=>selectBook(Number(btn.dataset.id))));}
+const editionStatuses=['completed','ongoing','incomplete','dropped','licensed','unconfirmed'];
+let workingTranslations=[];
+function legacyEditionRows(b){
+  if(Array.isArray(b.translations))return b.translations.map(x=>({...x}));
+  const names=String(b.translator||'').split(/\s*;\s*/).map(x=>x.trim()).filter(Boolean);
+  return names.map(name=>({name,label:'',language:'English',status:editionStatuses.includes(b.translation)?b.translation:'unconfirmed',
+    readUrl:'',siteUrl:names.length===1?(b.translatorUrl||''):'',notes:''}));
+}
+function editionRow(item={}){
+  if(workingTranslations.length>=12){feedback('book-feedback','A novel can have up to 12 translation editions.',false);return;}
+  workingTranslations.push({...item});renderEditionRows();
+}
+function renderEditionRows(){
+  const host=$('translation-rows');host.replaceChildren();
+  workingTranslations.forEach((item,i)=>{
+    const wrap=document.createElement('fieldset');wrap.className='edition-row';wrap.style.cssText='margin:12px 0;padding:13px;border:1px solid #ccc5b9;border-radius:9px;background:#fff;';
+    const legend=document.createElement('legend');legend.textContent='Edition '+(i+1);wrap.append(legend);
+    const fields=[['name','Translator or translation group','text','Translator name'],
+      ['label','Version label (optional)','text','e.g. revised English edition'],
+      ['language','Translation language','text','English'],
+      ['readUrl','Link to this translation','url','https://translator.example/novel/...'],
+      ['siteUrl',"Translator's website or homepage",'url','https://translator.example/'],
+      ['chaptersTranslated','Chapters translated','number','e.g. 52'],
+      ['totalChapters','Total chapters (if known)','number','e.g. 91'],
+      ['lastUpdated','Last known update (YYYY-MM-DD)','date','2026-11-03'],
+      ['notes','Notes (optional)','text','e.g. chapter 52 of 91']];
+    for(const [key,title,type,hint] of fields){
+      const row=document.createElement('div');row.style.marginBottom='8px';
+      const label=document.createElement('label');label.textContent=title;const input=document.createElement('input');
+      input.type=type;input.placeholder=hint;input.value=String(item[key]||'');input.dataset.translationField=key;
+      input.addEventListener('input',()=>{workingTranslations[i][key]=input.value});
+      label.append(input);row.append(label);wrap.append(row);
+    }
+    const statusLabel=document.createElement('label');statusLabel.textContent='Status';
+    const select=document.createElement('select');select.dataset.translationField='status';
+    for(const value of editionStatuses){const opt=document.createElement('option');opt.value=value;opt.textContent=value[0].toUpperCase()+value.slice(1);select.append(opt)}
+    select.value=editionStatuses.includes(item.status)?item.status:'unconfirmed';
+    select.addEventListener('change',()=>{workingTranslations[i].status=select.value});statusLabel.append(select);wrap.append(statusLabel);
+    const remove=document.createElement('button');remove.type='button';remove.textContent='Remove this edition';remove.style.marginTop='10px';
+    remove.addEventListener('click',()=>{workingTranslations.splice(i,1);renderEditionRows()});wrap.append(remove);host.append(wrap);
+  });
+  $('add-translation').disabled=workingTranslations.length>=12;
+}
+$('add-translation').addEventListener('click',()=>editionRow({name:'',label:'',language:'English',status:'unconfirmed',readUrl:'',siteUrl:'',notes:''}));
+function collectTranslations(){
+  const out=[];
+  for(let i=0;i<workingTranslations.length;i++){
+    const v=workingTranslations[i];
+    if(!String(v.name||'').trim()){
+      if(Object.values(v).some(x=>String(x||'').trim() && String(x)!=='unconfirmed' && String(x)!=='English'))throw Error('Edition '+(i+1)+' needs a translator name.');
+      continue;
+    }
+    for(const key of ['readUrl','siteUrl']){
+      const raw=String(v[key]||'').trim();if(!raw)continue;
+      let url;try{url=new URL(raw)}catch{throw Error('Edition '+(i+1)+': enter a full HTTPS URL for '+key)}
+      if(url.protocol!=='https:'||/(^|\.)(docs\.google\.com|drive\.google\.com)$/i.test(url.hostname))throw Error('Edition '+(i+1)+': use an HTTPS translator site, not a private Drive/Docs link.');
+    }
+    out.push({name:String(v.name).trim(),label:String(v.label||'').trim(),language:String(v.language||'').trim(),status:v.status||'unconfirmed',readUrl:String(v.readUrl||'').trim(),siteUrl:String(v.siteUrl||'').trim(),notes:String(v.notes||'').trim(),chaptersTranslated:v.chaptersTranslated===''||v.chaptersTranslated==null?null:Number(v.chaptersTranslated),totalChapters:v.totalChapters===''||v.totalChapters==null?null:Number(v.totalChapters),lastUpdated:String(v.lastUpdated||'').trim()});
+  }
+  return out;
+}
+function selectBook(id){const original=books.find(b=>b.id===id);if(!original)return;selected=id;const b={...original,...(edits[id]||{})};$('selected-heading').textContent=b.title+' · #'+id;$('title').value=b.title||'';$('author').value=b.author||'';$('original').value=b.originalTitle||'';$('short').value=b.synopsis||'';$('genres').value=(b.genres||[]).join(', ');$('tags').value=(b.tags||[]).join(', ');$('warnings').value=(b.contentWarnings||[]).join(', ');$('translation').value=b.translation||'unconfirmed';$('nu').value=b.nuUrl||'';workingTranslations=legacyEditionRows(b);renderEditionRows();$('cover-url').value=b.cover?.startsWith('http')?b.cover:'';$('reviewed').checked=!!b.metadataReview;$('cover-rights').checked=!!b.coverRights;$('image-file').value='';window.pendingImage=b.cover||'';previewCover(window.pendingImage);renderSidebar();feedback('book-feedback','Ready to edit #'+id);if(currentRole==='owner'){loadEpubStatus(id)}}
+function previewCover(src){const img=$('cover-preview'),fallback=$('fallback');const u=src&& (src.startsWith('/media/')||src.startsWith('https://')||src.startsWith('http://'));img.classList.toggle('hidden',!u);fallback.classList.toggle('hidden',!!u);if(u)img.src=src;else img.removeAttribute('src');}
+function previewHeroImage(src){const img=$('hero-image-preview'),fallback=$('hero-fallback');const u=src&& (src.startsWith('/media/')||src.startsWith('https://')||src.startsWith('http://'));img.classList.toggle('hidden',!u);fallback.classList.toggle('hidden',!!u);if(u)img.src=src;else img.removeAttribute('src');}
+$('cover-url').addEventListener('input',e=>{window.pendingImage=e.target.value;previewCover(e.target.value)});
+$('hero-image-url').addEventListener('input',e=>{window.pendingHeroImage=e.target.value;previewHeroImage(e.target.value)});
+$('clear-hero').addEventListener('click',()=>{window.pendingHeroImage='';$('hero-image-url').value='';$('hero-image-file').value='';previewHeroImage('');feedback('home-feedback','Original green banner selected. Publish homepage changes to apply.');});
+$('find').addEventListener('input',renderSidebar);
+function openTab(tab){
+  for(const [key,button,page] of [['book','book-tab','book-page'],['home','home-tab','home-page'],['team','team-tab','team-page'],['bulk','bulk-tab','bulk-page'],['readers','readers-tab','readers-page']]){
+    $(page).classList.toggle('hidden',tab!==key);
+    $(button).setAttribute('aria-selected',String(tab===key));
+  }
+  if(tab==='team'&&currentRole==='owner')loadTeam();
+  if(tab==='readers'&&currentRole==='owner')loadReaders();
+}
+$('book-tab').addEventListener('click',()=>openTab('book'));
+$('home-tab').addEventListener('click',()=>openTab('home'));
+$('team-tab').addEventListener('click',()=>openTab('team'));
+$('readers-tab').addEventListener('click',()=>{if(currentRole==='owner')openTab('readers')});
+$('bulk-tab').addEventListener('click',()=>{if(currentRole!=='owner')return;openTab('bulk');});
+async function adminPost(path,body,contentType='application/json'){
+ const r=await fetch(path,{method:'POST',headers:{'Content-Type':contentType},body:contentType==='application/json'?JSON.stringify(body):body,cache:'no-store',credentials:'same-origin'});
+ const j=await r.json().catch(()=>({error:'Server did not return JSON'}));
+ if(!r.ok)throw Error(j.error||'Save failed');return j;
+}
+const showTeamError=message=>feedback('team-feedback',message,false);
+async function loadTeam(){
+  if(currentRole!=='owner')return;
+  try {
+    const [er,hr]=await Promise.all([fetch('/api/admin/editors',{cache:'no-store'}),fetch('/api/admin/history',{cache:'no-store'})]);
+    if(!er.ok)throw Error('Could not load editors. Check database and permissions.');
+    const json=await er.json();const editors=json.editors||[];
+    $('editors-list').replaceChildren();
+    const owner=document.createElement('div');owner.className='teamline';owner.innerHTML=`<div><strong>${esc(json.owner)}</strong><small>Owner · only you can grant editing access</small></div>`;
+    $('editors-list').append(owner);
+    for(const editor of editors){
+      const line=document.createElement('div');line.className='teamline';
+      const info=document.createElement('div');
+      const title=document.createElement('strong');title.textContent=editor.email;
+      const small=document.createElement('small');small.textContent='Editor · added by '+editor.added_by;
+      info.append(title,small);line.append(info);
+      const remove=document.createElement('button');remove.textContent='Remove editor';remove.type='button';
+      remove.addEventListener('click',async()=>{
+        if(!confirm('Remove editing rights for '+editor.email+'? They will still have reader access if allowed in Cloudflare.'))return;
+        remove.disabled=true;
+        try{await adminPost('/api/admin/editors',{email:editor.email,action:'remove'});feedback('team-feedback','Removed '+editor.email+' from editors.');await loadTeam();}
+        catch(e){showTeamError(e.message)}finally{remove.disabled=false;}
+      });
+      line.append(remove);$('editors-list').append(line);
+    }
+    if(hr.ok){const records=(await hr.json()).history||[];$('audit-list').replaceChildren();
+      for(const item of records.slice(0,25)){const div=document.createElement('div');div.className='auditline';div.textContent=`${item.created_at} · ${item.actor_email} · ${item.action} (${item.target})`;$('audit-list').append(div)}
+      if(!records.length)$('audit-list').textContent='No saved changes yet.';
+    }
+  }catch(e){showTeamError(e.message)}
+}
+async function loadReaders(){
+ if(currentRole!=='owner')return;
+ try{
+  const r=await fetch('/api/admin/epub-readers',{cache:'no-store'}),j=await r.json();
+  if(!r.ok)throw Error(j.error||'Unable to load reader permissions');
+  $('sharing-status').textContent=j.sharingEnabled?'🟢 Library reading ENABLED for approved accounts':'🔒 Library reading DISABLED; only you can read';
+  $('sharing-rights').checked=false;
+  const area=$('readers-list');area.replaceChildren();
+  for(const email of j.readers){
+   const line=document.createElement('div');line.className='teamline';
+   const info=document.createElement('div');const strong=document.createElement('strong');strong.textContent=email;
+   const small=document.createElement('small');small.textContent='Can read all EPUBs only while sharing is enabled';info.append(strong,small);line.append(info);
+   const remove=document.createElement('button');remove.type='button';remove.textContent='Revoke reading';
+   remove.addEventListener('click',async()=>{remove.disabled=true;try{await adminPost('/api/admin/epub-readers',{action:'remove',email});feedback('readers-feedback','Reading permission revoked for '+email);await loadReaders();}catch(e){feedback('readers-feedback',e.message,false)}finally{remove.disabled=false}});
+   line.append(remove);area.append(line);
+  }
+  if(!j.readers.length)area.textContent='No approved EPUB readers yet.';
+ }catch(e){feedback('readers-feedback',e.message,false)}
+}
+$('add-reader').addEventListener('click',async()=>{
+ const email=$('reader-email').value.trim();if(!email)return feedback('readers-feedback','Enter a reader email.',false);
+ $('add-reader').disabled=true;
+ try{await adminPost('/api/admin/epub-readers',{action:'add',email});$('reader-email').value='';feedback('readers-feedback','Approved '+email+' for EPUB reading. Also grant them website access under Friends & Invitations.');await loadReaders();}
+ catch(e){feedback('readers-feedback',e.message,false)}finally{$('add-reader').disabled=false}
+});
+$('sharing-enable').addEventListener('click',async()=>{
+ if(!$('sharing-rights').checked)return feedback('readers-feedback','Confirm that you are authorized to share these EPUBs first.',false);
+ $('sharing-enable').disabled=true;
+ try{await adminPost('/api/admin/epub-readers',{action:'sharing',enabled:true,rightsConfirmed:true});feedback('readers-feedback','Sharing enabled for approved readers.');await loadReaders();}
+ catch(e){feedback('readers-feedback',e.message,false)}finally{$('sharing-enable').disabled=false}
+});
+$('sharing-disable').addEventListener('click',async()=>{
+ $('sharing-disable').disabled=true;
+ try{await adminPost('/api/admin/epub-readers',{action:'sharing',enabled:false});feedback('readers-feedback','Sharing disabled for all approved accounts.');await loadReaders();}
+ catch(e){feedback('readers-feedback',e.message,false)}finally{$('sharing-disable').disabled=false}
+});
+$('add-editor').addEventListener('click',async()=>{
+ const email=$('editor-email').value.trim();
+ if(!email)return showTeamError('Enter an email address.');
+ $('add-editor').disabled=true;
+ try{await adminPost('/api/admin/editors',{email,action:'add'});$('editor-email').value='';feedback('team-feedback',`Editor ${email} added. They can sign in after the one-time Access invitation setup.`);await loadTeam();}
+ catch(e){showTeamError(e.message)}finally{$('add-editor').disabled=false}
+});
+$('upload').addEventListener('click',async()=>{const f=$('image-file').files[0];if(!f)return feedback('book-feedback','Choose an image file first.',false);$('upload').disabled=true;try{const j=await adminPost('/api/admin/upload',f,f.type);window.pendingImage=j.url;$('cover-url').value='';previewCover(j.url);feedback('book-feedback','Cover uploaded. Check permission box and Save novel to attach it.')}catch(e){feedback('book-feedback',e.message,false)}finally{$('upload').disabled=false}});
+$('upload-hero').addEventListener('click',async()=>{const f=$('hero-image-file').files[0];if(!f)return feedback('home-feedback','Choose a homepage image file first.',false);$('upload-hero').disabled=true;try{const j=await adminPost('/api/admin/upload',f,f.type);window.pendingHeroImage=j.url;$('hero-image-url').value='';previewHeroImage(j.url);feedback('home-feedback','Hero image uploaded. Press Publish homepage changes to make it live.')}catch(e){feedback('home-feedback',e.message,false)}finally{$('upload-hero').disabled=false}});
+$('save-novel').addEventListener('click',async()=>{if(!selected)return;let translations;try{translations=collectTranslations()}catch(e){return feedback('book-feedback',e.message,false)}const patch={title:trim($('title').value,240),author:trim($('author').value,240),originalTitle:trim($('original').value,240),synopsis:trim($('short').value,2000),genres:parseTags($('genres').value),tags:parseTags($('tags').value),contentWarnings:parseTags($('warnings').value),translation:$('translation').value,translations,nuUrl:$('nu').value.trim(),metadataReview:$('reviewed').checked,metadataOrigin:edits[selected]?.metadataOrigin||'',coverRights:$('cover-rights').checked,cover:window.pendingImage||''};$('save-novel').disabled=true;try{const j=await adminPost('/api/admin/novel',{id:selected,patch});edits[selected]=j.patch;renderSidebar();feedback('book-feedback','Saved! Friends will see this after refreshing the site.')}catch(e){feedback('book-feedback',e.message,false)}finally{$('save-novel').disabled=false}});
+function fillHome(){$('hero').value=home.heroTitle||'Stories worth getting lost in.';$('intro').value=home.heroDescription||'Discover a novel by its cover, then search by genre, character, relationship dynamics and the story elements you love.';$('feature-title').value=home.featuredTitle||'Featured novels';$('announcement').value=home.announcement||'';$('featured').value=(home.featuredIds||[]).join(', ');window.pendingHeroImage=home.heroImage||'';$('hero-image-url').value=home.heroImage&&home.heroImage.startsWith('http')?home.heroImage:'';previewHeroImage(window.pendingHeroImage)}
+$('save-home').addEventListener('click',async()=>{const payload={heroTitle:$('hero').value,heroDescription:$('intro').value,featuredTitle:$('feature-title').value,announcement:$('announcement').value,heroImage:window.pendingHeroImage||$('hero-image-url').value.trim(),featuredIds:parseTags($('featured').value).map(Number)};$('save-home').disabled=true;try{const j=await adminPost('/api/admin/homepage',payload);home=j.homepage;window.pendingHeroImage=home.heroImage||'';previewHeroImage(window.pendingHeroImage);feedback('home-feedback','Published! Reload the homepage to see changes.')}catch(e){feedback('home-feedback',e.message,false)}finally{$('save-home').disabled=false}});
+
+let inspectedEpub=null;
+function displayStoredEpub(info){
+ const present=!!info.hasEpub;
+ $('epub-storage-status').textContent=present?`Stored privately: ${info.name||'book.epub'} (${((info.size||0)/1048576).toFixed(1)} MB)`:'No legacy EPUB. Use Bulk Translation EPUBs to add one or more editions.';
+ for(const id of ['read-epub-link','download-epub-link','remove-epub'])$(id).classList.toggle('hidden',!present);
+ if(present){$('read-epub-link').href='/read/?id='+selected;$('download-epub-link').href=info.newEditions?'/api/private/edition/file?id='+selected+'&edition='+encodeURIComponent(info.editionId)+'&download=1':'/api/private/epub/file?id='+selected+'&download=1';}
+}
+async function loadEpubStatus(bookId){
+ $('epub-file').value='';$('epub-inspection').textContent='EPUB metadata has not been inspected.';
+ $('epub-extras').classList.add('hidden');inspectedEpub=null;
+ $('epub-storage-status').textContent='Checking private storage…';
+ try{const r=await fetch('/api/private/epub/status?id='+bookId,{cache:'no-store'});const j=await r.json();if(!r.ok)throw Error(j.error);if(bookId===selected)displayStoredEpub(j)}
+ catch(e){if(bookId===selected)$('epub-storage-status').textContent=e.message||'Could not check EPUB.'}
+}
+function epubOpfPath(zip){return zip.file('META-INF/container.xml').async('string').then(xml=>{const x=new DOMParser().parseFromString(xml,'application/xml');const root=x.getElementsByTagName('rootfile')[0]||x.getElementsByTagNameNS('*','rootfile')[0];if(!root)throw Error('EPUB container is missing its package path.');const path=root.getAttribute('full-path');if(!path||path.includes('..'))throw Error('Invalid EPUB package path.');return path})}
+async function parseLocalEpub(file){
+ if(!file||!file.name.toLowerCase().endsWith('.epub'))throw Error('Choose a .epub file.');
+ if(file.size>30000000)throw Error('This EPUB exceeds the 30 MB limit.');
+ if(typeof JSZip==='undefined')throw Error('EPUB inspection library did not load.');
+ const zip=await JSZip.loadAsync(file);
+ const opfPath=await epubOpfPath(zip);const entry=zip.file(opfPath);if(!entry)throw Error('EPUB package file not found.');
+ const opf=new DOMParser().parseFromString(await entry.async('string'),'application/xml');
+ if(opf.querySelector('parsererror'))throw Error('Invalid EPUB package XML.');
+ const metadata=opf.getElementsByTagName('metadata')[0]||opf.getElementsByTagNameNS('*','metadata')[0];
+ const field=k=>metadata?.getElementsByTagNameNS('*',k)[0]?.textContent?.trim()||'';
+ const subjects=[...(metadata?.getElementsByTagNameNS('*','subject')||[])].map(n=>n.textContent.trim()).filter(Boolean).slice(0,24);
+ const description=field('description').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
+ const meta=[...(metadata?.getElementsByTagNameNS('*','meta')||[])];const ref=meta.find(n=>n.getAttribute('name')==='cover')?.getAttribute('content');
+ const manifest=[...(opf.getElementsByTagNameNS('*','item')||[])];let cover=manifest.find(n=>n.getAttribute('properties')?.split(' ').includes('cover-image'));
+ if(!cover&&ref)cover=manifest.find(n=>n.getAttribute('id')===ref);
+ if(!cover)cover=manifest.find(n=>/cover/i.test(n.getAttribute('id')||'')&&/^image\//.test(n.getAttribute('media-type')||''));
+ let coverFile=null;
+ if(cover){const href=decodeURIComponent(cover.getAttribute('href')||'');if(!href.includes('..')){const base=opfPath.substring(0,opfPath.lastIndexOf('/')+1);const item=zip.file(base+href);const mime=cover.getAttribute('media-type');if(item&&['image/jpeg','image/png','image/webp','image/gif'].includes(mime)){const bytes=await item.async('uint8array');const ext=mime.split('/')[1].replace('jpeg','jpg');coverFile=new File([bytes],'cover.'+ext,{type:mime})}}}
+ return {title:field('title'),author:field('creator'),description,subjects,coverFile};
+}
+$('epub-file').addEventListener('change',()=>{inspectedEpub=null;$('epub-extras').classList.add('hidden');$('epub-inspection').textContent='Selected a new EPUB. Inspect metadata, then upload to enable reading.'});
+$('inspect-epub').addEventListener('click',async()=>{
+ const file=$('epub-file').files[0];if(!file)return $('epub-inspection').textContent='Choose an EPUB first.';
+ $('inspect-epub').disabled=true;$('epub-inspection').textContent='Inspecting EPUB metadata on this device…';
+ try{inspectedEpub=await parseLocalEpub(file);$('epub-extras').classList.remove('hidden');$('epub-inspection').textContent=`Found: ${inspectedEpub.title||'no title'}, ${inspectedEpub.author||'no author'}; ${inspectedEpub.subjects.length} subject tags; ${inspectedEpub.description?'description available':'no description'}; ${inspectedEpub.coverFile?'cover available':'no cover image'}.`;}
+ catch(e){$('epub-inspection').textContent=e.message||'Cannot read this EPUB.'}finally{$('inspect-epub').disabled=false}
+});
+$('use-epub-metadata').addEventListener('click',()=>{if(!inspectedEpub)return;
+ if(!$('title').value.trim())$('title').value=inspectedEpub.title;
+ if(!$('author').value.trim())$('author').value=inspectedEpub.author;
+ if(!$('short').value.trim())$('short').value=inspectedEpub.description.slice(0,2000);
+ const existing=parseTags($('tags').value),seen=new Set(existing.map(x=>x.toLowerCase()));
+ for(const tag of inspectedEpub.subjects){if(!seen.has(tag.toLowerCase())){existing.push(tag);seen.add(tag.toLowerCase())}}
+ $('tags').value=existing.join(', ');
+ feedback('book-feedback','EPUB fields added where empty and subject tags suggested. Review for accuracy and click Save novel.');
+});
+$('use-epub-cover').addEventListener('click',async()=>{
+ const f=inspectedEpub?.coverFile;if(!f)return feedback('book-feedback','This EPUB has no extractable cover.',false);
+ if(!$('cover-rights').checked)return feedback('book-feedback','Check the cover permission box first, if you have the right to display it.',false);
+ if(f.size>6000000)return feedback('book-feedback','EPUB cover is over the 6 MB image limit.',false);
+ $('use-epub-cover').disabled=true;
+ try{const j=await adminPost('/api/admin/upload',f,f.type);window.pendingImage=j.url;previewCover(j.url);feedback('book-feedback','Extracted cover uploaded. Click Save novel to publish the cover.');}
+ catch(e){feedback('book-feedback',e.message,false)}finally{$('use-epub-cover').disabled=false}
+});
+$('save-epub').addEventListener('click',async()=>{const f=$('epub-file').files[0],bookId=selected;
+ if(!f)return $('epub-inspection').textContent='Choose an EPUB before uploading.';
+ if(!/\.epub$/i.test(f.name)||f.size>30000000)return $('epub-inspection').textContent='Choose an EPUB under 30 MB.';
+ if(inspectedEpub?.title&&$('title').value.trim()&&inspectedEpub.title.toLowerCase()!==$('title').value.trim().toLowerCase()){
+   if(!confirm(`The EPUB says "${inspectedEpub.title}", but your catalogue says "${$('title').value}". Upload to this book anyway?`))return;
+ }
+ $('save-epub').disabled=true;$('epub-inspection').textContent='Uploading private EPUB…';
+ try{const r=await fetch('/api/private/epub/upload?id='+bookId,{method:'POST',headers:{'content-type':'application/epub+zip','x-epub-name':encodeURIComponent(f.name)},body:f,credentials:'same-origin'});const j=await r.json();if(!r.ok)throw Error(j.error||'EPUB upload failed.');if(selected===bookId){displayStoredEpub(j);$('epub-inspection').textContent='Uploaded privately. Approved readers can open it only if library sharing is enabled.';}}
+ catch(e){$('epub-inspection').textContent=e.message||'Could not upload the EPUB.'}finally{$('save-epub').disabled=false}
+});
+$('remove-epub').addEventListener('click',async()=>{if(!confirm('Permanently remove the stored private EPUB from this novel?'))return;const id=selected;
+ try{const r=await fetch('/api/private/epub/remove?id='+id,{method:'POST',credentials:'same-origin'});const j=await r.json();if(!r.ok)throw Error(j.error);if(selected===id)displayStoredEpub(j)}catch(e){$('epub-inspection').textContent=e.message||'Could not remove EPUB.'}
+});
+init();
+</script><script>
+let allVocabulary={categories:{},genres:[]},editorTagLimit=90;
+const vocabSearch=document.getElementById('vocab-search'),vocabCategory=document.getElementById('vocab-category'),helper=document.getElementById('vocab-tips');
+const editorEsc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function showEditorVocabulary(){if(!helper)return;
+ const q=(vocabSearch.value||'').trim().toLowerCase(),group=vocabCategory.value;
+ let result=[];for(const [cat,items] of Object.entries(allVocabulary.categories)){
+  if(group!=='all'&&group!==cat)continue;
+  for(const tag of items){if(!q||tag.toLowerCase().includes(q))result.push({tag,cat,kind:cat==='Genres'?'genres':cat.startsWith('Warnings')?'warnings':'tags'});}
+ }
+ result.sort((a,b)=>a.cat.localeCompare(b.cat)||a.tag.localeCompare(b.tag));
+ document.getElementById('vocab-count').textContent=result.length+' matching suggestions. Click to add, then Save novel.';
+ helper.innerHTML=result.slice(0,editorTagLimit).map(v=>'<button type="button" class="insert-nu-tag" data-kind="'+v.kind+'" data-tag="'+editorEsc(v.tag)+'" style="border:1px solid #d7c8e7;border-radius:16px;margin:3px;padding:5px 8px;background:#fff;color:#604979;cursor:pointer">+ '+editorEsc(v.tag)+'</button>').join('')+(result.length>editorTagLimit?'<button type="button" id="vocab-more" style="margin:4px;padding:5px 10px">Show more…</button>':'');
+}
+if(helper){helper.addEventListener('click',e=>{const more=e.target.closest('#vocab-more');if(more){editorTagLimit+=100;showEditorVocabulary();return;}const b=e.target.closest('.insert-nu-tag');if(!b)return;const field=document.getElementById(b.dataset.kind);if(!field)return;const parts=field.value.split(',').map(v=>v.trim()).filter(Boolean);if(!parts.some(v=>v.toLowerCase()===b.dataset.tag.toLowerCase()))parts.push(b.dataset.tag);field.value=parts.join(', ');field.dispatchEvent(new Event('input',{bubbles:true}));b.style.background='#dff2e8';b.textContent='✓ '+b.dataset.tag;});}
+for(const el of [vocabSearch,vocabCategory])el?.addEventListener(el===vocabSearch?'input':'change',()=>{editorTagLimit=90;showEditorVocabulary()});
+fetch('/tag-vocabulary.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('vocabulary unavailable');return r.json()}).then(j=>{allVocabulary={...j,categories:{Genres:j.genres||[],...j.categories}};for(const name of Object.keys(allVocabulary.categories)){const option=document.createElement('option');option.value=name;option.textContent=name;vocabCategory.append(option)}showEditorVocabulary()}).catch(e=>{document.getElementById('vocab-count').textContent='Tag suggestions could not be loaded.'});
+</script><script src="/admin/bulk-epubs.js" defer></script></body></html>
