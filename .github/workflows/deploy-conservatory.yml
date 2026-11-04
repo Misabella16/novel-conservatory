@@ -20,12 +20,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check private Pages files
+      - name: Check uploaded private source files
+        id: source
         run: |
-          test -f private/_worker.js
-          test -f private/index.html
-          node --check private/_worker.js
-          node --check private/admin/add-novels.js
+          if [ -f private/_worker.js ] && [ -f private/index.html ] && [ -f private/admin/add-novels.js ]; then
+            node --check private/_worker.js
+            node --check private/admin/add-novels.js
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Source folders not uploaded yet; skipping private deployment."
+          fi
       - name: Check Cloudflare deployment credentials
         id: creds
         env:
@@ -39,7 +44,7 @@ jobs:
             echo "Cloudflare secrets are not configured; skipping deployment."
           fi
       - name: Deploy existing private Pages project
-        if: steps.creds.outputs.enabled == 'true'
+        if: steps.creds.outputs.enabled == 'true' && steps.source.outputs.ready == 'true'
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -51,12 +56,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check public Pages files
+      - name: Check uploaded public source files
+        id: source
         run: |
-          test -f public/_worker.js
-          test -f public/index.html
-          node --check public/_worker.js
-          node --check public/submit-novel/form.js
+          if [ -f public/_worker.js ] && [ -f public/index.html ] && [ -f public/submit-novel/form.js ]; then
+            node --check public/_worker.js
+            node --check public/submit-novel/form.js
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Source folders not uploaded yet; skipping public deployment."
+          fi
       - name: Check Cloudflare deployment credentials
         id: creds
         env:
@@ -70,7 +80,7 @@ jobs:
             echo "Cloudflare secrets are not configured; skipping deployment."
           fi
       - name: Deploy public backend-enabled Pages project
-        if: steps.creds.outputs.enabled == 'true'
+        if: steps.creds.outputs.enabled == 'true' && steps.source.outputs.ready == 'true'
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
