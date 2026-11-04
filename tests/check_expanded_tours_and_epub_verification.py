@@ -77,7 +77,7 @@ assert "review.has(item.fileKey)?review.get(item.fileKey):existing.has(item.file
 assert "if(!epubVerifyFileKey(row.object_key))continue" in worker
 assert "await ensureEpubVerificationBaseline(env);" in worker
 assert worker.count("await ensureEpubVerificationBaseline(env);")>=2
-assert "if(path==='/api/private/epub/review'" in worker
+assert "const memberReview=path==='/api/private/epub/review'" in worker
 assert "const memberReview=path==='/api/private/epub/review'" in worker
 assert "else if(!memberReview&&role!=='owner')" in worker
 assert "method==='POST'&&!sameOrigin(request)" in worker
