@@ -905,7 +905,7 @@ if(Number.isInteger(linkedNovelId)&&linkedNovelId>0){const linkedNovel=data.find
  const r=await fetch('/api/published/novels',{cache:'no-store'});if(!r.ok)return;
  const j=await r.json();let changed=false;
  for(const x of j.overrides||[]){const book=data.find(b=>b.id===x.id);if(!book||!x.patch)continue;
-  for(const field of ['tags','nuUrl','translatorUrl','translatorLinks','synopsis','translation','title','cover','coverRights','coverCredit','metadataReview','metadataSource']){
+  for(const field of ['tags','genres','nuUrl','translatorUrl','translatorLinks','synopsis','translation','title','cover','coverRights','coverCredit','metadataReview','metadataSource']){
    if(Object.prototype.hasOwnProperty.call(x.patch,field))book[field]=x.patch[field];
   }changed=true;
  }

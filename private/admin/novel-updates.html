@@ -2,7 +2,7 @@
 :root{font-family:system-ui;color:#263b33;background:#f8f6f0}body{margin:0}header{background:#263b33;color:white;padding:25px 5%}header a{color:#e5cfac}main{max-width:1100px;margin:auto;padding:24px}h1,h2{font-family:Georgia,serif;font-weight:400}.panel{background:white;border:1px solid #ddd;border-radius:12px;margin:15px 0;padding:20px}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}input,select,textarea,button{padding:10px;border-radius:6px;border:1px solid #b9c8bb;font:inherit}input[type=search]{flex:1}button{background:#315b47;color:white;cursor:pointer}button:disabled{opacity:.45}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px;border-bottom:1px solid #eee}a{color:#426e51}#status{white-space:pre-wrap}dialog{width:min(700px,92vw);border:1px solid #ccc;border-radius:12px}label{display:block;margin:12px 0 4px;font-weight:bold}dialog input,dialog textarea{width:100%;box-sizing:border-box}dialog textarea{min-height:100px}.muted{color:#697b70}
 .capture-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.capture-grid label{display:block;min-width:0}.capture-grid input,.capture-grid textarea{display:block;width:100%;margin-top:5px}.capture-grid .wide{grid-column:1/-1}.capture-grid textarea{min-height:105px}.bookmarklet{display:inline-block;padding:10px 15px;background:#375e4b;color:white!important;border-radius:7px;text-decoration:none;font-weight:700}.import-steps{line-height:1.7;margin:8px 0 15px;padding-left:22px}@media(max-width:650px){.capture-grid{grid-template-columns:1fr}.capture-grid .wide{grid-column:auto}}</style></head><body><header><a href="/admin/">← Editorial dashboard</a><h1>Novel Updates master catalogue</h1><p>Imported titles remain unpublished until you choose to publish them.</p></header>
 <main><section class="panel"><div class="controls"><p><b id="draft">…</b> unpublished</p><p><b id="published">…</b> published</p><p>Import position: <b id="cursor">…</b></p></div>
-<p class="muted">Changes to staged metadata are locked against future automatic overwrites.</p></section>
+<p class="muted">Changes to staged metadata are locked against future automatic overwrites.</p><p class="muted"><strong>Metadata source order:</strong> For books with an uploaded EPUB, open <a href="/admin/epub-insights.html">EPUB Insights</a> and retrieve the EPUB's existing description/tags first. For books without an EPUB, use Novel Updates as the next source. A reviewed source can fill missing fields on an existing catalogue novel, or you can publish a separate staged title.</p></section>
 <section class="panel" id="nu-browser-import">
 <h2>Import from a Novel Updates page you can open</h2>
 <p>The automated server request was blocked (403), so this option retrieves existing metadata directly from a series page you open in your own browser. No AI writing, login credentials or third-party cookies are collected. It does not bypass any access challenge.</p>
@@ -55,11 +55,28 @@ async function load(){
   if(item.state==='draft'){const cb=document.createElement('input');cb.type='checkbox';cb.className='selected';cb.dataset.slug=item.slug;cb.addEventListener('change',selectable);check.append(cb)}
   const b=document.createElement('b');b.textContent=item.title;title.append(b,document.createElement('br'));const a=document.createElement('a');a.href=item.nuUrl;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Novel Updates listing';title.append(a);
   author.textContent=item.author;state.textContent=item.state+(item.customLocked?' 🔒':'');
-  if(item.state==='draft'){const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.addEventListener('click',()=>openEdit(item.slug));actions.append(btn)}
+  if(item.state==='draft'){
+   const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.addEventListener('click',()=>openEdit(item.slug));actions.append(btn);
+   for(const [scope,label] of [['private','Fill private metadata'],['public','Publish metadata only']]){
+    const action=document.createElement('button');action.type='button';action.textContent=label;action.style.cssText='margin:4px;background:#f2e6b9;color:#4d442a;border:1px solid #d8c68f';
+    action.addEventListener('click',()=>applyExisting(item.slug,scope));actions.append(action);
+   }
+  }
   row.append(check,title,author,state,actions);body.append(row);
  }
  $('all').checked=false;$('publish').disabled=true;$('prev').disabled=offset===0;$('next').disabled=offset+items.length>=total;
  status('Select up to 20 titles to publish, or edit staged metadata.');
+ }catch(e){status(e.message)}
+}
+async function applyExisting(slug,scope){
+ const site=scope==='public'?'PUBLIC':'PRIVATE';
+ const message=scope==='private'?
+  'Fill missing private synopsis/tags for the original catalogue novel matching this exact Novel Updates URL? If an EPUB is linked, you must inspect it first.':
+  'Publish retrieved synopsis/tags for the original catalogue novel matching this exact Novel Updates URL? No private EPUB content or availability will be shared.';
+ if(!confirm(message))return;
+ try{
+  const result=await api('/api/admin/nu/apply-to-existing',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({slug,scope,confirmApply:true})});
+  status(result.message||site+' metadata applied.');await load();status(result.message||site+' metadata applied.');
  }catch(e){status(e.message)}
 }
 function openEdit(slug){const x=items.find(a=>a.slug===slug);if(!x)return;editSlug=slug;
