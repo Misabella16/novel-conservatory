@@ -1905,6 +1905,77 @@ async function epubInsightsRoutes(request,env,email,role){
    await audit(env,email,data.approved?'epub.insights.approve':'epub.insights.draft',id,edition);
    return editionJson({ok:true,draft:data,publicPublished:false});
   }
+  if(path==='/api/admin/epub-insights/publish-public'){
+   if(body.confirmPublish!==true)return editionJson({error:'Confirm public publication before continuing'},400);
+   if(!env.COMMUNITY_DB)return editionJson({error:'Shared public catalogue database unavailable'},503);
+   const saved=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(INSIGHT_KEY+id).first();
+   if(!saved)return editionJson({error:'No approved source metadata found for this novel'},404);
+   let draft;try{draft=JSON.parse(saved.value)}catch{return editionJson({error:'Stored review could not be read'},503)}
+   if(!draft.approved||Number(draft.novelId)!==id||!draft.reviewedBy)return editionJson({error:'An Editor must approve this novel before public publication'},409);
+   const details={};
+   if(typeof draft.synopsis==='string'&&draft.synopsis.trim())details.synopsis=insightTrim(draft.synopsis,2000);
+   if(Array.isArray(draft.tags)&&draft.tags.length)details.tags=insightList(draft.tags,24);
+   if(Array.isArray(draft.genres)&&draft.genres.length)details.genres=insightList(draft.genres,24);
+   if(!details.synopsis&&!details.tags?.length&&!details.genres?.length)return editionJson({error:'No approved source synopsis or tags to publish'},409);
+   details.metadataReview=true;
+   details.metadataSource=insightTrim(draft.source,160)||'Reviewed source metadata';
+   // Intentionally do not copy private EPUB keys, edition IDs, filenames or availability.
+   let changed=[];
+   if(id<=962){
+     const response=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',request.url)));
+     if(!response.ok)return editionJson({error:'Original catalogue is unavailable'},503);
+     const records=await response.json(),all=Array.isArray(records)?records:records.books||[];
+     const baseline=all.find(x=>Number(x.id)===id);
+     if(!baseline)return editionJson({error:'Original catalogue entry not found'},404);
+     let updated=false;
+     for(let attempt=0;attempt<3&&!updated;attempt++){
+       const row=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(id).first();
+       let prior={};try{prior=JSON.parse(row?.patch_json||'{}')}catch{}
+       const next={...prior};
+       // Never clobber previously published/editor-reviewed metadata. Only fill
+       // absent public values from a verified source draft, one field at a time.
+       const changes=[];
+       for(const field of ['synopsis','tags','genres']){
+         if(details[field]===undefined)continue;
+         const current=prior[field]!==undefined?prior[field]:baseline[field];
+         const hasValue=Array.isArray(current)?current.length>0:typeof current==='string'?!!current.trim():current!=null;
+         if(!hasValue){next[field]=details[field];changes.push(field)}
+       }
+       if(!changes.length)return editionJson({ok:true,novelId:id,publicPublished:false,skipped:true,message:'Public metadata already exists; no fields were overwritten.'});
+       next.metadataReview=true;next.metadataSource=details.metadataSource;
+       const val=JSON.stringify(next),old=row?.patch_json||'';
+       if(!row){
+         const result=await env.COMMUNITY_DB.prepare('INSERT INTO published_catalogue_overrides(novel_id,patch_json,source_entry_id,published_by) VALUES (?,?,?,?) ON CONFLICT DO NOTHING')
+           .bind(id,val,'epub-insights:'+id,email).run();
+         updated=(result.meta?.changes??0)>0;
+       }else{
+         const result=await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=?,updated_at=CURRENT_TIMESTAMP,published_by=? WHERE novel_id=? AND patch_json=?')
+           .bind(val,email,id,old).run();
+         updated=(result.meta?.changes??0)>0;
+       }
+       if(updated)changed=changes;
+     }
+     if(!updated)return editionJson({error:'Another Editor updated this entry. Refresh and try again.'},409);
+   }else{
+     const entry=await env.COMMUNITY_DB.prepare('SELECT payload_json,visibility FROM additional_catalogue_novels WHERE id=?').bind(id).first();
+     if(!entry)return editionJson({error:'Additional novel does not exist in shared catalogue'},404);
+     if(entry.visibility!=='published')return editionJson({error:'This additional novel is private. Publish its listing first in Add Novels; then publish approved metadata.'},409);
+     let old={};try{old=JSON.parse(entry.payload_json||'{}')}catch{}
+     const next={...old};
+     for(const field of ['synopsis','tags','genres']){
+       if(details[field]===undefined)continue;
+       const current=old[field],hasValue=Array.isArray(current)?current.length>0:typeof current==='string'?!!current.trim():current!=null;
+       if(!hasValue){next[field]=details[field];changed.push(field)}
+     }
+     if(!changed.length)return editionJson({ok:true,novelId:id,publicPublished:false,skipped:true,message:'Public metadata already exists; no fields were overwritten.'});
+     next.metadataReview=true;next.metadataSource=details.metadataSource;
+     const result=await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET payload_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND visibility='published' AND payload_json=?")
+       .bind(JSON.stringify(next),id,entry.payload_json).run();
+     if((result.meta?.changes??0)===0)return editionJson({error:'Another Editor updated this entry. Refresh and try again.'},409);
+   }
+   await audit(env,email,'epub-insights.public.publish',id,changed.join(','));
+   return editionJson({ok:true,novelId:id,publicPublished:true,fields:changed,message:'Published approved '+changed.join(', ')+' to the public catalogue. Private EPUBs were not shared.'});
+  }
   if(path==='/api/admin/epub-insights/apply'){
    if(body.confirmApply!==true)return editionJson({error:'Explicit approval required before applying private metadata'},400);
    const row=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(INSIGHT_KEY+id).first();
