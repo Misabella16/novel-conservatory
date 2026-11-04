@@ -1449,7 +1449,7 @@ async function communityDispatch(request,env,scope,identity){
 const SITE_COPY_FIELDS={
  homeEyebrow:100,homeHeadline:110,homeFlavor:350,storyTagsHeadline:100,
  storyTagsFlavor:320,browseHeadline:100,curatedHeadline:100,curatedFlavor:320,
- noticeText:320
+ noticeText:320,bannerKey:90
 };
 const SITE_DEFAULT={creator:'Momo',instagram:'',instagramLabel:'Message Momo on Instagram',
  homeEyebrow:'',homeHeadline:'',homeFlavor:'',storyTagsHeadline:'',storyTagsFlavor:'',
@@ -1512,6 +1512,28 @@ async function siteAdminRoute(request,env,email,role){
  if(role!=='owner')return siteOut({error:'Owner access required'},403);
  if(!env.COMMUNITY_DB)return siteOut({error:'Shared database unavailable'},503);
  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
+ if(path==='/api/admin/public-banner'&&method==='POST'){
+  if(request.headers.get('Origin')!==url.origin)return siteOut({error:'Wrong origin'},403);
+  if(!env.COMMUNITY_IMAGES)return siteOut({error:'Shared public image bucket unavailable'},503);
+  const form=await request.formData(),file=form.get('image');
+  if(!(file instanceof File)||!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size<80||file.size>2800000)
+   return siteOut({error:'Use JPG, PNG, or WebP under 2.8 MB'},400);
+  const bytes=await file.arrayBuffer(),b=new Uint8Array(bytes);
+  const good=file.type==='image/png'?b[0]===137&&b[1]===80&&b[2]===78&&b[3]===71:
+             file.type==='image/jpeg'?b[0]===255&&b[1]===216:
+             String.fromCharCode(...b.slice(0,4))==='RIFF'&&String.fromCharCode(...b.slice(8,12))==='WEBP';
+  if(!good)return siteOut({error:'File does not match its image format'},400);
+  const ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[file.type];
+  const key=crypto.randomUUID()+'.'+ext;
+  const old=await siteGet(env,'public');
+  await env.COMMUNITY_IMAGES.put('site-banners/'+key,bytes,{httpMetadata:{contentType:file.type}});
+  const next={...old,bannerKey:key};
+  try{
+   await env.COMMUNITY_DB.prepare('INSERT INTO conservatory_site_config(scope,config_json,updated_by) VALUES (?,?,?) ON CONFLICT(scope) DO UPDATE SET config_json=excluded.config_json,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP')
+    .bind('public',JSON.stringify(next),email).run();
+  }catch(e){await env.COMMUNITY_IMAGES.delete('site-banners/'+key);throw e}
+  return siteOut({ok:true,image:'/banner-media/'+key});
+ }
  if(path==='/api/admin/site-copy-from-private'&&method==='POST'){
   if(request.headers.get('Origin')!==url.origin)return siteOut({error:'Wrong origin'},403);
   if(!env.DB)return siteOut({error:'Private homepage unavailable'},503);
