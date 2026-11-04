@@ -74,7 +74,7 @@ const steps=[
   privateText:'Readers: open a novel → Reader reviews & suggestions → Suggested tags and submit comma-separated tags for review. Editors: Edit Site → Edit a novel → Tags → Save novel changes the official record.'},
  {title:'Other pages, help & sharing',target:'#library-main-nav',fallback:'#section-menu-toggle',action:'menu',
   publicText:'Translators lists credited translation sources; Submit NU link accepts missing Novel Updates series URLs; Suggestions & Questions sends feedback to the editor; About & Guide explains everything. Clear saved data removes local favorites only.',
-  privateText:'Friends’ shelves are shared lists; Submit EPUB sends an EPUB to the owner; ✓ Verify EPUBs lets members review file quality. Editing book metadata stays restricted to Editors and Owner.'},
+  privateText:'Friends’ shelves show shared lists. Open Submit EPUB for two tabs: Submit an EPUB (available to private members) and Add Novel Entry & EPUBs (Editors/Owner only). Editors can create catalogue entries and send EPUBs for owner review; only the Owner may attach files directly. ✓ Verify EPUBs lets private members review file quality.'},
  {title:'Ready to explore!',target:'#about-nav',fallback:'#discover-collections-preview',action:'discover',
   publicText:'You have toured the tabs, views, hover covers, filters, dropdowns and contributions. Replay anytime with “✦ Take a tour”; the intro will not automatically repeat after you finish or skip it.',
   privateText:'You have toured the private sections, Cover View, filters, EPUB verification and editing workflows. Use “✦ Take a tour” to replay; it will not automatically repeat on this device.'}

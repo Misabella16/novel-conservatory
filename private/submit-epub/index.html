@@ -15,9 +15,14 @@ button:disabled{opacity:.55;cursor:not-allowed}
 #status{font-size:13px;font-weight:650;min-height:26px}
 footer{margin-top:24px;font-size:12px;color:#6b786e}
 @media(max-width:550px){main{margin-top:22px}.panel{padding:18px}}
-</style></head><body><header><a href="/">← Novel Conservatory · Private Library</a></header>
+[hidden]{display:none!important}.submit-tabs{display:flex;flex-wrap:wrap;gap:9px;margin:17px 0}.submit-tabs button{border:1px solid #bdd0c1;background:#fffdf8;color:#345b47}.submit-tabs button[aria-selected=true]{background:#345e46;color:#fff}.editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 15px}#editor-panel select{font:inherit;padding:11px;width:100%;border:1px solid #bccbbd;border-radius:8px;background:white;color:#263e34}.editor-upload-box{background:#edf5e9;border:1px solid #cfddc9;padding:15px;border-radius:10px;margin:18px 0}.editor-upload-box progress{width:100%;margin-top:10px}.editor-more{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.editor-more a{font-size:12px;font-weight:700;border:1px solid #cbd9c9;border-radius:7px;padding:9px 12px;color:#365e48;text-decoration:none}.note{font-size:13px;line-height:1.5}.status-line{background:#eef5ea;border-radius:7px;padding:11px;font-size:13px;white-space:pre-wrap;margin-top:12px}.status-line.error{background:#ffede7;color:#8b372a}#editor-panel h3{font:500 20px Georgia,serif}@media(max-width:560px){.editor-grid{grid-template-columns:1fr}.submit-tabs{display:grid}.editor-more{flex-direction:column}}</style></head><body><header><a href="/">← Novel Conservatory · Private Library</a></header>
 <main><div style="font-size:11px;font-weight:800;color:#9b7545;letter-spacing:1.7px">MEMBERS-ONLY SUBMISSIONS</div><h1>Share an EPUB with the library</h1>
 <p>Found an edition missing from our shelves? Submit it privately for the owner's review. This is not a public upload, and submitting never gives other members permission to read the file.</p>
+<nav class="submit-tabs" role="tablist" aria-label="EPUB and novel workflows">
+<button id="tab-submit-epub" type="button" role="tab" aria-selected="true" aria-controls="submit-panel">📖 Submit an EPUB</button>
+<button id="tab-add-entry" type="button" role="tab" aria-selected="false" aria-controls="editor-panel" hidden>＋ Add Novel Entry &amp; EPUBs</button>
+</nav>
+<section id="submit-panel" role="tabpanel" aria-labelledby="tab-submit-epub">
 <div class="notice"><strong>Private &amp; unlisted.</strong> Cloudflare login is required. Your file goes into a separate review queue, not the public catalogue or the shared reading shelf. Maximum 15 MB.</div>
 <div class="panel">
 <form id="epub-form">
@@ -28,7 +33,54 @@ footer{margin-top:24px;font-size:12px;color:#6b786e}
 <label class="check" for="rights"><input id="rights" type="checkbox" required><span>I have the right or permission to share this file privately for review. I understand it will not be published or shared automatically.</span></label>
 <button id="send" type="submit">Submit EPUB privately</button><p id="status" role="status" aria-live="polite"></p>
 </form></div>
-<footer>The owner may review or reject the submission. If accepted, the owner will separately decide whether and how it is stored in the private library.</footer></main>
+</section>
+<section id="editor-panel" role="tabpanel" aria-labelledby="tab-add-entry" hidden>
+<div class="notice"><strong>Editors &amp; Owner.</strong> Add a new novel, or attach an EPUB to an existing book. Owners store files directly; Editors submit EPUBs for the owner's review. Publishing a book never publishes its EPUB.</div>
+<div class="panel">
+<h2>Add Novel Entry &amp; EPUBs</h2>
+<p class="note">One workflow for adding a novel and its translations, replacing the older overlapping importer shortcuts.</p>
+<form id="editor-form">
+<label for="entry-action">What are you adding?</label>
+<select id="entry-action"><option value="new">Create a new novel entry</option><option value="existing">Attach EPUBs to an existing novel</option></select>
+<div id="create-fields">
+<div class="editor-grid">
+<div><label for="entry-title">Novel title *</label><input id="entry-title" required maxlength="210"></div>
+<div><label for="entry-original">Original title</label><input id="entry-original" maxlength="210"></div>
+<div><label for="entry-author">Author</label><input id="entry-author" maxlength="140"></div>
+<div><label for="entry-translator">Translator / group</label><input id="entry-translator" maxlength="170"></div>
+<div><label for="entry-nu-url">Novel Updates link</label><input id="entry-nu-url" type="url" placeholder="https://www.novelupdates.com/series/..."></div>
+<div><label for="entry-translator-url">Translator website</label><input id="entry-translator-url" type="url" placeholder="https://..."></div>
+<div><label for="entry-translation">Translation status</label><select id="entry-translation"><option value="unconfirmed">Unconfirmed</option><option>ongoing</option><option>completed</option><option>incomplete</option><option>dropped</option><option>licensed</option><option>original</option></select></div>
+<div><label for="entry-genres">Genres (comma-separated)</label><input id="entry-genres"></div>
+</div>
+<label for="entry-tags">Story tags (comma-separated)</label><input id="entry-tags">
+<label for="entry-synopsis">Original synopsis (optional)</label><textarea id="entry-synopsis" maxlength="6000" placeholder="Paste existing authorized source metadata; leave blank if unavailable."></textarea>
+<label class="check" for="entry-publish"><input id="entry-publish" type="checkbox"> Publish catalogue metadata now, instead of saving a private draft</label>
+</div>
+<div id="existing-fields" hidden>
+<label for="entry-existing">Select existing novel title or ID *</label>
+<input id="entry-existing" list="entry-book-list" placeholder="#257 · Novel title" autocomplete="off">
+<datalist id="entry-book-list"></datalist>
+<p class="note">Search original CG novels or additional catalogue entries, then attach translation editions.</p>
+</div>
+<div class="editor-upload-box">
+<h3>EPUB edition (optional)</h3>
+<p class="note" id="entry-upload-hint">The Owner can attach files directly. Editors can send them to the private review queue.</p>
+<label for="entry-files">EPUB file(s)</label><input id="entry-files" type="file" accept=".epub,application/epub+zip" multiple>
+<div class="editor-grid">
+<div><label for="entry-edition-label">Edition label</label><input id="entry-edition-label" value="Translation edition" maxlength="100"></div>
+<div><label for="entry-edition-translator">EPUB translator</label><input id="entry-edition-translator" maxlength="130"></div>
+</div>
+<label class="check" for="entry-rights" id="entry-rights-label" hidden><input id="entry-rights" type="checkbox"> I confirm I have permission to submit these EPUB files privately for review. Files are not published or shared automatically.</label>
+<progress id="entry-progress" max="100" value="0" hidden></progress>
+</div>
+<button id="entry-submit" type="submit">Save novel entry</button>
+<div id="entry-status" class="status-line" role="status" aria-live="polite">Choose a workflow to begin.</div>
+</form>
+<div class="editor-more"><a href="/admin/add-novels.html">Advanced novel management</a><a href="/admin/editions.html" id="entry-bulk-link">Advanced bulk EPUB uploads (Owner)</a><a href="/admin/epub-submissions/" id="entry-review-link">Review EPUB submissions (Owner)</a></div>
+</div>
+</section>
+<footer>Member submissions remain private until reviewed. Catalogue metadata and EPUB files have separate publication and sharing permissions.</footer></main>
 <script>
 const $=id=>document.getElementById(id);
 const prefill=new URLSearchParams(location.search).get('book');
@@ -56,4 +108,4 @@ $('epub-form').addEventListener('submit',async event=>{
  }catch(e){status.textContent=e.message||'Could not upload. Please try again.'}
  finally{button.disabled=false}
 });
-</script></body></html>
+</script><script src="/submit-epub/editor.js" defer></script></body></html>
