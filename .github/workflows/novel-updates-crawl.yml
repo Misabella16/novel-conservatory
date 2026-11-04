@@ -1,0 +1,26 @@
+name: Retrieve authorized Novel Updates pages into private staging
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 9 * * *"
+permissions:
+  contents: read
+jobs:
+  retrieve:
+    if: vars.NU_CRAWL_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install HTML parser
+        run: python -m pip install 'beautifulsoup4>=4.12,<5'
+      - name: Retrieve directory pages and stage metadata
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          COMMUNITY_D1_DATABASE_ID: ${{ secrets.COMMUNITY_D1_DATABASE_ID }}
+          CLOUDFLARE_D1_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_API_TOKEN }}
+          NU_REQUEST_INTERVAL_SECONDS: '4'
+        run: python3 scripts/crawl_novelupdates.py --pages 3
