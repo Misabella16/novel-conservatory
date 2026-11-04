@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Submit a Novel Updates link | The Novel Conservatory</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}
+body{margin:0;background:#f7f3ea;color:#294536;font:15px/1.65 system-ui,-apple-system,sans-serif}
+a{color:#2e634b}header{background:#25483a;padding:25px clamp(18px,5vw,55px);color:#fcf9ed}header a{color:#dfebdb;font-weight:700;text-decoration:none}
+header strong{display:block;font:500 clamp(28px,5vw,46px)/1.15 Georgia,serif;margin-top:13px}header p{color:#e4ece1;max-width:760px;margin:10px 0 0}
+main{max-width:790px;margin:28px auto 64px;padding:0 16px}
+.card{background:#fffdfa;border:1px solid #d9decf;border-radius:14px;padding:25px;box-shadow:0 10px 30px #263e2a10}
+.note{font-size:13px;color:#657668}h2{font:500 24px Georgia,serif;margin:0 0 12px}
+label{font-weight:700;font-size:13px;display:block;margin:16px 0 7px}
+input,textarea{font:inherit;border:1px solid #bbcbbe;border-radius:8px;padding:11px;width:100%;background:white;color:#283f32}
+textarea{min-height:92px;resize:vertical}button{cursor:pointer;font:750 14px system-ui;background:#365f48;color:white;border:0;border-radius:8px;padding:12px 17px}
+button:disabled{opacity:.52;cursor:wait}
+.head{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:15px}
+.text-button{background:transparent;border:1px solid #bed0c3;color:#355743;font-size:12px;padding:9px 12px}
+#status{padding:10px 12px;min-height:40px;background:#eef5ec;border-radius:8px;font-size:13px}
+#status.error{background:#fff0e8;color:#7d3426}
+.honeypot{position:absolute;left:-10000px}
+#info-dialog{border:1px solid #c7d5c5;border-radius:15px;max-width:min(530px,calc(100vw - 28px));width:100%;padding:0;box-shadow:0 24px 70px #15251c60;color:#2b4636}
+#info-dialog::backdrop{background:#192b23a8}
+.modal-inner{padding:28px;background:#fffdf8}
+.modal-inner h2{font:500 clamp(25px,5vw,34px) Georgia,serif;margin:4px 0 12px}
+.modal-inner p{font-size:14px;color:#516757;line-height:1.7}
+.modal-inner ol{padding-left:22px;color:#405f4b;font-size:13px;line-height:1.8}
+.modal-foot{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:21px}
+.modal-foot label{display:flex;gap:8px;align-items:center;font-size:12px;font-weight:600;margin:0}
+.modal-foot input{width:auto;margin:0;accent-color:#426b51}
+footer{font-size:12px;color:#697869;margin-top:21px;text-align:center}
+@media(max-width:550px){main{margin:17px auto 40px}.card{padding:17px}.modal-inner{padding:21px}.modal-foot button{flex:1}}
+</style>
+</head><body>
+<header><a href="/">← Back to Discover</a><strong>Help grow the Conservatory</strong><p>Found a web novel on Novel Updates that belongs on our shelves? Send us the link. No synopsis or tags to type.</p></header>
+<main>
+<section class="card">
+<div class="head"><h2>Submit a Novel Updates link</h2><button id="explain" type="button" class="text-button" aria-haspopup="dialog">ⓘ How does this work?</button></div>
+<p class="note">The editor retrieves existing source information such as title, author, synopsis, genres and tags when Novel Updates makes it available. Nothing is AI-generated or published without review.</p>
+<form id="nu-form">
+<label for="nu-url">Novel Updates series URL *</label>
+<input required type="url" id="nu-url" name="nu_url" inputmode="url" autocomplete="url" spellcheck="false" placeholder="https://www.novelupdates.com/series/example-title/" aria-describedby="url-hint">
+<p class="note" id="url-hint">Paste an individual series page, not the Novel Updates homepage, a search result or a chapter link.</p>
+<label for="visitor">Your name (optional)</label><input id="visitor" maxlength="70" placeholder="Reader">
+<label for="reply">Email for clarification (optional)</label><input id="reply" type="email" maxlength="160" autocomplete="email" placeholder="Only the editor sees this">
+<label for="notes">Note for the editor (optional)</label><textarea id="notes" maxlength="1200" placeholder="Translation group, alternate title, or why this should be added"></textarea>
+<label class="honeypot" aria-hidden="true">Website<input id="website" tabindex="-1" autocomplete="off"></label>
+<div id="challenge" aria-label="Spam protection"></div>
+<p class="note" id="security-note">Checking submission availability…</p>
+<button id="send" type="submit" disabled>Submit link for review</button>
+<p id="status" role="status" aria-live="polite">Checking submission service…</p>
+</form></section>
+<footer>Already in the catalogue? You can still send a link for review. Duplicate pending links are detected automatically.</footer>
+</main>
+<dialog id="info-dialog" aria-labelledby="dialog-title">
+<div class="modal-inner">
+<div style="font:750 11px system-ui;letter-spacing:1.4px;color:#906c41">A LITTLE GUIDE</div>
+<h2 id="dialog-title">One link, fewer blank fields.</h2>
+<p>Paste the Novel Updates page for the novel. The link joins the Conservatory's <strong>private editorial review queue</strong>.</p>
+<ol>
+<li>You submit the series URL. No synopsis or tags are required.</li>
+<li>The editor attempts to retrieve the original Novel Updates title, description, genres and tags.</li>
+<li>If automated retrieval is blocked, the editor can use the existing authorized browser-assisted capture workflow.</li>
+<li>Only source metadata that was actually retrieved and reviewed can be published to the public catalogue.</li>
+</ol>
+<p><strong>Nothing is made up, and submissions aren't automatically published.</strong> You do not need an account to suggest a link.</p>
+<div class="modal-foot">
+<label><input type="checkbox" id="remember-explanation" checked> Don't show this introduction again on this device</label>
+<button id="start" type="button">Got it · Submit a link</button>
+</div></div>
+</dialog>
+<script src="/submit-novel-updates/form.js" defer></script>
+</body></html>

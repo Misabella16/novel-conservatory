@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>Reader-submitted Novel Updates Links | Editorial Review</title>
+<style>
+*{box-sizing:border-box}body{font:14px/1.6 system-ui,-apple-system,sans-serif;margin:0;background:#f5f2e9;color:#2b4536}header{background:#294738;padding:20px clamp(17px,4vw,42px)}a{color:#365d48}header a{color:#fff8e8;text-decoration:none;font-weight:700}
+main{max-width:1080px;margin:26px auto 70px;padding:0 16px}
+h1,h2{font-family:Georgia,serif;font-weight:500}h1{font-size:clamp(31px,5vw,46px);margin:4px 0 12px}h2{font-size:23px}
+p{color:#637369}p.lead{font-size:15px;max-width:850px}
+.notice{background:#eef5ea;border-left:4px solid #91a981;border-radius:8px;padding:13px 17px;font-size:13px}
+.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:22px 0}
+button,.button-link{background:#375b46;color:#fff;padding:10px 15px;border:0;border-radius:8px;font:700 12px system-ui;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center}
+button.alt,.button-link.alt{color:#365941;background:#e5eddf;border:1px solid #bacbbc}
+button.warn{background:#fff2e3;color:#83442c;border:1px solid #d7bba7}
+button:disabled{opacity:.55;cursor:wait}
+.item{background:#fffdf9;border:1px solid #deded0;border-radius:12px;margin:13px 0;padding:20px}
+.item-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:start}
+.item-head h2{margin:0 0 7px}
+.meta{font-size:12px;color:#687a6c;overflow-wrap:anywhere}
+.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.review{border:1px solid #d1dfce;background:#f7faf5;border-radius:8px;padding:16px;margin-top:14px}
+.review .row{margin:7px 0;word-break:break-word}
+.summary{white-space:pre-wrap;max-height:200px;overflow-y:auto;line-height:1.6;color:#365342;font-size:13px}
+.taglist{font-size:12px;color:#476c50}
+.small{font-size:12px;color:#657a68}
+#status{padding:10px 13px;background:#edf5ea;border-radius:8px;font-size:13px;min-height:34px}
+@media(max-width:550px){.item{padding:15px}.actions>*{flex:1;text-align:center;justify-content:center}.item-head{display:block}}
+</style>
+</head><body><header><a href="/admin/novel-updates.html">← Novel Updates staging</a></header>
+<main><div style="font-size:11px;color:#946c40;font-weight:800;letter-spacing:1.3px">OWNER REVIEW QUEUE</div>
+<h1>Reader-submitted Novel Updates links</h1>
+<p class="lead">Readers can submit only a URL. Retrieve its source details, check the original title, synopsis and tags, then save an unpublished draft for your approval. Nothing is published until you choose to publish it from Novel Updates staging.</p>
+<div class="notice"><strong>Source-only metadata.</strong> Direct retrieval may return 403 or 429. When that happens, open the original Novel Updates page and use the authorized browser capture workflow in <a href="/admin/novel-updates.html">Novel Updates staging</a>. No fabricated synopses or tags.</div>
+<div class="toolbar"><button type="button" id="refresh">↻ Refresh incoming links</button><a class="button-link alt" href="/admin/novel-updates.html">Open staging and publishing ↗</a></div>
+<p id="status" role="status" aria-live="polite">Checking editorial inbox…</p>
+<div id="results"></div>
+</main>
+<script src="/admin/novel-updates-submissions/review.js" defer></script>
+</body></html>
