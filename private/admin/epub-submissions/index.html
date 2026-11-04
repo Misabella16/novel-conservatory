@@ -1,0 +1,56 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>EPUB Submission Review | Novel Conservatory</title>
+<style>
+*{box-sizing:border-box}body{font:14px/1.6 system-ui,-apple-system,sans-serif;margin:0;background:#f6f1e8;color:#263d32}header{padding:18px 24px;background:#294739;color:#fff}header a{color:#fff;font-weight:650;text-decoration:none}main{max-width:1040px;margin:34px auto;padding:0 16px 50px}h1{font:500 clamp(30px,5vw,44px) Georgia,serif;margin:7px 0 9px}p{color:#66766a}.note{border-left:4px solid #c6a468;background:#fff9e7;padding:13px 17px;border-radius:8px;margin:20px 0}.list{display:grid;gap:12px}.item{background:#fffdf8;border:1px solid #dddccf;border-radius:11px;padding:17px}.meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.badge{background:#e6eddc;color:#3e6747;border-radius:14px;font:700 11px system-ui;padding:3px 9px}.actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:12px}button,.action-link{font:700 12px system-ui;border:1px solid #b6c7b5;border-radius:8px;background:#e8efe4;color:#2d533d;padding:10px 12px;cursor:pointer;text-decoration:none}button.danger{background:#f9e7e3;border-color:#ddb0a1;color:#883f39}button:disabled{opacity:.5;cursor:wait}.small{font-size:12px;color:#718175}#status{min-height:26px;font-weight:650}.details{font-size:13px;margin:8px 0;overflow-wrap:anywhere}
+@media(max-width:520px){main{margin-top:20px}.item{padding:14px}.actions>*{flex:1;text-align:center}}
+</style></head><body><header><a href="/admin/">← Private Editor</a></header><main><div style="font-weight:800;color:#976f44;letter-spacing:1.2px;font-size:11px">OWNER ONLY · PRIVATE FILE QUEUE</div><h1>EPUB submissions</h1><p>Review books offered by approved members. No submitted file is published, imported, linked to a novel, or shared automatically.</p>
+<div class="note"><strong>Review safely:</strong> Files are not scanned for malware. Download and inspect only files you trust. If you want to use an accepted EPUB, upload it separately using the existing private EPUB editor. Marking “Reviewed” does not give other readers file access.</div>
+<div class="actions"><button id="refresh" type="button">Refresh submissions</button><a class="action-link" href="/admin/add-novels.html">Open private EPUB uploader ↗</a></div>
+<p id="status" role="status" aria-live="polite">Loading submissions…</p><div id="list" class="list"></div>
+</main><script>
+const $=id=>document.getElementById(id);
+const htmlList=$('list'),status=$('status');
+function line(parent,label,value){
+ const p=document.createElement('div');p.className='details';
+ const b=document.createElement('strong');b.textContent=label+' ';
+ const span=document.createElement('span');span.textContent=value;
+ p.append(b,span);parent.appendChild(p);
+}
+async function api(url,opt){
+ const res=await fetch(url,{credentials:'same-origin',cache:'no-store',...opt});
+ const value=await res.json();if(!res.ok)throw Error(value.error||'Request failed');return value;
+}
+async function refresh(){
+ htmlList.replaceChildren();status.textContent='Loading private submissions…';
+ try{
+  const data=await api('/api/epub-submissions/list');
+  const items=data.items||[];
+  status.textContent=items.length+' submission'+(items.length===1?'':'s')+' in the private review queue.';
+  if(!items.length){htmlList.textContent='No EPUBs are awaiting review.';return}
+  for(const item of items){
+   const box=document.createElement('article');box.className='item';
+   const title=document.createElement('h2');title.textContent=item.title||'Untitled EPUB';title.style.cssText='font:500 23px Georgia,serif;margin:0 0 8px';
+   box.appendChild(title);
+   const tag=document.createElement('span');tag.className='badge';tag.textContent=item.status||'pending';box.appendChild(tag);
+   line(box,'From:',item.submitter||'Unknown');
+   line(box,'File:',(item.filename||'EPUB')+' · '+Math.round((item.size||0)/1024)+' KB');
+   if(item.novelId)line(box,'Novel ID:',String(item.novelId));
+   line(box,'Received:',item.createdAt?new Date(item.createdAt).toLocaleString():'Unknown');
+   if(item.notes)line(box,'Notes:',item.notes);
+   const actions=document.createElement('div');actions.className='actions';
+   const download=document.createElement('a');download.className='action-link';download.textContent='Download for review';download.href='/api/epub-submissions/download?id='+encodeURIComponent(item.id);download.rel='nofollow';actions.appendChild(download);
+   const reviewed=document.createElement('button');reviewed.textContent='Mark reviewed';reviewed.disabled=item.status==='reviewed';
+   reviewed.addEventListener('click',()=>decide(item.id,'reviewed',reviewed));actions.appendChild(reviewed);
+   const reject=document.createElement('button');reject.className='danger';reject.textContent='Reject & delete';
+   reject.addEventListener('click',()=>{if(confirm('Permanently delete this submitted EPUB and its review record?'))decide(item.id,'reject',reject)});actions.appendChild(reject);
+   box.appendChild(actions);htmlList.appendChild(box);
+  }
+ }catch(e){status.textContent=e.message;htmlList.textContent='The owner account must be signed in to view this queue.'}
+}
+async function decide(id,decision,button){
+ button.disabled=true;
+ try{await api('/api/epub-submissions/review',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,decision})});await refresh()}
+ catch(e){status.textContent=e.message;button.disabled=false}
+}
+$('refresh').addEventListener('click',refresh);
+refresh();
+</script></body></html>
