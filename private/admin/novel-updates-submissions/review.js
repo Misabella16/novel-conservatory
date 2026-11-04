@@ -103,6 +103,27 @@ async function fetchSource(item,url,panel,actions,trigger){
   panel.appendChild(p);
  }finally{trigger.disabled=false}
 }
+
+async function approveExistingLink(item,bookId,title,url,trigger){
+ if(!confirm('Approve this Novel Updates link for '+title+' (novel #'+bookId+')? This changes that book’s source URL, not its synopsis or tags.'))return;
+ trigger.disabled=true;
+ const send=async replaceExisting=>api('/api/admin/nu/apply-submitted-link',{
+  method:'POST',headers:{'content-type':'application/json'},
+  body:JSON.stringify({submissionId:item.id,confirm:true,replaceExisting})
+ });
+ try{
+  let result;
+  try{result=await send(false)}
+  catch(err){
+   if(!String(err.message||'').includes('already has a Novel Updates link'))throw err;
+   if(!confirm('This novel already has a Novel Updates link. Replace its existing link with the submitted one?'))return;
+   result=await send(true);
+  }
+  status.textContent='Approved the Novel Updates link for '+title+' (book #'+bookId+'). '+(result.privateSynced===false?'Public updated; private sync needs attention.':'The public and private catalogues are updated.');
+  await load();
+ }catch(err){status.textContent=err.message||'Could not approve the correction'}
+ finally{trigger.disabled=false}
+}
 async function load(){
  root.replaceChildren();status.textContent='Loading link suggestions…';
  try{
@@ -112,6 +133,8 @@ async function load(){
   if(!requests.length){root.textContent='No pending Novel Updates links right now.';return}
   for(const item of requests){
    const extracted=/^Novel Updates series:\s*(https:\/\/[^\s]+)/m.exec(String(item.message||''));
+   const bookMatch=/^Catalogue ID: ([1-9][0-9]*)\nCatalogue title: ([^\n]{1,180})/m.exec(String(item.message||''));
+   const bookId=bookMatch?Number(bookMatch[1]):null,bookTitle=bookMatch?bookMatch[2]:'';
    const url=escNU(extracted?.[1]);
    const card=document.createElement('article');card.className='item';
    const head=document.createElement('div');head.className='item-head';
@@ -123,9 +146,12 @@ async function load(){
    else{const p=document.createElement('p');p.textContent='This entry has an invalid series URL and cannot be retrieved.';card.appendChild(p)}
    const note=String(item.message||'').split('\nReader note: ')[1];
    if(note)details(card,'Reader note',note.slice(0,1200));
+   if(bookId)details(card,'Correction for existing novel','#'+bookId+' · '+bookTitle);
+   else details(card,'Request type','Suggest a new Novel Updates series');
    if(item.reply_to)details(card,'Reply email',item.reply_to);
    const actions=document.createElement('div');actions.className='actions';
    const panel=document.createElement('section');panel.className='review';panel.hidden=true;
+   if(url&&bookId)actions.appendChild(button('✓ Approve link for this novel',b=>approveExistingLink(item,bookId,bookTitle,url,b),''));
    if(url)actions.appendChild(button('Retrieve synopsis & tags',b=>fetchSource(item,url,panel,actions,b),''));
    actions.appendChild(button('Mark resolved',async b=>{
     if(!confirm('Mark this link suggestion as resolved? It will leave the pending queue, but will not automatically publish anything.'))return;
