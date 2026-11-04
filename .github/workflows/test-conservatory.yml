@@ -37,6 +37,8 @@ jobs:
         run: python tests/check_public_about_guide.py
       - name: Verify first-visit tours and exclude-tag filters
         run: python tests/check_onboarding_tours.py
+      - name: Verify private sign-out and public saved-data controls
+        run: python tests/check_signout_controls.py
       - name: Check migration SQL offline
         run: |
           python - <<'PY'
