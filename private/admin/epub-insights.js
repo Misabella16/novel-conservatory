@@ -43,7 +43,7 @@ async function choose(item){
  selected=item;source='not scanned';
  $('selected-title').textContent=item.filename;$('selected-detail').textContent='Novel #'+item.novelId+' • Private stored EPUB';
  $('editor').hidden=false;$('title').value='';$('synopsis').value='';$('tags').value='';$('genres').value='';$('warnings').value='';
- $('rights').checked=false;$('nu-url').value='';$('apply').disabled=true;$('nu-source-paste').value='';$('nu-source-result').textContent='';
+ $('rights').checked=false;$('nu-url').value='';$('apply').disabled=true;$('publish-public').disabled=true;$('nu-source-paste').value='';$('nu-source-result').textContent='';
  $('origin').textContent='No EPUB text inspected yet.';
  await load();
  try{
@@ -55,7 +55,7 @@ async function choose(item){
    $('warnings').value=(d.warnings||[]).join(', ');
    source=d.source||'saved review';
    $('origin').textContent=d.approved?'Previously approved draft for this edition':'Previously saved draft, not yet approved';
-   $('apply').disabled=!d.approved;
+   $('apply').disabled=!d.approved;$('publish-public').disabled=!d.approved;
   }
   setStatus('Ready to inspect this stored EPUB. Review changes before saving.');
  }catch(e){setStatus(e.message,true)}
@@ -108,10 +108,10 @@ $('lookup-nu').addEventListener('click',async()=>{
   if(!parsed.title||(!parsed.synopsis&&!parsed.tags.length&&!parsed.genres.length))
    throw Error('No confirmed Novel Updates title and metadata found. The page may be blocked or its layout may have changed.');
   if(parsed.title&&!$('title').value)$('title').value=parsed.title;
-  if(parsed.synopsis)$('synopsis').value=parsed.synopsis.slice(0,2000);
-  if(parsed.tags.length)$('tags').value=parsed.tags.join(', ');
-  if(parsed.genres.length)$('genres').value=parsed.genres.join(', ');
-  source='Novel Updates (retrieved '+new Date().toISOString().slice(0,10)+')';
+  if(parsed.synopsis&&!$('synopsis').value.trim())$('synopsis').value=parsed.synopsis.slice(0,2000);
+  if(parsed.tags.length&&!$('tags').value.trim())$('tags').value=parsed.tags.join(', ');
+  if(parsed.genres.length&&!$('genres').value.trim())$('genres').value=parsed.genres.join(', ');
+  source=source.includes('EPUB package')?'EPUB package; Novel Updates fallback':'Novel Updates (retrieved '+new Date().toISOString().slice(0,10)+')';
   $('origin').textContent='Source: '+address+' • Retrieved title: '+(parsed.title||'missing')+
    ' • Genres: '+parsed.genres.length+' • Tags: '+parsed.tags.length;
   $('nu-status').textContent='Retrieved from Novel Updates. Missing fields were left unchanged. Verify the title matches the selected EPUB.';
@@ -138,10 +138,10 @@ $('nu-source-apply').addEventListener('click',()=>{
   if(!synopsis&&!tags.length&&!genres.length)throw Error('No synopsis or tags were captured.');
   if(!confirm('Use the retrieved metadata for '+title+' on stored EPUB #'+selected.novelId+'? Confirm this is the SAME novel. Changes are not saved until you approve them.'))return;
   $('title').value=title.slice(0,210);
-  if(synopsis)$('synopsis').value=synopsis.slice(0,2000);
-  if(tags.length)$('tags').value=tags.join(', ');
-  if(genres.length)$('genres').value=genres.join(', ');
-  source='Novel Updates: '+url.origin+url.pathname;
+  if(synopsis&&!$('synopsis').value.trim())$('synopsis').value=synopsis.slice(0,2000);
+  if(tags.length&&!$('tags').value.trim())$('tags').value=tags.join(', ');
+  if(genres.length&&!$('genres').value.trim())$('genres').value=genres.join(', ');
+  source=source.includes('EPUB package')?'EPUB package; Novel Updates fallback':'Novel Updates: '+url.origin+url.pathname;
   $('origin').textContent='Retrieved source for '+title+': '+url.origin+url.pathname;
   $('nu-source-result').textContent='Retrieved fields filled for review. Choose Save as review draft, then Approve and Apply privately.';
   $('apply').disabled=true;
@@ -155,11 +155,20 @@ async function save(action){
   tags:unique($('tags').value),genres:unique($('genres').value),warnings:unique($('warnings').value),
   source,action,rightsConfirmed:action==='approve'&&$('rights').checked};
  try{await api('/api/admin/epub-insights/draft',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data)});
-  $('apply').disabled=action!=='approve';
+  $('apply').disabled=action!=='approve';$('publish-public').disabled=action!=='approve';
   setStatus(action==='approve'?'Approved and saved privately. Click Apply to update the private catalogue; the public catalogue will not change.':'Saved as an unapproved private draft. No public changes were made.');
  }catch(e){setStatus(e.message,true)}
 }
 $('save').addEventListener('click',()=>save('draft'));$('approve').addEventListener('click',()=>save('approve'));
+$('publish-public').addEventListener('click',async()=>{
+ if(!selected||$('publish-public').disabled)return;
+ if(!confirm('Publish this APPROVED synopsis, genres and tags to the PUBLIC catalogue for novel #'+selected.novelId+'? This does not publish or reveal any EPUB, and updates existing public metadata.'))return;
+ const button=$('publish-public');button.disabled=true;
+ try{
+  const result=await api('/api/admin/epub-insights/publish-public',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({novelId:selected.novelId,confirmPublish:true})});
+  setStatus(result.message||'Approved metadata published to public catalogue. No private EPUB files were shared.');
+ }catch(e){setStatus(e.message,true)}finally{button.disabled=false}
+});
 $('apply').addEventListener('click',async()=>{
  if(!selected||$('apply').disabled)return;
  if(!confirm('Apply the approved synopsis and tags to the PRIVATE entry for novel #'+selected.novelId+'? This overwrites existing private values for those fields but does not publish anything.'))return;
