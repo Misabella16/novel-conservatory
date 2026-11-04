@@ -1831,6 +1831,41 @@ async function epubInsightsRoutes(request,env,email,role){
    await audit(env,email,data.approved?'epub.insights.approve':'epub.insights.draft',id,edition);
    return editionJson({ok:true,draft:data,publicPublished:false});
   }
+  if(path==='/api/admin/epub-insights/apply'){
+   if(body.confirmApply!==true)return editionJson({error:'Explicit approval required before applying private metadata'},400);
+   const row=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(INSIGHT_KEY+id).first();
+   if(!row)return editionJson({error:'No saved metadata draft for this novel'},404);
+   let approved;try{approved=JSON.parse(row.value)}catch{return editionJson({error:'Draft could not be read'},500)}
+   if(!approved.approved||approved.novelId!==id)return editionJson({error:'Review and approve this exact novel first'},409);
+   const patch={metadataReview:true,metadataSource:insightTrim(approved.source,80)||'Reviewed source metadata'};
+   if(approved.synopsis)patch.synopsis=approved.synopsis;
+   if(Array.isArray(approved.tags)&&approved.tags.length)patch.tags=insightList(approved.tags);
+   if(Array.isArray(approved.genres)&&approved.genres.length)patch.genres=insightList(approved.genres,15);
+   if(!patch.synopsis&&!patch.tags?.length&&!patch.genres?.length)return editionJson({error:'No approved fields to apply'},409);
+   if(id<=962){
+    // The original 962 series store private overrides here; this does not
+    // alter public catalogue overrides or EPUB contents.
+    const previous=await env.DB.prepare('SELECT patch FROM novel_edits WHERE id=?').bind(id).first();
+    let old={};try{old=JSON.parse(previous?.patch||'{}')}catch{}
+    const next={...old};
+    if(patch.synopsis)next.synopsis=patch.synopsis;
+    if(patch.tags?.length)next.tags=patch.tags;
+    next.metadataReview=true;next.metadataSource=patch.metadataSource;
+    await env.DB.prepare('INSERT INTO novel_edits(id,patch) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET patch=excluded.patch,updated_at=CURRENT_TIMESTAMP')
+     .bind(id,JSON.stringify(next)).run();
+   }else{
+    if(!env.COMMUNITY_DB)return editionJson({error:'Shared catalogue database is unavailable'},503);
+    const additional=await env.COMMUNITY_DB.prepare('SELECT title,payload_json,visibility FROM additional_catalogue_novels WHERE id=?').bind(id).first();
+    if(!additional)return editionJson({error:'Additional novel was not found'},404);
+    if(additional.visibility!=='private')return editionJson({error:'This novel is already published. Use the live catalogue editor to update public metadata instead.'},409);
+    const prior=JSON.parse(additional.payload_json||'{}');
+    const merged=extraPayload({...prior,...patch});
+    await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET payload_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND visibility='private'")
+      .bind(JSON.stringify(merged),id).run();
+   }
+   await audit(env,email,'epub.metadata.apply-private',id,approved.editionId||'');
+   return editionJson({ok:true,novelId:id,scope:'private',message:'Approved metadata applied privately. Public metadata unchanged.'});
+  }
   return editionJson({error:'Not found'},404);
  }catch(e){return editionJson({error:insightTrim(e?.message||'Private EPUB analysis unavailable',200)},500)}
 }
