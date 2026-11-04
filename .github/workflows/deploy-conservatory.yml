@@ -1,0 +1,61 @@
+name: Deploy Novel Conservatory from GitHub
+on:
+  push:
+    branches: [main]
+    paths:
+      - "source_bundle.b64"
+      - ".github/workflows/deploy-conservatory.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conservatory-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Cloudflare credentials
+        id: ready
+        env:
+          CF_API: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CF_API" ] && [ -n "$CF_ACCOUNT" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Deployment skipped. Configure both Cloudflare Actions secrets."
+          fi
+
+      - name: Unpack trusted Conservatory source
+        if: steps.ready.outputs.enabled == 'true'
+        run: |
+          mkdir -p build
+          base64 --decode source_bundle.b64 > /tmp/conservatory-source.zip
+          unzip -q /tmp/conservatory-source.zip -d build/
+          test -f build/private/_worker.js
+          test -f build/private/index.html
+          test -f build/public/_worker.js
+          test -f build/public/index.html
+
+      - name: Deploy private Cloudflare Pages
+        if: steps.ready.outputs.enabled == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy build/private --project-name=novel-conservatory --branch=main
+
+      - name: Deploy backend-enabled public Cloudflare Pages
+        if: steps.ready.outputs.enabled == 'true' && vars.PUBLIC_PAGES_PROJECT != ''
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy build/public --project-name=${{ vars.PUBLIC_PAGES_PROJECT }} --branch=main
