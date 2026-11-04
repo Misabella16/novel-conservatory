@@ -7,10 +7,10 @@ function captureNovelUpdates(){
  const get=(selectors)=>{for(const q of selectors){const e=document.querySelector(q);if(e){const v=(e.innerText||e.textContent||"").trim();if(v)return v}}return""};
  const list=(selectors)=>{const out=[];for(const q of selectors){for(const el of document.querySelectorAll(q)){const v=(el.innerText||el.textContent||"").trim().replace(/\s+/g," ");if(v&&v.length<=100&&!out.includes(v))out.push(v)}}return out.slice(0,35)};
  const url="https://www.novelupdates.com/series/"+match[1].toLowerCase()+"/";
- const title=get([".seriestitlenu","#edit-title",".series-title"]);
- const synopsis=get(["#editdescription","#seriesdescription",".series-description","#showdescription",".seriesdescription"]);
- const author=get(["#showauthors","#seriesauthors",".author-content"]);
- const originalTitle=get(["#editassociated","#seriesothernames","#showassociated","#seriesassociated"]);
+ const title=get([".seriestitlenu","#edit-title",".series-title"]).slice(0,210);
+ const synopsis=get(["#editdescription","#seriesdescription",".series-description","#showdescription",".seriesdescription"]).slice(0,6000);
+ const author=get(["#showauthors","#seriesauthors",".author-content"]).slice(0,140);
+ const originalTitle=get(["#editassociated","#seriesothernames","#showassociated","#seriesassociated"]).slice(0,210);
  const genres=list(["#seriesgenre a","#showgenres a",".seriesgenre a"]);
  const tags=list(["#showtags a","#seriestags a",".seriestags a"]);
  const cover=document.querySelector("#seriesimg img,.seriesimg img,.series-image img");
