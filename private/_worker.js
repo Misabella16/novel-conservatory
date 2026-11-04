@@ -1450,9 +1450,9 @@ async function communityDispatch(request,env,scope,identity){
 const SITE_COPY_FIELDS={
  homeEyebrow:100,homeHeadline:110,homeFlavor:350,storyTagsHeadline:100,
  storyTagsFlavor:320,browseHeadline:100,curatedHeadline:100,curatedFlavor:320,
- noticeText:320,bannerKey:90
+ noticeText:320
 };
-const SITE_DEFAULT={creator:'Momo',instagram:'',instagramLabel:'Message Momo on Instagram',
+const SITE_DEFAULT={creator:'Momo',instagram:'',instagramLabel:'Message Momo on Instagram',publicBannerKey:'',publicBannerX:50,publicBannerY:50,
  homeEyebrow:'',homeHeadline:'',homeFlavor:'',storyTagsHeadline:'',storyTagsFlavor:'',
  browseHeadline:'',curatedHeadline:'',curatedFlavor:'',noticeText:''};
 const siteOut=(obj,status=200)=>new Response(JSON.stringify(obj),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer'}});
@@ -1473,6 +1473,10 @@ function siteClean(raw){
  if(insta===null)return null;
  const result={...SITE_DEFAULT,instagram:insta,instagramLabel:siteTrim(raw.instagramLabel,70)||SITE_DEFAULT.instagramLabel};
  for(const [key,len] of Object.entries(SITE_COPY_FIELDS))result[key]=siteTrim(raw[key],len);
+ const key=String(raw.publicBannerKey||'');
+ result.publicBannerKey=/^[a-f0-9-]{36}\.(?:png|jpg|webp)$/.test(key)?key:'';
+ result.publicBannerX=Number.isFinite(Number(raw.publicBannerX))?Math.max(0,Math.min(100,Math.round(Number(raw.publicBannerX)))):50;
+ result.publicBannerY=Number.isFinite(Number(raw.publicBannerY))?Math.max(0,Math.min(100,Math.round(Number(raw.publicBannerY)))):50;
  return result;
 }
 async function siteGet(env,scope){
@@ -1513,61 +1517,33 @@ async function siteAdminRoute(request,env,email,role){
  if(role!=='owner')return siteOut({error:'Owner access required'},403);
  if(!env.COMMUNITY_DB)return siteOut({error:'Shared database unavailable'},503);
  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
- if(path==='/api/admin/public-banner-copy'&&method==='POST'){
-  if(request.headers.get('Origin')!==url.origin)return siteOut({error:'Wrong origin'},403);
-  if(!env.DB||!env.IMAGES||!env.COMMUNITY_IMAGES)return siteOut({error:'Required private and shared storage not connected'},503);
-  const row=await env.DB.prepare("SELECT value FROM site_settings WHERE key='homepage'").first();
-  let home={};try{home=JSON.parse(row?.value||'{}')}catch{return siteOut({error:'Invalid private homepage'},503)}
-  const match=/^\/media\/([a-f0-9-]{36}\.(?:png|jpg|jpeg|webp))$/.exec(home.heroImage||'');
-  if(!match)return siteOut({error:'Private banner is not a stored image. Upload an image below instead.'},400);
-  const file=await env.IMAGES.get(match[1]);
-  if(!file)return siteOut({error:'Private banner file could not be found'},404);
-  const contentType=file.httpMetadata?.contentType||'';
-  if(!['image/png','image/jpeg','image/webp'].includes(contentType))return siteOut({error:'Unsupported banner image type'},400);
-  if(file.size<80||file.size>2800000)return siteOut({error:'Banner exceeds 2.8 MB; use upload instead'},400);
-  const ext=contentType==='image/png'?'png':contentType==='image/webp'?'webp':'jpg';
-  const key=crypto.randomUUID()+'.'+ext;
-  await env.COMMUNITY_IMAGES.put('site-banners/'+key,file.body,{httpMetadata:{contentType}});
-  const old=await siteGet(env,'public'),next={...old,bannerKey:key};
-  try{
-   await env.COMMUNITY_DB.prepare('INSERT INTO conservatory_site_config(scope,config_json,updated_by) VALUES (?,?,?) ON CONFLICT(scope) DO UPDATE SET config_json=excluded.config_json,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP')
-    .bind('public',JSON.stringify(next),email).run();
-  }catch(e){await env.COMMUNITY_IMAGES.delete('site-banners/'+key);throw e}
-  return siteOut({ok:true,image:'/banner-media/'+key});
+ if(path==='/api/admin/public-banner-preview'){
+  if(method!=='GET')return siteOut({error:'Method not allowed'},405);
+  if(!env.COMMUNITY_IMAGES)return siteOut({error:'Artwork storage unavailable'},503);
+  const key=String(url.searchParams.get('key')||'');
+  if(!/^[a-f0-9-]{36}\.(?:png|jpg|webp)$/.test(key))return siteOut({error:'Invalid image key'},400);
+  const image=await env.COMMUNITY_IMAGES.get('public-banners/'+key);
+  if(!image)return siteOut({error:'Image not found'},404);
+  return new Response(image.body,{headers:{'content-type':image.httpMetadata?.contentType||'application/octet-stream','cache-control':'private,no-store','x-content-type-options':'nosniff'}});
  }
- if(path==='/api/admin/public-banner'&&method==='POST'){
+ if(path==='/api/admin/public-banner'){
+  if(method!=='POST')return siteOut({error:'Method not allowed'},405);
   if(request.headers.get('Origin')!==url.origin)return siteOut({error:'Wrong origin'},403);
-  if(!env.COMMUNITY_IMAGES)return siteOut({error:'Shared public image bucket unavailable'},503);
-  const form=await request.formData(),file=form.get('image');
-  if(!(file instanceof File)||!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size<80||file.size>2800000)
-   return siteOut({error:'Use JPG, PNG, or WebP under 2.8 MB'},400);
-  const bytes=await file.arrayBuffer(),b=new Uint8Array(bytes);
-  const good=file.type==='image/png'?b[0]===137&&b[1]===80&&b[2]===78&&b[3]===71:
-             file.type==='image/jpeg'?b[0]===255&&b[1]===216:
-             String.fromCharCode(...b.slice(0,4))==='RIFF'&&String.fromCharCode(...b.slice(8,12))==='WEBP';
-  if(!good)return siteOut({error:'File does not match its image format'},400);
-  const ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[file.type];
+  if(!env.COMMUNITY_IMAGES)return siteOut({error:'Shared artwork storage unavailable'},503);
+  const ct=(request.headers.get('content-type')||'').split(';')[0].trim();
+  const ext=({'image/png':'png','image/jpeg':'jpg','image/webp':'webp'})[ct];
+  if(!ext)return siteOut({error:'Choose a PNG, JPG or WebP image'},415);
+  if(Number(request.headers.get('content-length')||0)>3000000)return siteOut({error:'Maximum 3 MB'},413);
+  const bytes=await request.arrayBuffer();
+  if(bytes.byteLength<90||bytes.byteLength>3000000)return siteOut({error:'Image must be 90 bytes to 3 MB'},413);
+  const b=new Uint8Array(bytes);
+  const valid=ext==='png'?(b[0]===137&&b[1]===80&&b[2]===78&&b[3]===71&&b[4]===13&&b[5]===10&&b[6]===26&&b[7]===10):
+   ext==='jpg'?(b[0]===255&&b[1]===216&&b[b.length-2]===255&&b[b.length-1]===217):
+   (String.fromCharCode(...b.slice(0,4))==='RIFF'&&String.fromCharCode(...b.slice(8,12))==='WEBP');
+  if(!valid)return siteOut({error:'Image format check failed'},415);
   const key=crypto.randomUUID()+'.'+ext;
-  const old=await siteGet(env,'public');
-  await env.COMMUNITY_IMAGES.put('site-banners/'+key,bytes,{httpMetadata:{contentType:file.type}});
-  const next={...old,bannerKey:key};
-  try{
-   await env.COMMUNITY_DB.prepare('INSERT INTO conservatory_site_config(scope,config_json,updated_by) VALUES (?,?,?) ON CONFLICT(scope) DO UPDATE SET config_json=excluded.config_json,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP')
-    .bind('public',JSON.stringify(next),email).run();
-  }catch(e){await env.COMMUNITY_IMAGES.delete('site-banners/'+key);throw e}
-  return siteOut({ok:true,image:'/banner-media/'+key});
- }
- if(path==='/api/admin/site-copy-from-private'&&method==='POST'){
-  if(request.headers.get('Origin')!==url.origin)return siteOut({error:'Wrong origin'},403);
-  if(!env.DB)return siteOut({error:'Private homepage unavailable'},503);
-  const current=await env.DB.prepare("SELECT value FROM site_settings WHERE key='homepage'").first();
-  let home={};try{home=JSON.parse(current?.value||'{}')}catch{return siteOut({error:'Invalid homepage settings'},503)}
-  const original=await siteGet(env,'public');
-  const next={...original,homeHeadline:siteTrim(home.heroTitle||'Stories worth getting lost in.',110),
-   homeFlavor:siteTrim(home.heroDescription||'Discover stories worth getting lost in.',350)};
-  await env.COMMUNITY_DB.prepare('INSERT INTO conservatory_site_config(scope,config_json,updated_by) VALUES (?,?,?) ON CONFLICT(scope) DO UPDATE SET config_json=excluded.config_json,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP')
-    .bind('public',JSON.stringify(next),email).run();
-  return siteOut({ok:true,settings:next,note:'Public headline and description synced. Upload/publish the banner image separately; private images are not exposed.'});
+  await env.COMMUNITY_IMAGES.put('public-banners/'+key,bytes,{httpMetadata:{contentType:ct}});
+  return siteOut({ok:true,key,url:'https://'+url.host+'/banner-media/'+key});
  }
  if(path==='/api/admin/site-config'){
   if(method==='GET'){
