@@ -322,7 +322,23 @@ async function publicNovelUpdatesLinkSubmit(request,env){
   if(!await communityVerifyTurnstile(request,env,siteTrim(input.turnstile,1800)))
    return siteOut({error:'Complete the verification challenge and try again'},403);
  }catch{return siteOut({error:'Security check temporarily unavailable'},503)}
- const subject='Novel Updates link: '+link.slug.slice(0,95);
+ let novelId=null,linkedTitle='';
+ if(input.novelId!==null&&input.novelId!==undefined&&input.novelId!==''){
+  const candidate=Number(input.novelId);
+  if(!Number.isSafeInteger(candidate)||candidate<1)return siteOut({error:'Invalid catalogue ID'},400);
+  if(candidate<=962){
+   const seed=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',url.origin)));
+   if(!seed.ok)return siteOut({error:'Cannot verify the catalogue entry right now'},503);
+   const data=await seed.json(),record=(Array.isArray(data)?data:data.books||[]).find(x=>x.id===candidate);
+   if(!record)return siteOut({error:'Novel not found in the public catalogue'},404);
+   novelId=candidate;linkedTitle=String(record.title||'').slice(0,180);
+  }else{
+   const record=await env.COMMUNITY_DB.prepare("SELECT title FROM additional_catalogue_novels WHERE id=? AND visibility='published'").bind(candidate).first();
+   if(!record)return siteOut({error:'Novel not found in the public catalogue'},404);
+   novelId=candidate;linkedTitle=String(record.title||'').slice(0,180);
+  }
+ }
+ const subject='Novel Updates link: '+link.slug.slice(0,95)+(novelId?' · Book #'+novelId:'');
  try{
   // Do not flood the owner inbox with repeated pending submissions of one series.
   const exists=await env.COMMUNITY_DB.prepare(
@@ -330,11 +346,11 @@ async function publicNovelUpdatesLinkSubmit(request,env){
   ).bind(subject).first();
   if(exists)return siteOut({ok:true,status:'already_submitted',message:'This Novel Updates link is already waiting for editorial review.'});
   const id=crypto.randomUUID();
-  const message='Novel Updates series: '+link.url+(note?'\nReader note: '+note:'');
+  const message='Novel Updates series: '+link.url+(novelId?'\nCatalogue ID: '+novelId+'\nCatalogue title: '+linkedTitle:'')+(note?'\nReader note: '+note:'');
   await env.COMMUNITY_DB.prepare(
    'INSERT INTO conservatory_site_feedback(id,scope,kind,display_name,reply_to,subject,message,status,member_email) VALUES(?,?,?,?,?,?,?,?,?)'
   ).bind(id,'public','suggestion',displayName,replyTo,subject,message,'pending','').run();
-  return siteOut({ok:true,id,status:'pending',message:'Link received. The editor will retrieve source metadata, review and publish it when approved.'},201);
+  return siteOut({ok:true,id,status:'pending',message:novelId?'Link submitted for review of novel #'+novelId+'. No changes are published yet.':'Link received. An editor will review the source information before publication.'},201);
  }catch{return siteOut({error:'Could not save your Novel Updates link. Try again later.'},503)}
 }
 
