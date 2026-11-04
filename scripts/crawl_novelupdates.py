@@ -39,7 +39,7 @@ def get(url):
     if len(body)>1_500_000:raise RuntimeError("Page exceeds 1.5 MB limit")
     soup=BeautifulSoup(body,"html.parser")
     raw=soup.get_text(" ",strip=True).lower()
-    if any(x in raw[:7000] for x in ("attention required! | cloudflare","checking your browser before accessing","verify you are human","access denied | cloudflare")):
+    if any(x in raw[:7000] for x in ("attention required! | cloudflare","checking your browser before accessing","verify you are human","access denied | cloudflare","just a moment...","enable javascript and cookies to continue")):
         raise RuntimeError("Novel Updates challenge page detected; stopping without bypass")
     return soup
 
@@ -73,7 +73,7 @@ def listing_links(soup):
         if href and href not in found:found.append(href)
     return found
 def info(soup,url):
-    title=first_text(soup,[".seriestitlenu","#edit-title",".series-title","h1"])
+    title=first_text(soup,[".seriestitlenu","#edit-title",".series-title"])
     synopsis=first_text(soup,["#editdescription","#seriesdescription",".series-description","#showdescription",".seriesdescription"])
     author=first_text(soup,["#showauthors","#seriesauthors",".author-content"])
     genres=terms(soup,["#seriesgenre a","#showgenres a",".seriesgenre a"])
@@ -87,7 +87,7 @@ def info(soup,url):
             candidate=urllib.parse.urljoin(ORIGIN,candidate)
             if candidate.startswith("https://"):cover=candidate[:900]
             break
-    if len(title)<2:raise RuntimeError("No series title found: unexpected page shape")
+    if len(title)<2:raise RuntimeError("No confirmed Novel Updates series title found; refusing to stage this page")
     return {"title":title[:210],"author":author[:140],"synopsis":synopsis[:6000],"genres":genres,
         "tags":tags,"originalTitle":originals[:210],"coverUrl":cover,"nuUrl":url}
 SQL = """INSERT INTO nu_staged_series(slug,nu_url,title,author,payload_json,cover_url,source_hash)
