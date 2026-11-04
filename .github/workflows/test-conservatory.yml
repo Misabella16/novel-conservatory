@@ -1,0 +1,44 @@
+name: Validate Conservatory source and metadata imports
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check JavaScript syntax
+        run: |
+          node --check private/_worker.js
+          node --check public/_worker.js
+          node --check private/admin/epub-insights.js
+          node --check private/admin/epub-metadata.js
+          node --check private/admin/add-novels.js
+      - name: Check Python syntax and parse source-only retrieval
+        run: |
+          python -m pip install 'beautifulsoup4>=4.12,<5'
+          python -m py_compile scripts/import_novelupdates.py scripts/crawl_novelupdates.py
+          python -m unittest discover -s tests -p 'test_nu_importer.py' -v
+      - name: Check migration SQL offline
+        run: |
+          python - <<'PY'
+          import sqlite3
+          from pathlib import Path
+          db=sqlite3.connect(":memory:")
+          source=Path("database/NU_STAGING_MIGRATION.sql").read_text()
+          db.executescript(source)
+          db.execute("INSERT INTO nu_staged_series(slug,nu_url,title,payload_json) VALUES (?,?,?,?)",
+              ("book","https://www.novelupdates.com/series/book/","Book","{}"))
+          assert db.execute("SELECT state FROM nu_staged_series WHERE slug='book'").fetchone()[0]=="draft"
+          assert db.execute("SELECT next_page FROM nu_import_progress").fetchone()[0]==1
+          print("Migration, defaults and staging schema: OK")
+          PY
