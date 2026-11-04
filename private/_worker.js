@@ -327,6 +327,7 @@ async function routes(request,env,ctx,email,role){
   const method=request.method.toUpperCase();
   // Both the owner and explicitly approved friends may read EPUBs after the
   // owner enables sharing. All uploads, edits and bulk inventory remain owner-only.
+  if(path.startsWith('/api/epub-submissions/'))return privateEpubSubmissionRoutes(request,env,email,role);
   if(path.startsWith('/api/admin/nu/'))return nuAdminRoutes(request,env,email,role);
   if(path.startsWith('/api/admin/epub-insights/'))return epubInsightsRoutes(request,env,email,role);
   if(path.startsWith('/api/additional/')||path.startsWith('/api/admin/additional/'))return additionalRoutes(request,env,'private',email,role);
@@ -345,23 +346,24 @@ async function routes(request,env,ctx,email,role){
     if(!env.DB)return respond({error:'EPUB inventory database is unavailable'},503);
     try{
       const [editions,legacy]=await Promise.all([
-        env.DB.prepare("SELECT novel_id AS id FROM epub_editions UNION SELECT novel_id AS id FROM additional_epub_editions").all(),
+        env.DB.prepare("SELECT novel_id AS id FROM epub_editions UNION ALL SELECT novel_id AS id FROM additional_epub_editions").all(),
         env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-epub:%'").all()
       ]);
       const linked=new Set();
+      let uploadCount=0;
       for(const row of editions.results||[]){
         const id=Number(row.id);
-        if(Number.isSafeInteger(id)&&id>0)linked.add(id);
+        if(Number.isSafeInteger(id)&&id>0){linked.add(id);uploadCount++}
       }
       for(const row of legacy.results||[]){
         const match=/^private-epub:([1-9][0-9]*)$/.exec(row.key||'');
         if(!match||Number(match[1])>962)continue;
         try{
           const meta=JSON.parse(row.value||'{}');
-          if(/^private-epubs\/[0-9a-f-]{36}\.epub$/.test(meta.key||''))linked.add(Number(match[1]));
+          if(/^private-epubs\/[0-9a-f-]{36}\.epub$/.test(meta.key||'')){linked.add(Number(match[1]));uploadCount++}
         }catch{}
       }
-      return respond({ids:[...linked].sort((a,b)=>a-b),complete:true});
+      return respond({ids:[...linked].sort((a,b)=>a-b),uploadCount,complete:true});
     }catch{return respond({error:'EPUB inventory could not be loaded'},503)}
   }
   if(path.startsWith('/api/private/epub/')){
@@ -1116,6 +1118,96 @@ async function liveCatalogueEditorRoute(request,env,email,role){
   privateSynced=true;
  }catch{}
  return respond({ok:true,id:bookId,publicPublished:true,privateSynced});
+}
+
+
+// Secure, quarantined EPUB donation inbox. This is private-only and NEVER
+// copied to the public Worker or auto-attached to published book records.
+async function privateEpubSubmissionRoutes(request,env,email,role){
+ const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
+ if(!env.DB||!env.IMAGES)return respond({error:'Private EPUB intake is not configured'},503);
+ const id=String(url.searchParams.get('id')||'');
+ const validId=/^[a-f0-9-]{36}$/.test(id);
+ const setting=id=>'epub-submission:'+id;
+ const owner=role==='owner';
+ if(method==='POST'&&request.headers.get('origin')!==new URL(request.url).origin)return respond({error:'Wrong origin'},403);
+ try{
+  if(path==='/api/epub-submissions/upload'&&method==='POST'){
+   const length=Number(request.headers.get('content-length')||0);
+   const limit=15*1024*1024;
+   if(length>limit)return respond({error:'EPUB submissions must be 15 MB or smaller'},413);
+   const type=(request.headers.get('content-type')||'').split(';')[0].toLowerCase().trim();
+   if(!['application/epub+zip','application/octet-stream','application/zip'].includes(type))return respond({error:'Choose an EPUB file'},415);
+   if(request.headers.get('x-epub-rights')!=='yes')return respond({error:'Confirm that you have permission to submit this EPUB'},400);
+   let filename='submission.epub';
+   try{filename=decodeURIComponent(request.headers.get('x-epub-filename')||'submission.epub').replace(/[/\\\x00-\x1f]/g,'_').trim().slice(0,140)}catch{return respond({error:'Invalid EPUB filename'},400)}
+   if(!/\.epub$/i.test(filename))return respond({error:'Only EPUB files are accepted'},415);
+   let title='',notes='';
+   try{title=decodeURIComponent(request.headers.get('x-epub-title')||'').trim().slice(0,180);notes=decodeURIComponent(request.headers.get('x-epub-notes')||'').trim().slice(0,420)}catch{return respond({error:'Invalid title or note encoding'},400)}
+   const rawNovel=String(request.headers.get('x-epub-novel-id')||'').trim();
+   const novelId=rawNovel&&/^[1-9]\d{0,8}$/.test(rawNovel)?Number(rawNovel):null;
+   if(rawNovel&&!novelId)return respond({error:'Use a valid catalogue ID or leave it blank'},400);
+   if(title.length<2)return respond({error:'Enter the novel title'},400);
+   const recent=await env.DB.prepare("SELECT value FROM site_settings WHERE key LIKE 'epub-submission:%' ORDER BY updated_at DESC LIMIT 500").all();
+   let recentCount=0;const dayAgo=Date.now()-24*60*60*1000;
+   for(const item of recent.results||[]){
+    try{const data=JSON.parse(item.value);if(data.submitter===email&&Date.parse(data.createdAt)>dayAgo)recentCount++}catch{}
+   }
+   if(recentCount>=8)return respond({error:'Limit of 8 EPUB submissions per account per 24 hours. Try again tomorrow.'},429);
+   // Hard cap stream even when a client omits/forges Content-Length.
+   const chunks=[];let n=0;const reader=request.body?.getReader();
+   if(!reader)return respond({error:'Empty file upload'},400);
+   for(;;){const part=await reader.read();if(part.done)break;n+=part.value.byteLength;if(n>limit){await reader.cancel();return respond({error:'EPUB exceeds the 15 MB limit'},413)}chunks.push(part.value)}
+   if(n<100)return respond({error:'EPUB file is empty or invalid'},415);
+   const bytes=await new Blob(chunks).arrayBuffer(),head=new Uint8Array(bytes,0,4);
+   if(head[0]!==80||head[1]!==75||![3,5,7].includes(head[2]))return respond({error:'EPUB archive signature did not pass validation'},415);
+   const uid=crypto.randomUUID(),key='private-epub-submissions/'+uid+'.epub';
+   const metadata={id:uid,submitter:email,novelId,title,notes,filename,size:n,createdAt:new Date().toISOString(),status:'pending',key};
+   await env.IMAGES.put(key,bytes,{httpMetadata:{contentType:'application/octet-stream'}});
+   try{
+    await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES (?,?)').bind(setting(uid),JSON.stringify(metadata)).run();
+   }catch(e){await env.IMAGES.delete(key);throw e}
+   return respond({ok:true,id:uid,status:'pending',message:'EPUB submitted privately for owner review. It has not been published or linked to a novel.'},201);
+  }
+  if(path==='/api/epub-submissions/list'&&method==='GET'){
+   if(!owner)return respond({error:'Owner access required'},403);
+   const rows=await env.DB.prepare("SELECT value FROM site_settings WHERE key LIKE 'epub-submission:%' ORDER BY updated_at DESC LIMIT 200").all();
+   const items=[];
+   for(const r of rows.results||[]){try{const v=JSON.parse(r.value);delete v.key;items.push(v)}catch{}}
+   return respond({items});
+  }
+  if(path==='/api/epub-submissions/download'&&method==='GET'){
+   if(!owner)return respond({error:'Owner access required'},403);
+   if(!validId)return respond({error:'Invalid submission ID'},400);
+   const row=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(setting(id)).first();
+   if(!row)return respond({error:'Submission not found'},404);
+   const meta=JSON.parse(row.value);
+   if(meta.key!=='private-epub-submissions/'+id+'.epub')return respond({error:'Invalid private object reference'},409);
+   const obj=await env.IMAGES.get(meta.key);if(!obj)return respond({error:'Stored submission missing'},404);
+   const safeName=String(meta.filename||'submission.epub').replace(/[^a-zA-Z0-9_. -]/g,'_').slice(0,120);
+   return new Response(obj.body,{headers:{'content-type':'application/octet-stream','content-disposition':'attachment; filename="'+safeName+'"','cache-control':'private,no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'x-robots-tag':'noindex,nofollow'}});
+  }
+  if(path==='/api/epub-submissions/review'&&method==='POST'){
+   if(!owner)return respond({error:'Owner access required'},403);
+   let body;try{body=await getJson(request)}catch{return respond({error:'Expected JSON'},415)}
+   const uid=String(body.id||''),decision=String(body.decision||'');
+   if(!/^[a-f0-9-]{36}$/.test(uid)||!['reviewed','reject'].includes(decision))return respond({error:'Invalid review request'},400);
+   const row=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(setting(uid)).first();
+   if(!row)return respond({error:'Submission not found'},404);
+   const meta=JSON.parse(row.value);
+   if(decision==='reject'){
+    // Do not keep unreviewed file bytes after rejection.
+    if(meta.key==='private-epub-submissions/'+uid+'.epub')await env.IMAGES.delete(meta.key);
+    await env.DB.prepare('DELETE FROM site_settings WHERE key=?').bind(setting(uid)).run();
+   }else{
+    meta.status='reviewed';meta.reviewedAt=new Date().toISOString();
+    await env.DB.prepare('UPDATE site_settings SET value=?,updated_at=CURRENT_TIMESTAMP WHERE key=?').bind(JSON.stringify(meta),setting(uid)).run();
+   }
+   await audit(env,email,'private.epub.submission.'+decision,uid,meta.title||'');
+   return respond({ok:true,status:decision});
+  }
+  return respond({error:'Not found'},404);
+ }catch{return respond({error:'EPUB submission could not be processed; please try again or contact the owner'},500)}
 }
 
 export default {
