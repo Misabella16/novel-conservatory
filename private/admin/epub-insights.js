@@ -1,6 +1,6 @@
 (()=>{'use strict';
 const $=id=>document.getElementById(id),api=async(url,options)=>{const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...options});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error||'Request failed');return j};
-let records=[],offset=0,total=0,selected=null,excerpt='',source='not scanned';
+let records=[],offset=0,total=0,selected=null,source='not scanned';
 const setStatus=(msg,err=false)=>{const el=$('status');el.textContent=msg;el.classList.toggle('error',err)};
 const unique=s=>[...new Set(String(s||'').split(',').map(x=>x.trim()).filter(Boolean))].slice(0,30);
 const short=v=>String(v||'').trim().slice(0,2000);
@@ -21,26 +21,7 @@ async function inspectBook(blob){
  const packageDoc=parser.parseFromString(await zip.file(root).async('text'),'application/xml');
  const data={title:meta(packageDoc,'title'),author:meta(packageDoc,'creator'),synopsis:meta(packageDoc,'description'),
   tags:[...new Set(byName(packageDoc,'subject').map(x=>x.textContent.trim()).filter(Boolean))].slice(0,30)};
- const manifest=new Map();
- for(const node of byName(packageDoc,'item')){
-  const id=node.getAttribute('id'),href=node.getAttribute('href');
-  if(id&&href)manifest.set(id,{file:pathOf(root,href),type:node.getAttribute('media-type')||''});
- }
- let parts=[],found=0;
- for(const item of byName(packageDoc,'itemref')){
-  if(found>=9)break;
-  const f=manifest.get(item.getAttribute('idref'));if(!f||!f.file||!zip.file(f.file))continue;
-  if(!/xhtml|html/.test(f.type)&&!/\.x?html$/i.test(f.file))continue;
-  try{
-   const content=await zip.file(f.file).async('text');
-   if(content.length>850000)continue;
-   const doc=parser.parseFromString(content,'text/html');
-   doc.querySelectorAll('script,style,nav,svg,head').forEach(el=>el.remove());
-   const cleaned=(doc.body?.textContent||'').replace(/\s+/g,' ').trim();
-   if(cleaned.length>=170){parts.push(cleaned.slice(0,1900));found++}
-  }catch{}
- }
- return {...data,excerpt:parts.join('\n\n').slice(0,12500),filesSampled:found};
+ return data;
 }
 async function load(){
  try{
@@ -59,10 +40,10 @@ async function load(){
  }catch(e){setStatus(e.message,true)}
 }
 async function choose(item){
- selected=item;excerpt='';source='not scanned';
+ selected=item;source='not scanned';
  $('selected-title').textContent=item.filename;$('selected-detail').textContent='Novel #'+item.novelId+' • Private stored EPUB';
  $('editor').hidden=false;$('title').value='';$('synopsis').value='';$('tags').value='';$('genres').value='';$('warnings').value='';
- $('consent').checked=false;$('rights').checked=false;$('generate').disabled=true;
+ $('rights').checked=false;$('nu-url').value='';
  $('origin').textContent='No EPUB text inspected yet.';
  await load();
  try{
@@ -89,28 +70,53 @@ $('inspect').addEventListener('click',async()=>{
   if(data.title&&!$('title').value)$('title').value=data.title;
   if(data.synopsis&&!$('synopsis').value)$('synopsis').value=short(data.synopsis);
   if(data.tags.length&&!$('tags').value)$('tags').value=data.tags.join(', ');
-  excerpt=data.excerpt;source='EPUB package + opening chapter sample';
-  $('generate').disabled=excerpt.length<300;
+  source='EPUB package metadata';
   $('origin').textContent='Embedded title: '+(data.title||'not found')+' • Author: '+(data.author||'not found')+
-   ' • Sampled chapters: '+data.filesSampled+' • Excerpt characters: '+excerpt.length;
-  setStatus('Inspected locally. Embedded metadata filled where fields were blank.'+(excerpt.length<300?' Not enough chapter text for AI drafting.':' AI drafting is available with explicit consent.'));
+   ' • Existing description: '+(data.synopsis?'present':'missing')+' • Subject tags: '+data.tags.length;
+  setStatus('Retrieved embedded EPUB metadata. Fields missing from the file are left blank.');
  }catch(e){setStatus(e.message,true)}
  finally{button.disabled=false}
 });
-$('generate').addEventListener('click',async()=>{
- if(!selected||excerpt.length<300)return;
- if(!$('consent').checked)return setStatus('Consent is required before sending an excerpt to Workers AI.',true);
- const b=$('generate');b.disabled=true;setStatus('Generating a provisional draft from selected EPUB excerpts…');
+
+function textFrom(root,selectors){
+ for(const q of selectors){const n=root.querySelector(q);if(n){const text=n.textContent.replace(/\s+/g,' ').trim();if(text)return text}}
+ return '';
+}
+function fromNuHtml(html){
+ const doc=new DOMParser().parseFromString(html,'text/html');
+ for(const x of doc.querySelectorAll('script,style,noscript,iframe'))x.remove();
+ const title=textFrom(doc,['.seriestitlenu','#edit-title','.series-title','h1']);
+ const author=textFrom(doc,['#showauthors','.author-content','#seriesauthors']);
+ const synopsis=textFrom(doc,['#editdescription','#seriesdescription','.series-description','#showdescription','.seriesdescription']);
+ const terms=(selectors)=>{const out=[];for(const q of selectors)for(const n of doc.querySelectorAll(q)){
+  const t=n.textContent.replace(/\s+/g,' ').trim();
+  if(t&&t.length<=100&&!out.includes(t))out.push(t);
+ }return out.slice(0,40)};
+ const genres=terms(['#seriesgenre a','#showgenres a','.seriesgenre a']);
+ const tags=terms(['#showtags a','#seriestags a','.seriestags a']);
+ return {title,author,synopsis,genres,tags};
+}
+$('lookup-nu').addEventListener('click',async()=>{
+ const address=$('nu-url').value.trim();
+ if(!/^https:\/\/www\.novelupdates\.com\/series\/[a-z0-9-]+\/?$/i.test(address))
+  return setStatus('Enter the canonical Novel Updates URL (https://www.novelupdates.com/series/...).',true);
+ const button=$('lookup-nu');button.disabled=true;$('nu-status').textContent='Retrieving existing Novel Updates metadata…';
  try{
-  const v=await api('/api/admin/epub-insights/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
-   novelId:selected.novelId,excerpt,title:$('title').value,consent:true
-  })});
-  const d=v.draft;$('synopsis').value=d.synopsis||$('synopsis').value;$('tags').value=(d.tags||[]).join(', ');
-  $('genres').value=(d.genres||[]).join(', ');$('warnings').value=(d.warnings||[]).join(', ');
-  source='AI-assisted draft from private EPUB excerpts';
-  $('origin').textContent='AI draft from '+v.excerptChars+' characters. Excerpts may omit critical plot information.';
-  setStatus('AI draft ready for review. Verify names, tropes and warnings before approving.');
- }catch(e){setStatus(e.message,true)}finally{b.disabled=false}
+  const res=await api('/api/admin/nu/lookup?url='+encodeURIComponent(address));
+  const parsed=fromNuHtml(res.html);
+  if(!parsed.title&&!parsed.synopsis&&!parsed.tags.length&&!parsed.genres.length)
+   throw Error('The retrieved page had no recognizable series metadata. Do not save empty fields; the layout may have changed.');
+  if(parsed.title&&!$('title').value)$('title').value=parsed.title;
+  if(parsed.synopsis)$('synopsis').value=parsed.synopsis.slice(0,2000);
+  if(parsed.tags.length)$('tags').value=parsed.tags.join(', ');
+  if(parsed.genres.length)$('genres').value=parsed.genres.join(', ');
+  source='Novel Updates (retrieved '+new Date().toISOString().slice(0,10)+')';
+  $('origin').textContent='Source: '+address+' • Retrieved title: '+(parsed.title||'missing')+
+   ' • Genres: '+parsed.genres.length+' • Tags: '+parsed.tags.length;
+  $('nu-status').textContent='Retrieved from Novel Updates. Missing fields were left unchanged. Verify the title matches the selected EPUB.';
+  setStatus('Existing source metadata retrieved. Review before approving privately.');
+ }catch(err){$('nu-status').textContent=err.message;setStatus(err.message,true)}
+ finally{button.disabled=false}
 });
 async function save(action){
  if(!selected)return;
