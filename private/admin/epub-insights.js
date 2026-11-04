@@ -1,6 +1,32 @@
 (()=>{'use strict';
 const $=id=>document.getElementById(id),api=async(url,options)=>{const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...options});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error||'Request failed');return j};
-let records=[],offset=0,total=0,selected=null,source='not scanned';
+let records=[],offset=0,total=0,selected=null,source='not scanned',epubInspected=false,fieldSources={};
+const applyMissing=(id,value,origin)=>{
+ const data=Array.isArray(value)?value.join(', '):String(value||'').trim();
+ if(!data||$(id).value.trim())return false;
+ $(id).value=(id==='synopsis'?data.slice(0,2000):data);
+ fieldSources[id]=origin;return true;
+};
+const ensureEpubFirst=()=>{
+ if(!selected){setStatus('Choose an existing novel first.',true);return false}
+ if(selected.editionId!=='none'&&!epubInspected){
+  setStatus('This novel has a linked EPUB. Click Inspect first; Novel Updates only fills fields missing from the EPUB.',true);
+  return false;
+ }
+ return true;
+};
+const mergeNovelUpdates=(novel,origin)=>{
+ if(!ensureEpubFirst())return;
+ const filled=[];
+ for(const [id,val] of [['title',novel.title],['synopsis',novel.synopsis],['tags',novel.tags],['genres',novel.genres]]){
+  if(applyMissing(id,val,origin))filled.push(id);
+ }
+ source=[...new Set(Object.values(fieldSources))].join(' + ')||origin;
+ $('origin').textContent='Field sources: '+Object.entries(fieldSources).map(([k,v])=>k+' ← '+v).join('; ');
+ $('apply').disabled=true;
+ setStatus(filled.length?'Filled missing fields from '+origin+': '+filled.join(', ')+'. Existing EPUB/manual entries were preserved.':'No blank fields to fill. Existing EPUB/manual entries were preserved.');
+ return filled;
+};
 const setStatus=(msg,err=false)=>{const el=$('status');el.textContent=msg;el.classList.toggle('error',err)};
 const unique=s=>[...new Set(String(s||'').split(',').map(x=>x.trim()).filter(Boolean))].slice(0,30);
 const short=v=>String(v||'').trim().slice(0,2000);
@@ -40,8 +66,9 @@ async function load(){
  }catch(e){setStatus(e.message,true)}
 }
 async function choose(item){
- selected=item;source='not scanned';
- $('selected-title').textContent=item.filename;$('selected-detail').textContent='Novel #'+item.novelId+' • Private stored EPUB';
+ selected=item;source='not scanned';epubInspected=false;fieldSources={};
+ $('selected-title').textContent=item.filename;$('selected-detail').textContent='Novel #'+item.novelId+' • '+(item.editionId==='none'?'No linked EPUB':'Private stored EPUB');
+ $('inspect').disabled=item.editionId==='none';
  $('editor').hidden=false;$('title').value='';$('synopsis').value='';$('tags').value='';$('genres').value='';$('warnings').value='';
  $('rights').checked=false;$('nu-url').value='';$('apply').disabled=true;$('nu-source-paste').value='';$('nu-source-result').textContent='';
  $('origin').textContent='No EPUB text inspected yet.';
@@ -57,9 +84,22 @@ async function choose(item){
    $('origin').textContent=d.approved?'Previously approved draft for this edition':'Previously saved draft, not yet approved';
    $('apply').disabled=!d.approved;
   }
-  setStatus('Ready to inspect this stored EPUB. Review changes before saving.');
+  setStatus(item.editionId==='none'?'No linked EPUB. Use captured Novel Updates metadata to fill missing fields.':'Inspect the linked EPUB first. Novel Updates can fill any fields it lacks.');
  }catch(e){setStatus(e.message,true)}
 }
+$('choose-without-epub').addEventListener('click',async()=>{
+ const id=Number($('without-epub-id').value);
+ if(!Number.isSafeInteger(id)||id<1)return setStatus('Enter a valid existing novel ID.',true);
+ const btn=$('choose-without-epub');btn.disabled=true;
+ try{
+  const v=await api('/api/admin/epub-insights/has-epub?id='+id);
+  if(v.hasEpub){
+   setStatus('Novel #'+id+' has a linked EPUB. Choose it from Stored EPUBs and inspect it first. No Novel Updates overwrite was performed.',true);
+   $('search').value=String(id);offset=0;await load();return;
+  }
+  await choose({novelId:id,editionId:'none',filename:'Novel #'+id+' (no EPUB)',size:0,legacy:false});
+ }catch(e){setStatus(e.message,true)}finally{btn.disabled=false}
+});
 $('inspect').addEventListener('click',async()=>{
  if(!selected)return;
  const button=$('inspect');button.disabled=true;setStatus('Inspecting EPUB privately in your browser…');
@@ -68,9 +108,10 @@ $('inspect').addEventListener('click',async()=>{
     '/api/private/edition/file?id='+selected.novelId+'&edition='+encodeURIComponent(selected.editionId);
   const r=await fetch(base,{credentials:'same-origin',cache:'no-store'});if(!r.ok)throw Error('Unable to read stored EPUB ('+r.status+').');
   const file=await r.blob(),data=await inspectBook(file);
-  if(data.title&&!$('title').value)$('title').value=data.title;
-  if(data.synopsis&&!$('synopsis').value)$('synopsis').value=short(data.synopsis);
-  if(data.tags.length&&!$('tags').value)$('tags').value=data.tags.join(', ');
+  epubInspected=true;
+  applyMissing('title',data.title,'EPUB');
+  applyMissing('synopsis',data.synopsis,'EPUB');
+  applyMissing('tags',data.tags,'EPUB');
   source='EPUB package metadata';
   $('origin').textContent='Embedded title: '+(data.title||'not found')+' • Author: '+(data.author||'not found')+
    ' • Existing description: '+(data.synopsis?'present':'missing')+' • Subject tags: '+data.tags.length;
@@ -99,6 +140,7 @@ function fromNuHtml(html){
 }
 $('lookup-nu').addEventListener('click',async()=>{
  const address=$('nu-url').value.trim();
+ if(!ensureEpubFirst())return;
  if(!/^https:\/\/www\.novelupdates\.com\/series\/[a-z0-9-]+\/?$/i.test(address))
   return setStatus('Enter the canonical Novel Updates URL (https://www.novelupdates.com/series/...).',true);
  const button=$('lookup-nu');button.disabled=true;$('nu-status').textContent='Retrieving existing Novel Updates metadata…';
@@ -107,11 +149,7 @@ $('lookup-nu').addEventListener('click',async()=>{
   const parsed=fromNuHtml(res.html);
   if(!parsed.title||(!parsed.synopsis&&!parsed.tags.length&&!parsed.genres.length))
    throw Error('No confirmed Novel Updates title and metadata found. The page may be blocked or its layout may have changed.');
-  if(parsed.title&&!$('title').value)$('title').value=parsed.title;
-  if(parsed.synopsis)$('synopsis').value=parsed.synopsis.slice(0,2000);
-  if(parsed.tags.length)$('tags').value=parsed.tags.join(', ');
-  if(parsed.genres.length)$('genres').value=parsed.genres.join(', ');
-  source='Novel Updates (retrieved '+new Date().toISOString().slice(0,10)+')';
+  mergeNovelUpdates(parsed,'Novel Updates');
   $('origin').textContent='Source: '+address+' • Retrieved title: '+(parsed.title||'missing')+
    ' • Genres: '+parsed.genres.length+' • Tags: '+parsed.tags.length;
   $('nu-status').textContent='Retrieved from Novel Updates. Missing fields were left unchanged. Verify the title matches the selected EPUB.';
@@ -119,8 +157,20 @@ $('lookup-nu').addEventListener('click',async()=>{
  }catch(err){$('nu-status').textContent=err.message;setStatus(err.message,true)}
  finally{button.disabled=false}
 });
+$('use-staged-nu').addEventListener('click',async()=>{
+ if(!ensureEpubFirst())return;
+ const address=$('nu-url').value.trim(),btn=$('use-staged-nu');btn.disabled=true;
+ try{
+  const response=await api('/api/admin/nu/staged-by-url?url='+encodeURIComponent(address));
+  const title=String(response.metadata?.title||'');
+  if(!confirm('Use staged metadata for "'+title+'" on novel #'+selected.novelId+'? Confirm these are the SAME novel.'))return;
+  mergeNovelUpdates(response.metadata,'Novel Updates (staged)');
+  $('nu-status').textContent='Existing staged metadata loaded for review. EPUB fields were preserved.';
+ }catch(e){setStatus(e.message,true);$('nu-status').textContent=e.message}
+ finally{btn.disabled=false}
+});
 $('nu-source-apply').addEventListener('click',()=>{
- if(!selected)return setStatus('Select a stored EPUB before using copied metadata.',true);
+ if(!ensureEpubFirst())return;
  try{
   const raw=$('nu-source-paste').value.trim();
   if(!raw||raw.length>15000)throw Error('Paste the copied metadata JSON, up to 15,000 characters.');
@@ -136,14 +186,10 @@ $('nu-source-apply').addEventListener('click',()=>{
   const tags=Array.isArray(novel.tags)?novel.tags.filter(x=>typeof x==='string').slice(0,35):[];
   const genres=Array.isArray(novel.genres)?novel.genres.filter(x=>typeof x==='string').slice(0,35):[];
   if(!synopsis&&!tags.length&&!genres.length)throw Error('No synopsis or tags were captured.');
-  if(!confirm('Use the retrieved metadata for '+title+' on stored EPUB #'+selected.novelId+'? Confirm this is the SAME novel. Changes are not saved until you approve them.'))return;
-  $('title').value=title.slice(0,210);
-  if(synopsis)$('synopsis').value=synopsis.slice(0,2000);
-  if(tags.length)$('tags').value=tags.join(', ');
-  if(genres.length)$('genres').value=genres.join(', ');
-  source='Novel Updates: '+url.origin+url.pathname;
-  $('origin').textContent='Retrieved source for '+title+': '+url.origin+url.pathname;
-  $('nu-source-result').textContent='Retrieved fields filled for review. Choose Save as review draft, then Approve and Apply privately.';
+  if(!confirm('Use retrieved metadata for '+title+' on novel #'+selected.novelId+'? Confirm these are the SAME novel. Changes are not saved until you approve them.'))return;
+  mergeNovelUpdates({title,synopsis,tags,genres},'Novel Updates (browser capture)');
+  $('nu-url').value=url.href;
+  $('nu-source-result').textContent='Missing source fields filled for review; linked EPUB metadata preserved. Save, approve and apply privately.';
   $('apply').disabled=true;
   setStatus('Novel Updates source metadata filled for review. No database changes yet.');
  }catch(e){$('nu-source-result').textContent=e.message;setStatus(e.message,true)}
@@ -151,7 +197,7 @@ $('nu-source-apply').addEventListener('click',()=>{
 async function save(action){
  if(!selected)return;
  if(action==='approve'&&!$('rights').checked)return setStatus('Confirm the synopsis is original or authorized before approval.',true);
- const data={novelId:selected.novelId,editionId:selected.editionId,title:$('title').value,synopsis:$('synopsis').value,
+ const data={novelId:selected.novelId,editionId:selected.editionId,fieldSources,title:$('title').value,synopsis:$('synopsis').value,
   tags:unique($('tags').value),genres:unique($('genres').value),warnings:unique($('warnings').value),
   source,action,rightsConfirmed:action==='approve'&&$('rights').checked};
  try{await api('/api/admin/epub-insights/draft',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data)});
