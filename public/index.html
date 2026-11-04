@@ -457,6 +457,7 @@ header{background:rgba(255,251,244,.98);box-shadow:0 4px 22px #182a2111;border-b
 .exclude-tag-count{font-size:10px;color:#9b5c3e;background:#fff2e9;border:1px solid #e7d2c5;padding:2px 6px;border-radius:12px;letter-spacing:0;text-transform:none}
 .exclude-tag-empty{font-size:12px;color:#6b786e;padding:8px}
 </style>
+<link rel="stylesheet" href="/onboarding-tour.css">
 </head>
 <body>
 <header><div class="top"><a aria-label="The Novel Conservatory, home" class="brand" href="#top"><div aria-hidden="true" class="brand-mark">文</div><div><strong>The Novel Conservatory</strong><span>GENRES · RELATIONSHIPS · STORY WORLDS</span></div></a><button type="button" id="section-menu-toggle" class="section-menu-toggle" aria-controls="library-main-nav" aria-expanded="false" aria-label="Show all library sections">☰ All sections <span aria-hidden="true">▾</span></button><nav aria-label="Library sections" id="library-main-nav" class="nav"><button class="navbtn active" id="explore-nav" type="button">Discover</button><button class="navbtn" id="covers-nav" type="button">Browse novels</button><button class="navbtn" id="curated-nav" type="button">Collections</button><a class="navbtn translator-nav" href="/translators/">Translators <span aria-hidden="true">↗</span></a><button class="navbtn" id="saved-nav" type="button">My Collections <span class="nav-count" id="saved-badge">0</span></button><a class="navbtn" id="about-nav" href="/about/">About &amp; Guide</a><a class="navbtn" href="/suggestions/">Suggestions &amp; Questions</a></nav><a class="private-library-link" href="https://novel-conservatory.pages.dev/" rel="noopener noreferrer">Private library ↗</a></div></header>
@@ -1012,5 +1013,6 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&nav.classLi
 window.addEventListener('resize',()=>{if(window.innerWidth>1280)close()});
 })();
 </script>
+<script id="conservatory-onboarding-script" data-site="public" src="/onboarding-tour.js"></script>
 </body>
 </html>
