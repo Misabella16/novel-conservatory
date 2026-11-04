@@ -1512,6 +1512,28 @@ async function siteAdminRoute(request,env,email,role){
  if(role!=='owner')return siteOut({error:'Owner access required'},403);
  if(!env.COMMUNITY_DB)return siteOut({error:'Shared database unavailable'},503);
  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
+ if(path==='/api/admin/public-banner-copy'&&method==='POST'){
+  if(request.headers.get('Origin')!==url.origin)return siteOut({error:'Wrong origin'},403);
+  if(!env.DB||!env.IMAGES||!env.COMMUNITY_IMAGES)return siteOut({error:'Required private and shared storage not connected'},503);
+  const row=await env.DB.prepare("SELECT value FROM site_settings WHERE key='homepage'").first();
+  let home={};try{home=JSON.parse(row?.value||'{}')}catch{return siteOut({error:'Invalid private homepage'},503)}
+  const match=/^\/media\/([a-f0-9-]{36}\.(?:png|jpg|jpeg|webp))$/.exec(home.heroImage||'');
+  if(!match)return siteOut({error:'Private banner is not a stored image. Upload an image below instead.'},400);
+  const file=await env.IMAGES.get(match[1]);
+  if(!file)return siteOut({error:'Private banner file could not be found'},404);
+  const contentType=file.httpMetadata?.contentType||'';
+  if(!['image/png','image/jpeg','image/webp'].includes(contentType))return siteOut({error:'Unsupported banner image type'},400);
+  if(file.size<80||file.size>2800000)return siteOut({error:'Banner exceeds 2.8 MB; use upload instead'},400);
+  const ext=contentType==='image/png'?'png':contentType==='image/webp'?'webp':'jpg';
+  const key=crypto.randomUUID()+'.'+ext;
+  await env.COMMUNITY_IMAGES.put('site-banners/'+key,file.body,{httpMetadata:{contentType}});
+  const old=await siteGet(env,'public'),next={...old,bannerKey:key};
+  try{
+   await env.COMMUNITY_DB.prepare('INSERT INTO conservatory_site_config(scope,config_json,updated_by) VALUES (?,?,?) ON CONFLICT(scope) DO UPDATE SET config_json=excluded.config_json,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP')
+    .bind('public',JSON.stringify(next),email).run();
+  }catch(e){await env.COMMUNITY_IMAGES.delete('site-banners/'+key);throw e}
+  return siteOut({ok:true,image:'/banner-media/'+key});
+ }
  if(path==='/api/admin/public-banner'&&method==='POST'){
   if(request.headers.get('Origin')!==url.origin)return siteOut({error:'Wrong origin'},403);
   if(!env.COMMUNITY_IMAGES)return siteOut({error:'Shared public image bucket unavailable'},503);
