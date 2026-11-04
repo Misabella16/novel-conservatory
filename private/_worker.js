@@ -360,9 +360,13 @@ async function routes(request,env,ctx,email,role){
   if(path.startsWith('/api/private/epub/')){
     if(!env.DB)return respond({error:'D1 database not configured.'},503);
     const readable=(path==='/api/private/epub/status'||path==='/api/private/epub/file')&&method==='GET';
+    // Any Cloudflare Access-authenticated private member may contribute a shared
+    // quality check. This ONLY permits the exact review endpoint, not EPUB
+    // uploads, downloads, edits, deletions or bulk administration.
+    const memberReview=path==='/api/private/epub/review'&&(method==='GET'||method==='POST');
     if(readable){
       if(!await canReadEpubs(email,role,env))return respond({error:'EPUB reading is not enabled for this account.'},403);
-    }else if(role!=='owner')return respond({error:'Only the owner can manage stored EPUBs.'},403);
+    }else if(!memberReview&&role!=='owner')return respond({error:'Only the owner can manage stored EPUBs.'},403);
     if(path==='/api/private/epub/bulk-status'&&method==='GET'){
       const rows=await env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-epub:%'").all();
       const files={};
@@ -373,8 +377,8 @@ async function routes(request,env,ctx,email,role){
       }
       return respond({ok:true,files});
     }
-    if(path==='/api/private/epub/review'&&(method==='GET'||method==='POST')){
-      if(role!=='owner')return respond({error:'Owner permission required'},403);
+    if(memberReview){
+      if(method==='POST'&&!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
       try{
         const entries=await epubVerificationState(env,await epubVerificationInventory(env));
         if(method==='GET'){
@@ -389,7 +393,7 @@ async function routes(request,env,ctx,email,role){
         if(!target)return respond({error:'EPUB edition not found'},404);
         await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP')
          .bind('epub-verification:'+target.fileKey,JSON.stringify({verified:body.verified,reviewedBy:email,reviewedAt:new Date().toISOString()})).run();
-        await audit(env,email,'private.epub.verified',novelId,kind+':'+(target.editionId||'legacy')+'='+body.verified);
+        await audit(env,email,'private.epub.member_review',novelId,kind+':'+(target.editionId||'legacy')+'='+body.verified);
         return respond({ok:true,novelId,editionId:target.editionId,verified:body.verified});
       }catch{return respond({error:'Could not update EPUB verification'},503)}
     }
