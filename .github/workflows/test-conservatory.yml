@@ -47,6 +47,8 @@ jobs:
         run: python tests/check_expanded_tours_and_epub_verification.py
       - name: Verify member EPUB reviews and compact private Discover
         run: python tests/check_member_verification_and_compact_discover.py
+      - name: Verify Add Novels editor and owner permission tabs
+        run: node tests/check_add_novels_editor_roles.js
       - name: Check migration SQL offline
         run: |
           python - <<'PY'
