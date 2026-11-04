@@ -24,6 +24,7 @@ jobs:
           node --check public/_worker.js
           node --check private/admin/epub-insights.js
           node --check private/admin/epub-metadata.js
+          node --check private/admin/nu-browser-capture.js
           node --check private/admin/add-novels.js
       - name: Check Python syntax and parse source-only retrieval
         run: |
