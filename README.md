@@ -4,6 +4,18 @@ This private repository contains the source for two websites:
 - **Private**: invitation-only reading library with EPUB editions, member shelves, and owner editing tools.
 - **Public**: discovery catalogue, browser-saved collections, moderated submissions, and community reviews.
 
+## Private-library access (Cloudflare only)
+
+Readers are added or removed **only in Cloudflare Zero Trust → Access → Applications → the private Conservatory application**. There is no secondary website invitation link, redemption step, approved-reader database, or on-site invite administration.
+
+Every private request verifies a Cloudflare Access JWT for the correct site, audience, expiry, signature, and verified email. Anyone permitted by the Cloudflare Access application can browse the private catalogue. Keep its Allow policy **restricted to exact intended emails**, never Everyone/public access. Remove a person's access in Cloudflare to revoke their ability to enter the private site. Access tokens may remain valid until revoked or expired, so use Cloudflare's session-revocation controls for urgent removals.
+
+Owner and Editor permissions remain independent roles in the private D1 database (Manage editors). Existing EPUB content is even more restricted: readers need both the site login and explicit EPUB reading permission, and the owner must turn on the EPUB sharing switch. Do not add private EPUB R2/DB bindings to the public site.
+
+The old `/join/` and `/admin/invitations.html` pages are retired and redirect to the appropriate private page. Invitation APIs return HTTP 410. Historical D1 invitation records are left untouched but cannot grant access.
+
+**Important:** Removing the on-site invitation requirement does NOT repair Cloudflare's email One-Time PIN delivery. If the Cloudflare code does not arrive, troubleshoot the Cloudflare Access login method, application policies, mail filtering, and delivery/suppression separately.
+
 ## First-time setup
 
 1. Back up the existing Cloudflare D1 databases and R2 buckets.
