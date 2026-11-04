@@ -86,7 +86,7 @@ function textFrom(root,selectors){
 function fromNuHtml(html){
  const doc=new DOMParser().parseFromString(html,'text/html');
  for(const x of doc.querySelectorAll('script,style,noscript,iframe'))x.remove();
- const title=textFrom(doc,['.seriestitlenu','#edit-title','.series-title','h1']);
+ const title=textFrom(doc,['.seriestitlenu','#edit-title','.series-title']);
  const author=textFrom(doc,['#showauthors','.author-content','#seriesauthors']);
  const synopsis=textFrom(doc,['#editdescription','#seriesdescription','.series-description','#showdescription','.seriesdescription']);
  const terms=(selectors)=>{const out=[];for(const q of selectors)for(const n of doc.querySelectorAll(q)){
@@ -105,8 +105,8 @@ $('lookup-nu').addEventListener('click',async()=>{
  try{
   const res=await api('/api/admin/nu/lookup?url='+encodeURIComponent(address));
   const parsed=fromNuHtml(res.html);
-  if(!parsed.title&&!parsed.synopsis&&!parsed.tags.length&&!parsed.genres.length)
-   throw Error('The retrieved page had no recognizable series metadata. Do not save empty fields; the layout may have changed.');
+  if(!parsed.title||(!parsed.synopsis&&!parsed.tags.length&&!parsed.genres.length))
+   throw Error('No confirmed Novel Updates title and metadata found. The page may be blocked or its layout may have changed.');
   if(parsed.title&&!$('title').value)$('title').value=parsed.title;
   if(parsed.synopsis)$('synopsis').value=parsed.synopsis.slice(0,2000);
   if(parsed.tags.length)$('tags').value=parsed.tags.join(', ');
