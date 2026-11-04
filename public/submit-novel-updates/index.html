@@ -30,11 +30,17 @@ footer{font-size:12px;color:#697869;margin-top:21px;text-align:center}
 @media(max-width:550px){main{margin:17px auto 40px}.card{padding:17px}.modal-inner{padding:21px}.modal-foot button{flex:1}}
 </style>
 </head><body>
-<header><a href="/">← Back to Discover</a><strong>Help grow the Conservatory</strong><p>Found a web novel on Novel Updates that belongs on our shelves? Send us the link. No synopsis or tags to type.</p></header>
+<header><a href="/">← Back to Discover</a><strong>Help grow the Conservatory</strong><p>Found a web novel on Novel Updates that belongs on our shelves? Send us the link. No synopsis or tags to type. If you opened this from a novel, we will keep that novel selected.</p></header>
 <main>
 <section class="card">
 <div class="head"><h2>Submit a Novel Updates link</h2><button id="explain" type="button" class="text-button" aria-haspopup="dialog">ⓘ How does this work?</button></div>
 <p class="note">The editor retrieves existing source information such as title, author, synopsis, genres and tags when Novel Updates makes it available. Nothing is AI-generated or published without review.</p>
+<div id="linked-novel" class="note" hidden style="background:#eef6e9;border:1px solid #cdddca;padding:13px 15px;border-radius:9px;margin:10px 0 18px">
+<strong>Updating an existing novel</strong>
+<p id="linked-novel-title" style="margin:5px 0 0;color:#315b43"></p>
+<p style="margin:5px 0 0">Your proposed link will be reviewed and attached to this novel, not added as another book.</p>
+<a href="/submit-novel-updates/" style="font-size:12px">Suggest a completely new Novel Updates series instead ↗</a>
+</div>
 <form id="nu-form">
 <label for="nu-url">Novel Updates series URL *</label>
 <input required type="url" id="nu-url" name="nu_url" inputmode="url" autocomplete="url" spellcheck="false" placeholder="https://www.novelupdates.com/series/example-title/" aria-describedby="url-hint">
