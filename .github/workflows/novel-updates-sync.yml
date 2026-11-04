@@ -1,0 +1,24 @@
+name: Sync authorized Novel Updates export to private staging
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 7 * * *"
+permissions:
+  contents: read
+jobs:
+  sync:
+    if: vars.NU_SYNC_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Stage authorized metadata without publishing
+        env:
+          NU_EXPORT_URL: ${{ secrets.NU_EXPORT_URL }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          COMMUNITY_D1_DATABASE_ID: ${{ secrets.COMMUNITY_D1_DATABASE_ID }}
+          CLOUDFLARE_D1_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_API_TOKEN }}
+        run: python3 scripts/import_novelupdates.py
