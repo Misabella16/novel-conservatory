@@ -338,6 +338,32 @@ async function routes(request,env,ctx,email,role){
   if(path==='/api/admin/epub-artwork/propose')return epubArtworkProposal(request,env,email,role);
   if(path==='/api/admin/epub-artwork/auto'&&method==='POST'){const copy=request.clone();const fd=await copy.formData();if(extraId(fd.get('novel_id'))){const target=new URL(request.url);target.pathname='/api/admin/additional/auto-cover';return additionalRoutes(new Request(target,request),env,'private',email,role)};}
   if(path.startsWith('/api/admin/epub-artwork/auto')||path==='/api/admin/epub-artwork/set-cover')return epubArtworkAutoRoutes(request,env,email,role);
+  // EPUB presence, not EPUB content. The caller has already passed
+  // the private site's Cloudflare Access JWT verification. This permits
+  // allowed readers to filter the catalogue, without granting download access.
+  if(path==='/api/private/epub/availability'&&method==='GET'){
+    if(!env.DB)return respond({error:'EPUB inventory database is unavailable'},503);
+    try{
+      const [editions,legacy]=await Promise.all([
+        env.DB.prepare("SELECT novel_id AS id FROM epub_editions UNION SELECT novel_id AS id FROM additional_epub_editions").all(),
+        env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-epub:%'").all()
+      ]);
+      const linked=new Set();
+      for(const row of editions.results||[]){
+        const id=Number(row.id);
+        if(Number.isSafeInteger(id)&&id>0)linked.add(id);
+      }
+      for(const row of legacy.results||[]){
+        const match=/^private-epub:([1-9][0-9]*)$/.exec(row.key||'');
+        if(!match||Number(match[1])>962)continue;
+        try{
+          const meta=JSON.parse(row.value||'{}');
+          if(/^private-epubs\/[0-9a-f-]{36}\.epub$/.test(meta.key||''))linked.add(Number(match[1]));
+        }catch{}
+      }
+      return respond({ids:[...linked].sort((a,b)=>a-b),complete:true});
+    }catch{return respond({error:'EPUB inventory could not be loaded'},503)}
+  }
   if(path.startsWith('/api/private/epub/')){
     if(!env.DB)return respond({error:'D1 database not configured.'},503);
     const readable=(path==='/api/private/epub/status'||path==='/api/private/epub/file')&&method==='GET';

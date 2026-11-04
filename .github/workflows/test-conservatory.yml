@@ -26,6 +26,8 @@ jobs:
           node --check private/admin/epub-metadata.js
           node --check private/admin/nu-browser-capture.js
           node --check private/admin/add-novels.js
+      - name: Verify private EPUB indicators and homepage scripts
+        run: python tests/check_private_epub_indicators.py
       - name: Check Python syntax and parse source-only retrieval
         run: |
           python -m pip install 'beautifulsoup4>=4.12,<5'
