@@ -57,6 +57,9 @@ review=(ROOT/'private/admin/epub-verification/index.html').read_text(encoding='u
 assert "privateEpubVerified=new Set()" in priv
 assert "Array.isArray(value.verifiedIds)" in priv
 assert "epub-verified-label" in priv
+assert "epub-verified-cover" in priv
+assert "✓ VERIFIED" in priv
+assert "pointer-events:none" in priv
 assert "✓ EPUB verified" in priv
 assert "id=\"epub-presence-filter\"" in priv
 assert '<option value="verified">✓ Verified EPUB only</option>' in priv
