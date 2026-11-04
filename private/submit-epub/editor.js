@@ -107,7 +107,7 @@ async function ownerUpload(file,id,label,translator,onProgress){
 async function submitForReview(file,id,title,translator){
  // File sharing is deliberately restricted to the existing moderated inbox.
  // Use the same explicit rights confirmation as the ordinary Submit EPUB form.
- if(!$('rights').checked)throw Error('Confirm your rights/permission in the Submit EPUB tab before submitting files for review.');
+ if(!$('entry-rights').checked)throw Error('Confirm your permission to submit these EPUB files for review.');
  return req('/api/epub-submissions/upload',{
   method:'POST',
   headers:{
@@ -131,8 +131,8 @@ $('editor-form').addEventListener('submit',async e=>{
   }else if(!bookId())throw Error('Select an existing novel from the suggestions.');
   if(!create&&!files.length)throw Error('Choose at least one EPUB to attach.');
   for(const file of files)checkFile(file,role==='owner');
-  if(role==='editor'&&files.length&&!$('rights').checked){
-   throw Error('Before submitting files, tick the rights confirmation in the Submit EPUB tab.');
+  if(role==='editor'&&files.length&&!$('entry-rights').checked){
+   throw Error('Check the EPUB rights confirmation in this form before submitting.');
   }
   if(!confirm(create?'Create the novel entry'+($('entry-publish').checked?' and publish its metadata':' as a private draft')+(files.length?' and process '+files.length+' EPUB(s)':'')+'?':'Process '+files.length+' EPUB(s) for the selected novel?'))return;
   busy=true;$('entry-submit').disabled=true;
@@ -183,9 +183,10 @@ async function init(){
    tabEntry.hidden=false;
    $('entry-bulk-link').hidden=role!=='owner';
    $('entry-review-link').hidden=role!=='owner';
+   $('entry-rights-label').hidden=role==='owner';
    $('entry-upload-hint').textContent=role==='owner'
     ?'Attach one or more EPUB editions directly to the private library. New files start unverified.'
-    :'You can create catalogue entries. EPUB files are sent to the private owner review queue; they are not attached or published automatically. Confirm permission in the Submit EPUB tab.';
+    :'You can create catalogue entries. EPUB files are sent to the private owner review queue; they are not attached or published automatically. Confirm your right to submit the EPUBs using the checkbox below.';
    mode();
    const query=new URLSearchParams(location.search);
    if(query.get('tab')==='entry'||query.has('novel'))selectTab('entry',false);
