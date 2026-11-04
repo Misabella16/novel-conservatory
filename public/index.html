@@ -896,5 +896,18 @@ if(Number.isInteger(linkedNovelId)&&linkedNovelId>0){const linkedNovel=data.find
 <script defer src="/site-customize.js"></script>
 <dialog class="collection-dialog" id="personal-collection-dialog" aria-labelledby="personal-collection-dialog-title"><h2 id="personal-collection-dialog-title">Add to Collection</h2><p class="hint" id="personal-collection-book-name"></p><div class="collection-checklist" id="personal-collection-checks"></div><label for="new-personal-collection-name" class="hint">Create another collection</label><div class="new-collection-row"><input id="new-personal-collection-name" maxlength="42" placeholder="e.g. Beautifully Strange" autocomplete="off"><button type="button" id="personal-create-in-dialog">Create</button></div><p class="validation" id="personal-collection-error" aria-live="polite"></p><div class="modal-actions"><button type="button" id="personal-collection-cancel">Cancel</button><button type="button" class="primary" id="personal-collection-save">Save choices</button></div></dialog>
 <a class="additional-novel-link" href="/submit-novel/" style="position:fixed;bottom:16px;right:16px;background:#234e3d;color:white;padding:10px 16px;border-radius:999px;z-index:19;font:600 12px system-ui;text-decoration:none;box-shadow:0 5px 20px #153b2a40">Suggest a Novel</a>
+
+<script>
+(async function loadPublicHomepageCopy(){
+ try {
+  const r=await fetch('/api/site/config',{cache:'no-store'});
+  if(!r.ok)return;
+  const v=await r.json(),c=v.settings||{};
+  if(c.homeHeadline)document.getElementById('editable-hero-title').textContent=c.homeHeadline;
+  if(c.homeFlavor)document.getElementById('editable-hero-description').textContent=c.homeFlavor;
+  if(c.homeEyebrow){const e=document.querySelector('#tab-discover .hero .eyebrow');if(e)e.textContent=c.homeEyebrow;}
+ }catch(e){console.warn('Public homepage settings unavailable',e)}
+})();
+</script>
 </body>
 </html>
