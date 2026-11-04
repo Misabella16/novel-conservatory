@@ -338,6 +338,32 @@ async function routes(request,env,ctx,email,role){
   if(path==='/api/admin/epub-artwork/propose')return epubArtworkProposal(request,env,email,role);
   if(path==='/api/admin/epub-artwork/auto'&&method==='POST'){const copy=request.clone();const fd=await copy.formData();if(extraId(fd.get('novel_id'))){const target=new URL(request.url);target.pathname='/api/admin/additional/auto-cover';return additionalRoutes(new Request(target,request),env,'private',email,role)};}
   if(path.startsWith('/api/admin/epub-artwork/auto')||path==='/api/admin/epub-artwork/set-cover')return epubArtworkAutoRoutes(request,env,email,role);
+  // Private catalogue availability only. Never served by the public Worker.
+  // Do not disclose which titles have EPUBs unless this account can read them.
+  if(path==='/api/private/epub/availability'&&method==='GET'){
+    if(!env.DB)return respond({error:'Private EPUB database unavailable'},503);
+    if(!await canReadEpubs(email,role,env))return respond({error:'EPUB availability is restricted to readers with private EPUB access'},403);
+    try{
+      const [normal,extra,legacy]=await Promise.all([
+        env.DB.prepare('SELECT novel_id AS id FROM epub_editions GROUP BY novel_id').all(),
+        env.DB.prepare('SELECT novel_id AS id FROM additional_epub_editions GROUP BY novel_id').all(),
+        env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-epub:%'").all()
+      ]);
+      const ids=new Set();
+      for(const row of [...(normal.results||[]),...(extra.results||[])]){
+        const id=Number(row.id);if(Number.isSafeInteger(id)&&id>=1)ids.add(id);
+      }
+      for(const row of legacy.results||[]){
+        const m=/^private-epub:([1-9][0-9]*)$/.exec(row.key||'');
+        if(!m||Number(m[1])>962)continue;
+        try{
+          const data=JSON.parse(row.value||'{}');
+          if(/^private-epubs\/[a-f0-9-]{36}\.epub$/.test(data.key||''))ids.add(Number(m[1]));
+        }catch{}
+      }
+      return respond({ids:[...ids].sort((a,b)=>a-b),count:ids.size,scope:'private'});
+    }catch{return respond({error:'Could not read private EPUB availability'},503)}
+  }
   if(path.startsWith('/api/private/epub/')){
     if(!env.DB)return respond({error:'D1 database not configured.'},503);
     const readable=(path==='/api/private/epub/status'||path==='/api/private/epub/file')&&method==='GET';
