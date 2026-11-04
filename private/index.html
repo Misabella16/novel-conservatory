@@ -411,6 +411,7 @@ header{background:rgba(255,251,244,.98);box-shadow:0 4px 22px #182a2111;border-b
 /* A restrained bookplate-yellow highlight for novels with stored private EPUBs. */
 .nu-card.has-linked-epub{border:2px solid #ddc678;box-shadow:0 0 0 2px #f6eabd80,0 6px 15px #51401c0c}
 .nu-card.has-linked-epub:hover,.nu-card.has-linked-epub:focus-within{box-shadow:0 0 0 2px #e8d795,0 14px 30px #51401c22}
+.epub-verified-label{display:inline-flex;align-items:center;gap:4px;align-self:flex-start;width:max-content;max-width:100%;margin-top:6px;padding:4px 8px;border:1px solid #adcfaa;border-radius:5px;background:#e8f5e8;color:#285b39;font:800 10px/1.2 system-ui,-apple-system,sans-serif}
 .epub-linked-label{display:inline-flex;align-items:center;gap:4px;align-self:flex-start;width:max-content;max-width:100%;margin-top:7px;padding:4px 7px;border:1px solid #e6d69b;border-radius:5px;background:#fff4c9;color:#665126;font:700 10px/1.2 system-ui,-apple-system,sans-serif}
 .epub-inventory-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 15px;background:#fffcf4;border:1px solid #e9e1c6;border-radius:8px;padding:10px 12px}
 .epub-inventory-filters label{font:700 12px system-ui,-apple-system,sans-serif;color:#4f5948}
@@ -491,6 +492,8 @@ header{background:rgba(255,251,244,.98);box-shadow:0 4px 22px #182a2111;border-b
 <option value="all">All novels</option>
 <option value="linked">With EPUB</option>
 <option value="unlinked">Without EPUB</option>
+<option value="verified">✓ Verified EPUB only</option>
+<option value="unverified">EPUB awaiting verification</option>
 </select>
 <span id="epub-inventory-status" class="epub-inventory-status" role="status" aria-live="polite">Checking linked EPUBs…</span>
 </div><div class="meta-line"><div><div aria-live="polite" class="result-count" id="result-count"></div><div class="cover-library-note" id="cover-library-note">Published-edition covers appear when matched; remaining books retain decorative jackets.</div></div><div class="pills"><button class="pill active" data-preset="all">All</button><button class="pill" data-preset="completed">Complete</button><button class="pill" data-preset="ongoing">Ongoing</button><button class="pill" data-preset="original">Originals</button><button aria-pressed="false" class="pill hide" id="art-only-toggle" type="button">Art only</button></div></div><div aria-label="Novel results" class="books" id="books"></div><div class="empty hide" id="empty"><span>❀</span><h3>Nothing on this shelf... yet.</h3><p>Try fewer filters or a different search term.</p></div><button class="loadmore hide" id="load-more">Discover more stories ↓</button></div></div></div></div>
@@ -513,7 +516,7 @@ let liveFeaturedIds=[];
 const $=q=>document.querySelector(q),$$=q=>Array.from(document.querySelectorAll(q));
 let selectedStatus=new Set(),selectedThemes=new Set(),selectedLanguages=new Set(),selectedAvailability=new Set(),selectedGenres=new Set(),selectedTags=new Set(),excludedTags=new Set(),excludedWarnings=new Set(),richOnly=false;
 let savedOnly=false,visible=48,listView=true,randomIds=[],searchTerm='',sortKey='featured',approvedOnly=false;
-let privateEpubLinked=new Set(),privateEpubReady=false,privateEpubFilter='all';
+let privateEpubLinked=new Set(),privateEpubVerified=new Set(),privateEpubReady=false,privateEpubFilter='all';
 try{listView=localStorage.getItem('conservatory-browse-mode')!=='covers'}catch(e){}
 let favorites=[];
 try{favorites=JSON.parse(localStorage.getItem('novel-conservatory-favorites')||'[]')}catch(e){}
@@ -756,6 +759,8 @@ function syncPresets(){let name=selectedStatus.size===0?'all':(selectedStatus.si
 function matches(d){
  if(privateEpubReady&&privateEpubFilter==='linked'&&!privateEpubLinked.has(Number(d.id)))return false;
  if(privateEpubReady&&privateEpubFilter==='unlinked'&&privateEpubLinked.has(Number(d.id)))return false;
+ if(privateEpubReady&&privateEpubFilter==='verified'&&!privateEpubVerified.has(Number(d.id)))return false;
+ if(privateEpubReady&&privateEpubFilter==='unverified'&&(!privateEpubLinked.has(Number(d.id))||privateEpubVerified.has(Number(d.id))))return false;
  if(selectedHomeShelf==='untagged'&&isDiscoverable(d))return false;
  if(savedOnly&&!favorites.includes(d.id))return false;
  if(approvedOnly&&!coverSrc(d))return false;
@@ -808,8 +813,9 @@ function seriesListExtras(d){
 function cardHTML(d){
  const star=favorites.includes(d.id),src=coverSrc(d),reviewed=isReviewed(d),imported=hasImportedMetadata(d);
  const epubLinked=privateEpubReady&&privateEpubLinked.has(Number(d.id));
+ const epubVerified=epubLinked&&privateEpubVerified.has(Number(d.id));
  const cover=src?`<img loading="lazy" src="${esc(src)}" alt="Published edition cover of ${esc(d.title)}" onerror="this.remove()">`:'';
- return `<article class="book-card nu-card ${reviewed?'is-reviewed':''} ${epubLinked?'has-linked-epub':''}" data-id="${d.id}" tabindex="0" role="button" aria-label="Explore ${esc(d.title)}. Hover for summary and tags, or click for details." aria-expanded="false"><div class="cover" style="${coverVars(d)}"><span class="cover-script" aria-hidden="true">${esc(nativeGlyph(d))}</span><span class="cover-flower" aria-hidden="true">✧</span><div class="cover-title">${esc(d.title)}</div><span class="cover-native" lang="und">${esc(d.originalTitle||'')}</span><span class="cover-bottom">${esc(languageBadge(d))} · THE CONSERVATORY</span>${cover}<div class="cover-peek"><div class="peek-header"><span class="peek-eyebrow">${reviewed?'SERIES SNAPSHOT':imported?'EPUB METADATA · UNREVIEWED':'CATALOGUE ENTRY'}</span><span class="peek-lang">${esc(languageBadge(d))}</span></div><strong class="peek-title">${esc(d.title)}</strong><p class="peek-blurb">${esc(hoverBlurb(d))}</p><div class="peek-tags">${hoverTags(d)}</div><button type="button" data-readmore="${d.id}" class="peek-readmore">View full profile ↗</button></div></div><button class="favorite ${star?'on':''}" aria-label="${star?'Remove from':'Add to'} my shelf: ${esc(d.title)}" title="${star?'Remove from':'Save to'} my shelf" data-fav="${d.id}">${star?'♥':'♡'}</button><div class="book-info"><h3 title="${esc(d.title)}">${esc(d.title)}</h3><div class="book-sub" title="${esc(d.author||d.originalTitle||'')}">${esc(d.author||d.originalTitle||'Author not listed')}</div>${epubLinked?'<span class="epub-linked-label" title="This private novel has at least one stored EPUB">📖 EPUB linked</span>':''}<div class="nu-under-tags">${hoverTags(d)}</div>${seriesListExtras(d)}</div></article>`
+ return `<article class="book-card nu-card ${reviewed?'is-reviewed':''} ${epubLinked?'has-linked-epub':''}" data-id="${d.id}" tabindex="0" role="button" aria-label="Explore ${esc(d.title)}. Hover for summary and tags, or click for details." aria-expanded="false"><div class="cover" style="${coverVars(d)}"><span class="cover-script" aria-hidden="true">${esc(nativeGlyph(d))}</span><span class="cover-flower" aria-hidden="true">✧</span><div class="cover-title">${esc(d.title)}</div><span class="cover-native" lang="und">${esc(d.originalTitle||'')}</span><span class="cover-bottom">${esc(languageBadge(d))} · THE CONSERVATORY</span>${cover}<div class="cover-peek"><div class="peek-header"><span class="peek-eyebrow">${reviewed?'SERIES SNAPSHOT':imported?'EPUB METADATA · UNREVIEWED':'CATALOGUE ENTRY'}</span><span class="peek-lang">${esc(languageBadge(d))}</span></div><strong class="peek-title">${esc(d.title)}</strong><p class="peek-blurb">${esc(hoverBlurb(d))}</p><div class="peek-tags">${hoverTags(d)}</div><button type="button" data-readmore="${d.id}" class="peek-readmore">View full profile ↗</button></div></div><button class="favorite ${star?'on':''}" aria-label="${star?'Remove from':'Add to'} my shelf: ${esc(d.title)}" title="${star?'Remove from':'Save to'} my shelf" data-fav="${d.id}">${star?'♥':'♡'}</button><div class="book-info"><h3 title="${esc(d.title)}">${esc(d.title)}</h3><div class="book-sub" title="${esc(d.author||d.originalTitle||'')}">${esc(d.author||d.originalTitle||'Author not listed')}</div>${epubLinked?'<span class="epub-linked-label" title="This private novel has at least one stored EPUB">📖 EPUB linked</span>':''}${epubVerified?'<span class="epub-verified-label" title="The owner has verified all stored EPUB editions of this novel">✓ EPUB verified</span>':''}<div class="nu-under-tags">${hoverTags(d)}</div>${seriesListExtras(d)}</div></article>`
 }
 
 function renderBooks(){let matched=data.filter(matches);
@@ -999,14 +1005,15 @@ async function refreshPrivateEpubAvailability(){
   if(value.complete!==true||!Array.isArray(value.ids)||!value.ids.every(x=>Number.isSafeInteger(x)&&x>0))
    throw Error('Incomplete inventory');
   privateEpubLinked=new Set(value.ids);
+  privateEpubVerified=new Set(Array.isArray(value.verifiedIds)?value.verifiedIds.filter(id=>Number.isSafeInteger(id)&&privateEpubLinked.has(id)):[]);
   $('#stat-epubs').textContent=Number.isSafeInteger(value.uploadCount)?value.uploadCount.toLocaleString():privateEpubLinked.size.toLocaleString();
   privateEpubReady=true;
   picker.disabled=false;
-  notice.textContent=privateEpubLinked.size.toLocaleString()+' novel'+(privateEpubLinked.size===1?'':'s')+' with EPUBs linked';
+  notice.textContent=privateEpubLinked.size.toLocaleString()+' novel'+(privateEpubLinked.size===1?'':'s')+' with EPUBs linked · '+privateEpubVerified.size.toLocaleString()+' fully verified';
   renderBooks();
  }catch(error){
   // Never treat a failed inventory request as proof that all books lack EPUBs.
-  privateEpubReady=false;privateEpubFilter='all';picker.value='all';picker.disabled=true;
+  privateEpubReady=false;privateEpubFilter='all';privateEpubVerified.clear();picker.value='all';picker.disabled=true;
   $('#stat-epubs').textContent='—';
   notice.textContent='EPUB link status unavailable. Refresh to retry.';
   renderBooks();
@@ -1014,7 +1021,7 @@ async function refreshPrivateEpubAvailability(){
 }
 $('#epub-presence-filter').addEventListener('change',event=>{
  if(!privateEpubReady)return;
- privateEpubFilter=['all','linked','unlinked'].includes(event.target.value)?event.target.value:'all';
+ privateEpubFilter=['all','linked','unlinked','verified','unverified'].includes(event.target.value)?event.target.value:'all';
  visible=48;renderBooks();
 });
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshPrivateEpubAvailability()});

@@ -5,6 +5,9 @@
 #conservatory-tour-card .tour-head{display:flex;align-items:start;justify-content:space-between;gap:16px}
 #conservatory-tour-card .tour-kicker{font:800 10px system-ui;letter-spacing:1.4px;text-transform:uppercase;color:#967747}
 #conservatory-tour-card .tour-close{padding:0;border:0;background:none;color:#5b6a5d;font-size:23px;line-height:1;cursor:pointer}
+#conservatory-tour-card .tour-jump-label{display:block;font:700 10px system-ui,-apple-system,sans-serif;color:#647767;margin-top:5px;margin-bottom:5px}
+#conservatory-tour-jump{display:block;width:100%;padding:8px 10px;margin:0 0 11px;background:#f6f6ef;color:#365645;border:1px solid #c7d5c6;border-radius:7px;font:12px system-ui,-apple-system,sans-serif}
+#conservatory-tour-jump:focus-visible{outline:3px solid #bb9250;outline-offset:2px}
 #conservatory-tour-card h2{font:500 27px/1.2 Georgia,serif;color:#263e33;margin:8px 0}
 #conservatory-tour-card p{margin:0 0 14px;color:#56685a;font:13px/1.7 system-ui,-apple-system,sans-serif}
 #conservatory-tour-card .tour-progress{display:flex;gap:5px;margin:4px 0 15px}

@@ -36,7 +36,7 @@ for site in ('public','private'):
     assert "if(excludedTags.size&&(d.tags||[]).some" in home
     for item in ('conservatory-tour-launch','conservatory-tour-card','conservatory-tour-target'):
         assert item in css
-    for item in ('setTimeout(start,650)','localStorage.getItem(key)','Skip tutorial','ArrowRight','ArrowLeft','Exclude unwanted story tags','How to add new tags'):
+    for item in ('setTimeout(start,650)','localStorage.getItem(key)','Skip tutorial','ArrowRight','ArrowLeft','Exclude story tags you dislike','Tags and reader contributions'):
         assert item in tour,(site,item)
     assert "site==='private'" in tour
     subprocess.run(['node','--check',str(root/'onboarding-tour.js')],check=True)

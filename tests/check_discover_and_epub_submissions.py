@@ -24,8 +24,15 @@ assert 'data-discover-collection="friends"' in priv
 assert 'id="stat-epubs"' in priv
 assert 'EPUBs uploaded' in priv
 assert 'value.uploadCount' in priv
-assert 'UNION ALL SELECT novel_id AS id FROM additional_epub_editions' in private_api
-assert 'uploadCount,complete:true' in private_api
+# Inventory now combines legacy and additional EPUBs in a shared helper
+# that also attaches per-file verification status. Both edition tables must
+# still contribute to the count without exposing private file references.
+inventory=private_api.split('async function epubVerificationInventory(env)')[1].split('async function epubVerificationState')[0]
+assert 'FROM epub_editions' in inventory
+assert 'FROM additional_epub_editions' in inventory
+assert "private-epub:" in inventory
+assert "uploadCount:entries.length" in private_api
+assert "ids,verifiedIds" in private_api
 
 # Submission endpoints are not present in the public worker; private login
 # authorization happens before private routes dispatch.

@@ -345,27 +345,18 @@ async function routes(request,env,ctx,email,role){
   if(path==='/api/private/epub/availability'&&method==='GET'){
     if(!env.DB)return respond({error:'EPUB inventory database is unavailable'},503);
     try{
-      const [editions,legacy]=await Promise.all([
-        env.DB.prepare("SELECT novel_id AS id FROM epub_editions UNION ALL SELECT novel_id AS id FROM additional_epub_editions").all(),
-        env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-epub:%'").all()
-      ]);
-      const linked=new Set();
-      let uploadCount=0;
-      for(const row of editions.results||[]){
-        const id=Number(row.id);
-        if(Number.isSafeInteger(id)&&id>0){linked.add(id);uploadCount++}
+      const entries=await epubVerificationState(env,await epubVerificationInventory(env));
+      const totals=new Map(),verifiedTotals=new Map();
+      for(const row of entries){
+        totals.set(row.novelId,(totals.get(row.novelId)||0)+1);
+        if(row.verified)verifiedTotals.set(row.novelId,(verifiedTotals.get(row.novelId)||0)+1);
       }
-      for(const row of legacy.results||[]){
-        const match=/^private-epub:([1-9][0-9]*)$/.exec(row.key||'');
-        if(!match||Number(match[1])>962)continue;
-        try{
-          const meta=JSON.parse(row.value||'{}');
-          if(/^private-epubs\/[0-9a-f-]{36}\.epub$/.test(meta.key||'')){linked.add(Number(match[1]));uploadCount++}
-        }catch{}
-      }
-      return respond({ids:[...linked].sort((a,b)=>a-b),uploadCount,complete:true});
+      const ids=[...totals.keys()].sort((a,b)=>a-b);
+      const verifiedIds=ids.filter(id=>totals.get(id)===verifiedTotals.get(id));
+      return respond({ids,verifiedIds,uploadCount:entries.length,verifiedCount:entries.filter(x=>x.verified).length,complete:true});
     }catch{return respond({error:'EPUB inventory could not be loaded'},503)}
   }
+
   if(path.startsWith('/api/private/epub/')){
     if(!env.DB)return respond({error:'D1 database not configured.'},503);
     const readable=(path==='/api/private/epub/status'||path==='/api/private/epub/file')&&method==='GET';
@@ -381,6 +372,26 @@ async function routes(request,env,ctx,email,role){
         try{const info=JSON.parse(item.value);files[match[1]]={name:info.name||'book.epub',size:info.size||0,updatedAt:info.updatedAt||''};}catch{}
       }
       return respond({ok:true,files});
+    }
+    if(path==='/api/private/epub/review'&&(method==='GET'||method==='POST')){
+      if(role!=='owner')return respond({error:'Owner permission required'},403);
+      try{
+        const entries=await epubVerificationState(env,await epubVerificationInventory(env));
+        if(method==='GET'){
+          const items=entries.map(({kind,novelId,editionId,filename,verified})=>({kind,novelId,editionId,filename,verified}));
+          return respond({items,total:items.length,verifiedCount:items.filter(x=>x.verified).length});
+        }
+        const body=await getJson(request);
+        if(typeof body?.verified!=='boolean')return respond({error:'Choose verified or not verified'},400);
+        const novelId=Number(body.novelId),kind=body.kind;
+        if(!Number.isSafeInteger(novelId)||novelId<1||!['edition','legacy'].includes(kind))return respond({error:'Invalid EPUB selection'},400);
+        const target=entries.find(x=>x.kind===kind&&x.novelId===novelId&&(kind==='legacy'||x.editionId===body.editionId));
+        if(!target)return respond({error:'EPUB edition not found'},404);
+        await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP')
+         .bind('epub-verification:'+target.fileKey,JSON.stringify({verified:body.verified,reviewedBy:email,reviewedAt:new Date().toISOString()})).run();
+        await audit(env,email,'private.epub.verified',novelId,kind+':'+(target.editionId||'legacy')+'='+body.verified);
+        return respond({ok:true,novelId,editionId:target.editionId,verified:body.verified});
+      }catch{return respond({error:'Could not update EPUB verification'},503)}
     }
     const id=Number(url.searchParams.get('id'));
     if(!Number.isInteger(id)||id<1||id>962)return respond({error:'Select an existing novel.'},400);
@@ -408,6 +419,7 @@ async function routes(request,env,ctx,email,role){
     }
     if(!sameOrigin(request))return respond({error:'Cross-origin write rejected.'},403);
     if(path==='/api/private/epub/upload'&&method==='POST'){
+      await ensureEpubVerificationBaseline(env);
       if(!env.IMAGES)return respond({error:'R2 bucket not configured (IMAGES).'},503);
       const ctype=(request.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
       if(!['application/epub+zip','application/octet-stream','application/zip'].includes(ctype))return respond({error:'Choose an EPUB file.'},415);
@@ -641,6 +653,62 @@ async function followersNotice(env,id,translator,message,type){
  WHERE (kind='novel' AND ref=?) OR (kind='translator' AND ref=?)) LIMIT 3000`;
  await env.DB.prepare(sql).bind(id,editionText(message,260),editionText(type,40),String(id),ref).run();
 }
+
+/* Owner-confirmed legacy EPUBs are frozen as verified at first inventory use.
+   Each new uploaded object key starts unverified. Per-file owner overrides win. */
+const EPUB_VERIFY_BASELINE='epub-verification-baseline-v1';
+const epubVerifyFileKey=k=>/^(?:private-epubs|private-epub-editions)\/[0-9a-f-]{36}\.epub$/.test(String(k||''));
+async function epubVerificationInventory(env){
+ const [main,extra,legacy]=await Promise.all([
+  env.DB.prepare('SELECT id,novel_id,object_key,filename FROM epub_editions').all(),
+  env.DB.prepare('SELECT id,novel_id,object_key,filename FROM additional_epub_editions').all(),
+  env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-epub:%'").all()
+ ]);
+ const entries=[];
+ for(const row of [...(main.results||[]),...(extra.results||[])]){
+  if(!epubVerifyFileKey(row.object_key))continue;
+  const novelId=Number(row.novel_id);
+  if(!Number.isSafeInteger(novelId)||novelId<1)continue;
+  entries.push({kind:'edition',novelId,editionId:String(row.id),fileKey:row.object_key,filename:String(row.filename||'EPUB').slice(0,160)});
+ }
+ for(const row of legacy.results||[]){
+  const match=/^private-epub:([1-9][0-9]*)$/.exec(row.key||'');
+  if(!match||Number(match[1])>962)continue;
+  try{
+   const meta=JSON.parse(row.value||'{}');
+   if(epubVerifyFileKey(meta.key)&&meta.key.startsWith('private-epubs/'))
+    entries.push({kind:'legacy',novelId:Number(match[1]),editionId:null,fileKey:meta.key,filename:String(meta.name||'EPUB').slice(0,160)});
+  }catch{}
+ }
+ return entries;
+}
+async function epubVerificationState(env,entries){
+ let base=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(EPUB_VERIFY_BASELINE).first();
+ if(!base){
+  const data=JSON.stringify({createdAt:new Date().toISOString(),keys:entries.map(x=>x.fileKey)});
+  await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO NOTHING').bind(EPUB_VERIFY_BASELINE,data).run();
+  base=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(EPUB_VERIFY_BASELINE).first();
+ }
+ if(!base)throw Error('EPUB verification baseline unavailable');
+ let parsed;try{parsed=JSON.parse(base.value)}catch{throw Error('EPUB verification baseline is invalid')}
+ if(!Array.isArray(parsed.keys))throw Error('EPUB verification baseline is incomplete');
+ const existing=new Set(parsed.keys.filter(epubVerifyFileKey));
+ const reviewRows=await env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'epub-verification:%'").all();
+ const review=new Map();
+ for(const row of reviewRows.results||[]){
+  const key=String(row.key||'').slice('epub-verification:'.length);
+  if(!epubVerifyFileKey(key))continue;
+  try{const value=JSON.parse(row.value);if(typeof value.verified==='boolean')review.set(key,value.verified)}catch{}
+ }
+ return entries.map(item=>({...item,verified:review.has(item.fileKey)?review.get(item.fileKey):existing.has(item.fileKey)}));
+}
+async function ensureEpubVerificationBaseline(env){
+ const base=await env.DB.prepare('SELECT key FROM site_settings WHERE key=?').bind(EPUB_VERIFY_BASELINE).first();
+ if(base)return;
+ const entries=await epubVerificationInventory(env);
+ await epubVerificationState(env,entries);
+}
+
 async function editionRoutes(request,env,email,role){
  const u=new URL(request.url),path=u.pathname,method=request.method;
  if(!env.DB)return editionJson({error:'Private D1 database is not configured.'},503);
@@ -679,6 +747,7 @@ async function editionRoutes(request,env,email,role){
  }
  if(method!=='POST'||!strictOrigin(request))return editionJson({error:'Cross-origin request rejected'},403);
  if(path==='/api/private/edition/start'){
+   await ensureEpubVerificationBaseline(env);
    if(!env.IMAGES)return editionJson({error:'Private R2 bucket not configured'},503);
    const b=await getJson(request),id=editionBook(b.novelId),size=Number(b.size);
    const filename=editionText(b.filename,160).replace(/[\\/\x00-\x1f]/g,'_');
