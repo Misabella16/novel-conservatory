@@ -1,8 +1,36 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Novel Updates Staging | Conservatory</title><style>
 :root{font-family:system-ui;color:#263b33;background:#f8f6f0}body{margin:0}header{background:#263b33;color:white;padding:25px 5%}header a{color:#e5cfac}main{max-width:1100px;margin:auto;padding:24px}h1,h2{font-family:Georgia,serif;font-weight:400}.panel{background:white;border:1px solid #ddd;border-radius:12px;margin:15px 0;padding:20px}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}input,select,textarea,button{padding:10px;border-radius:6px;border:1px solid #b9c8bb;font:inherit}input[type=search]{flex:1}button{background:#315b47;color:white;cursor:pointer}button:disabled{opacity:.45}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px;border-bottom:1px solid #eee}a{color:#426e51}#status{white-space:pre-wrap}dialog{width:min(700px,92vw);border:1px solid #ccc;border-radius:12px}label{display:block;margin:12px 0 4px;font-weight:bold}dialog input,dialog textarea{width:100%;box-sizing:border-box}dialog textarea{min-height:100px}.muted{color:#697b70}
-</style></head><body><header><a href="/admin/">← Editorial dashboard</a><h1>Novel Updates master catalogue</h1><p>Imported titles remain unpublished until you choose to publish them.</p></header>
+.capture-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.capture-grid label{display:block;min-width:0}.capture-grid input,.capture-grid textarea{display:block;width:100%;margin-top:5px}.capture-grid .wide{grid-column:1/-1}.capture-grid textarea{min-height:105px}.bookmarklet{display:inline-block;padding:10px 15px;background:#375e4b;color:white!important;border-radius:7px;text-decoration:none;font-weight:700}.import-steps{line-height:1.7;margin:8px 0 15px;padding-left:22px}@media(max-width:650px){.capture-grid{grid-template-columns:1fr}.capture-grid .wide{grid-column:auto}}</style></head><body><header><a href="/admin/">← Editorial dashboard</a><h1>Novel Updates master catalogue</h1><p>Imported titles remain unpublished until you choose to publish them.</p></header>
 <main><section class="panel"><div class="controls"><p><b id="draft">…</b> unpublished</p><p><b id="published">…</b> published</p><p>Import position: <b id="cursor">…</b></p></div>
 <p class="muted">Changes to staged metadata are locked against future automatic overwrites.</p></section>
+<section class="panel" id="nu-browser-import">
+<h2>Import from a Novel Updates page you can open</h2>
+<p>The automated server request was blocked (403), so this option retrieves existing metadata directly from a series page you open in your own browser. No AI writing, login credentials or third-party cookies are collected. It does not bypass any access challenge.</p>
+<ol class="import-steps">
+<li>On a computer, drag <a id="nu-capture-bookmarklet" class="bookmarklet" href="#">Capture Novel Updates</a> to your browser bookmarks bar, or use <button type="button" id="nu-copy-bookmarklet">Copy bookmarklet code</button> and paste it into the address/URL of a new bookmark.</li>
+<li>Open a specific Novel Updates series page normally. Once its genres, tags and synopsis appear, click the <strong>Capture Novel Updates</strong> bookmark.</li>
+<li>Return here, paste the copied JSON metadata, then review and save it as <strong>unpublished</strong>.</li>
+</ol>
+<label for="nu-import-json">Copied metadata</label>
+<textarea id="nu-import-json" style="display:block;width:100%;min-height:112px;margin:7px 0 10px" spellcheck="false" placeholder="Paste the JSON copied from a Novel Updates page"></textarea>
+<button type="button" id="nu-review-capture">Review copied metadata</button>
+<div id="nu-capture-review" hidden>
+<h3>Review the exact source fields</h3>
+<div class="capture-grid">
+<label>Novel Updates URL <input id="nu-import-url" type="url" required></label>
+<label>Title <input id="nu-import-title" maxlength="210" required></label>
+<label>Author <input id="nu-import-author" maxlength="140"></label>
+<label>Associated / original title <input id="nu-import-original" maxlength="210"></label>
+<label class="wide">Existing synopsis <textarea id="nu-import-synopsis" maxlength="6000"></textarea></label>
+<label>Genres, comma-separated <textarea id="nu-import-genres"></textarea></label>
+<label>Tags, comma-separated <textarea id="nu-import-tags"></textarea></label>
+<label class="wide">Cover source URL (optional) <input id="nu-import-cover" type="url"></label>
+</div>
+<button type="button" id="nu-stage-capture" disabled>Save as unpublished draft</button>
+</div>
+<p id="nu-browser-status" role="status" style="white-space:pre-wrap">Nothing imported yet. Existing protected drafts will never be overwritten by this tool.</p>
+<p class="muted">This bookmarklet captures one series at a time and never contacts Novel Conservatory from Novel Updates. Large-scale automatic importing still requires an approved source feed or a server connection that Novel Updates permits.</p>
+</section>
 <section class="panel"><div class="controls"><input type="search" id="q" placeholder="Search title, author or series slug"><select id="state"><option value="draft">Unpublished</option><option value="published">Published</option><option value="all">All</option></select><button id="find">Search</button></div></section>
 <section class="panel"><div class="controls"><label><input type="checkbox" id="all"> Select page</label><button id="publish" disabled>Publish selected</button><button id="prev">Previous</button><button id="next">Next</button><span id="range"></span></div>
 <div style="overflow-x:auto"><table><thead><tr><th></th><th>Title and source</th><th>Author</th><th>State</th><th>Action</th></tr></thead><tbody id="results"></tbody></table></div><p id="status" role="status">Loading…</p></section></main>
@@ -46,4 +74,4 @@ $('all').addEventListener('change',e=>{document.querySelectorAll('.selected').fo
 $('find').addEventListener('click',()=>{offset=0;load()});$('state').addEventListener('change',()=>{offset=0;load()});$('q').addEventListener('keydown',e=>{if(e.key==='Enter'){offset=0;load()}});
 $('prev').addEventListener('click',()=>{offset=Math.max(0,offset-30);load()});$('next').addEventListener('click',()=>{offset+=30;load()});
 Promise.all([stats(),load()]).catch(e=>status(e.message));
-</script></body></html>
+</script><script src="/admin/nu-browser-capture.js" defer></script></body></html>
