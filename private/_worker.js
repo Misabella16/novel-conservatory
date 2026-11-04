@@ -1686,6 +1686,17 @@ async function nuAdminRoutes(request,env,email,role){
    for(const r of counts.results||[])if(r.state in result)result[r.state]=Number(r.count)||0;
    return respond({counts:result,progress:progress||null});
   }
+  if(path==='/api/admin/nu/staged-by-url'&&method==='GET'){
+   let parsed;try{parsed=new URL(String(url.searchParams.get('url')||''))}catch{return respond({error:'Enter a Novel Updates series URL'},400)}
+   const match=/^\/series\/([a-z0-9][a-z0-9-]{0,190})\/?$/.exec(parsed.pathname);
+   if(parsed.protocol!=='https:'||parsed.hostname!=='www.novelupdates.com'||parsed.port||parsed.username||parsed.password||parsed.search||parsed.hash||!match)
+    return respond({error:'Use an exact https://www.novelupdates.com/series/... URL'},400);
+   const canonical='https://www.novelupdates.com/series/'+match[1]+'/';
+   const row=await env.COMMUNITY_DB.prepare('SELECT title,author,payload_json,nu_url,custom_locked FROM nu_staged_series WHERE slug=? LIMIT 1').bind(match[1]).first();
+   if(!row)return respond({error:'That Novel Updates series has not been captured yet. Use Capture Novel Updates on the series page, then stage it in the master catalogue.'},404);
+   let metadata={};try{metadata=JSON.parse(row.payload_json||'{}')}catch{}
+   return respond({metadata:{title:row.title,author:row.author,synopsis:extraTxt(metadata.synopsis,6000),tags:extraTags(metadata.tags),genres:extraTags(metadata.genres),nuUrl:canonical},source:'Novel Updates (captured)',notice:'This is staged source metadata, not published catalogue content.'});
+  }
   if(path==='/api/admin/nu/staging'&&method==='GET'){
    const q=String(url.searchParams.get('q')||'').trim().slice(0,100);
    const state=['draft','published','all'].includes(url.searchParams.get('state'))?url.searchParams.get('state'):'draft';
@@ -1852,6 +1863,14 @@ async function epubInsightsRoutes(request,env,email,role){
    const offset=Math.max(0,Math.min(100000,Number(u.searchParams.get('offset'))||0)),limit=Math.min(50,Math.max(1,Number(u.searchParams.get('limit'))||30));
    return editionJson({items:matches.slice(offset,offset+limit),total:matches.length,offset,limit});
   }
+  if(path==='/api/admin/epub-insights/has-epub'&&method==='GET'){
+   const novelId=editionBook(u.searchParams.get('id'));
+   if(!novelId)return editionJson({error:'Choose a valid novel ID'},400);
+   const table=editionTable(novelId);
+   const stored=await env.DB.prepare('SELECT id,filename FROM '+table+' WHERE novel_id=? LIMIT 1').bind(novelId).first();
+   const legacy=novelId<=962?await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+novelId).first():null;
+   return editionJson({novelId,hasEpub:!!stored||!!legacy,editionId:stored?.id||(legacy?'legacy':null)});
+  }
   if(path==='/api/admin/epub-insights/draft'&&method==='GET'){
    const id=editionBook(u.searchParams.get('id'));if(!id)return editionJson({error:'Invalid novel'},400);
    const x=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(INSIGHT_KEY+id).first();
@@ -1862,11 +1881,21 @@ async function epubInsightsRoutes(request,env,email,role){
   const body=await getJson(request),id=editionBook(body.novelId);
   if(!id)return editionJson({error:'Choose a valid novel'},400);
   if(path==='/api/admin/epub-insights/draft'){
-   const edition=body.editionId==='legacy'?'legacy':editionUuid(body.editionId);
+   const edition=body.editionId==='none'?'none':body.editionId==='legacy'?'legacy':editionUuid(body.editionId);
    if(!edition)return editionJson({error:'Invalid edition'},400);
-   const valid=edition==='legacy'&&id<=962?
-    !!await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+id).first():
-    !!await env.DB.prepare('SELECT id FROM '+editionTable(id)+' WHERE novel_id=? AND id=?').bind(id,edition).first();
+   let valid=false;
+   if(edition==='none'){
+    // A Novel Updates-only draft is allowed only when there is genuinely no
+    // stored EPUB edition for this novel in either private storage scheme.
+    const stored=await env.DB.prepare('SELECT id FROM '+editionTable(id)+' WHERE novel_id=? LIMIT 1').bind(id).first();
+    const legacy=id<=962?await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+id).first():null;
+    if(stored||legacy)return editionJson({error:'This novel has an EPUB; inspect it first before using Novel Updates for missing metadata.'},409);
+    valid=true;
+   }else if(edition==='legacy'&&id<=962){
+    valid=!!await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+id).first();
+   }else{
+    valid=!!await env.DB.prepare('SELECT id FROM '+editionTable(id)+' WHERE novel_id=? AND id=?').bind(id,edition).first();
+   }
    if(!valid)return editionJson({error:'Selected stored EPUB was not found'},404);
    const data={novelId:id,editionId:edition,title:insightTrim(body.title,210),synopsis:insightTrim(body.synopsis,2000),
     tags:insightList(body.tags),genres:insightList(body.genres,15),warnings:insightList(body.warnings,15),
