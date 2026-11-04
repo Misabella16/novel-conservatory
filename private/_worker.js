@@ -1130,7 +1130,7 @@ async function privateEpubSubmissionRoutes(request,env,email,role){
  const validId=/^[a-f0-9-]{36}$/.test(id);
  const setting=id=>'epub-submission:'+id;
  const owner=role==='owner';
- if(method==='POST'&&!sameOrigin(request))return respond({error:'Wrong origin'},403);
+ if(method==='POST'&&request.headers.get('origin')!==new URL(request.url).origin)return respond({error:'Wrong origin'},403);
  try{
   if(path==='/api/epub-submissions/upload'&&method==='POST'){
    const length=Number(request.headers.get('content-length')||0);
@@ -1142,8 +1142,8 @@ async function privateEpubSubmissionRoutes(request,env,email,role){
    let filename='submission.epub';
    try{filename=decodeURIComponent(request.headers.get('x-epub-filename')||'submission.epub').replace(/[/\\\x00-\x1f]/g,'_').trim().slice(0,140)}catch{return respond({error:'Invalid EPUB filename'},400)}
    if(!/\.epub$/i.test(filename))return respond({error:'Only EPUB files are accepted'},415);
-   const title=String(request.headers.get('x-epub-title')||'').trim().slice(0,180);
-   const notes=String(request.headers.get('x-epub-notes')||'').trim().slice(0,420);
+   let title='',notes='';
+   try{title=decodeURIComponent(request.headers.get('x-epub-title')||'').trim().slice(0,180);notes=decodeURIComponent(request.headers.get('x-epub-notes')||'').trim().slice(0,420)}catch{return respond({error:'Invalid title or note encoding'},400)}
    const rawNovel=String(request.headers.get('x-epub-novel-id')||'').trim();
    const novelId=rawNovel&&/^[1-9]\d{0,8}$/.test(rawNovel)?Number(rawNovel):null;
    if(rawNovel&&!novelId)return respond({error:'Use a valid catalogue ID or leave it blank'},400);
