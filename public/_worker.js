@@ -327,7 +327,7 @@ async function publicNovelUpdatesLinkSubmit(request,env){
   const candidate=Number(input.novelId);
   if(!Number.isSafeInteger(candidate)||candidate<1)return siteOut({error:'Invalid catalogue ID'},400);
   if(candidate<=962){
-   const seed=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',url.origin)));
+   const seed=await env.ASSETS.fetch(new Request(new URL('/catalogue-submission-index.json',url.origin)));
    if(!seed.ok)return siteOut({error:'Cannot verify the catalogue entry right now'},503);
    const data=await seed.json(),record=(Array.isArray(data)?data:data.books||[]).find(x=>x.id===candidate);
    if(!record)return siteOut({error:'Novel not found in the public catalogue'},404);
