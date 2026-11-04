@@ -346,7 +346,7 @@ async function routes(request,env,ctx,email,role){
     if(!env.DB)return respond({error:'EPUB inventory database is unavailable'},503);
     try{
       const [editions,legacy]=await Promise.all([
-        env.DB.prepare("SELECT novel_id AS id FROM epub_editions UNION SELECT novel_id AS id FROM additional_epub_editions").all(),
+        env.DB.prepare("SELECT novel_id AS id FROM epub_editions UNION ALL SELECT novel_id AS id FROM additional_epub_editions").all(),
         env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-epub:%'").all()
       ]);
       const linked=new Set();
