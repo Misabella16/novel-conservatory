@@ -43,6 +43,8 @@ jobs:
         run: python tests/check_discover_and_epub_submissions.py
       - name: Verify public Novel Updates links and private staging review
         run: python tests/check_public_novel_updates_links.py
+      - name: Verify expanded tours and EPUB verified-state controls
+        run: python tests/check_expanded_tours_and_epub_verification.py
       - name: Check migration SQL offline
         run: |
           python - <<'PY'
