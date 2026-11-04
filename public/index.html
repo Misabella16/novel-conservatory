@@ -420,9 +420,38 @@ header{background:rgba(255,251,244,.98);box-shadow:0 4px 22px #182a2111;border-b
 .collection-dialog .validation{font-size:12px;color:#8d3b39;min-height:1em}
 @media(max-width:610px){.collection-dialog .collection-checklist{grid-template-columns:1fr}.collections-actions{width:100%}.collections-actions select{flex:1}}
 </style>
+
+<style id="visible-section-navigation">
+/* All sections are intentionally discoverable; no hidden horizontal swipe. */
+.section-menu-toggle{display:none;align-items:center;gap:9px;margin-left:auto;border:1px solid #cad5c9;border-radius:8px;padding:11px 15px;background:#f4f1e8;color:#284c40;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
+.section-menu-toggle:focus-visible{outline:3px solid #a97b49;outline-offset:2px}
+@media(max-width:1280px){
+ header .top{position:relative;flex-wrap:wrap}
+ .section-menu-toggle{display:inline-flex}
+ header .top>.nav{display:none!important}
+ header .top>.nav.is-open{
+  display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));position:absolute;
+  top:calc(100% - 1px);left:14px;right:14px;width:auto;margin:0;padding:12px;gap:7px;
+  background:#fffbf4;border:1px solid #d7dacc;border-radius:0 0 13px 13px;
+  box-shadow:0 18px 38px rgba(25,52,42,.2);max-height:calc(100vh - 115px);
+  overflow-y:auto;overflow-x:hidden;z-index:60
+ }
+ header .top>.nav .navbtn{display:flex;align-items:center;justify-content:flex-start;
+  width:100%;min-height:48px;text-align:left;white-space:normal;font-size:12px;
+  background:#f7f6ee;border-radius:7px;padding:11px 12px;letter-spacing:.25px;
+  line-height:1.35;border:1px solid #e3e8db;box-shadow:none;text-decoration:none}
+ header .top>.nav .navbtn.active{background:#e5ede2;color:#24503c;border-color:#a5bdab;box-shadow:none}
+}
+@media(max-width:560px){
+ .section-menu-toggle{padding:10px 12px;font-size:12px}
+ header .top>.nav.is-open{grid-template-columns:1fr 1fr;left:7px;right:7px;gap:6px}
+ header .top>.nav .navbtn{font-size:11px;padding:10px}
+}
+@media(min-width:1281px){header .top>.nav{display:flex!important}}
+</style>
 </head>
 <body>
-<header><div class="top"><a aria-label="The Novel Conservatory, home" class="brand" href="#top"><div aria-hidden="true" class="brand-mark">文</div><div><strong>The Novel Conservatory</strong><span>GENRES · RELATIONSHIPS · STORY WORLDS</span></div></a><nav aria-label="Library sections" class="nav"><button class="navbtn active" id="explore-nav" type="button">Discover</button><button class="navbtn" id="covers-nav" type="button">Browse novels</button><button class="navbtn" id="curated-nav" type="button">Collections</button><a class="navbtn translator-nav" href="/translators/">Translators <span aria-hidden="true">↗</span></a><button class="navbtn" id="saved-nav" type="button">My Collections <span class="nav-count" id="saved-badge">0</span></button><button class="navbtn" id="about-nav" type="button">About</button><a class="navbtn" href="/suggestions/">Suggestions &amp; Questions</a></nav><a class="private-library-link" href="https://novel-conservatory.pages.dev/" rel="noopener noreferrer">Private library ↗</a></div></header>
+<header><div class="top"><a aria-label="The Novel Conservatory, home" class="brand" href="#top"><div aria-hidden="true" class="brand-mark">文</div><div><strong>The Novel Conservatory</strong><span>GENRES · RELATIONSHIPS · STORY WORLDS</span></div></a><button type="button" id="section-menu-toggle" class="section-menu-toggle" aria-controls="library-main-nav" aria-expanded="false" aria-label="Show all library sections">☰ All sections <span aria-hidden="true">▾</span></button><nav aria-label="Library sections" id="library-main-nav" class="nav"><button class="navbtn active" id="explore-nav" type="button">Discover</button><button class="navbtn" id="covers-nav" type="button">Browse novels</button><button class="navbtn" id="curated-nav" type="button">Collections</button><a class="navbtn translator-nav" href="/translators/">Translators <span aria-hidden="true">↗</span></a><button class="navbtn" id="saved-nav" type="button">My Collections <span class="nav-count" id="saved-badge">0</span></button><button class="navbtn" id="about-nav" type="button">About</button><a class="navbtn" href="/suggestions/">Suggestions &amp; Questions</a></nav><a class="private-library-link" href="https://novel-conservatory.pages.dev/" rel="noopener noreferrer">Private library ↗</a></div></header>
 <main id="top"><div class="public-notice"><strong>Public catalogue preview</strong><span> Explore all 962 titles without signing in. Catalogue metadata is editor-managed; visitors can submit moderated link reports and corrections. No private downloads or member data.</span></div><div class="editor-announcement" hidden="" id="editable-announcement"></div>
 <div class="tab-panel" data-tab="discover" id="tab-discover">
 <section class="hero"><div aria-hidden="true" class="hero-custom-art hide" id="hero-custom-art-wrap"><img alt="" id="hero-custom-art"/></div><div class="hero-inner"><div class="hero-copy"><div class="eyebrow">A LIBRARY OF STRANGE AND WONDERFUL STORIES</div><h1 id="editable-hero-title">Stories worth<br/><em>getting lost in.</em></h1><p id="editable-hero-description">Discover a novel by its cover, then search by genre, character, relationship dynamics and the story elements you love.</p><div class="hero-cta"><button class="button cream" id="browse-btn">Browse all covers <span aria-hidden="true">↗</span></button><button class="text-link" id="surprise-btn" style="border:0;background:none;padding:10px 2px" type="button">Let fate choose a novel ✧</button></div><div class="hero-note">962 STORIES · GENRES · TROPES · PUBLIC PREVIEW</div></div><div aria-hidden="true" class="book-scene" id="hero-default-scene"><div class="scene-seal">書</div><div class="scene-small">纸上有天地<br/><span>Entire worlds within a page</span></div><div class="book-graphic one"><span class="scene-glyph">仙</span><b>Cultivation<br/>&amp; fate</b></div><div class="book-graphic three"><span class="scene-glyph">별</span><b>Strange<br/>new worlds</b></div><div class="book-graphic two"><span class="scene-glyph">怪</span><b>Beyond the<br/>last threshold</b></div></div></div></section><div class="container">
@@ -907,6 +936,24 @@ if(Number.isInteger(linkedNovelId)&&linkedNovelId>0){const linkedNovel=data.find
   if(c.homeFlavor)document.getElementById('editable-hero-description').textContent=c.homeFlavor;
   if(c.homeEyebrow){const e=document.querySelector('#tab-discover .hero .eyebrow');if(e)e.textContent=c.homeEyebrow;}
  }catch(e){console.warn('Public homepage settings unavailable',e)}
+})();
+</script>
+
+<script id="section-menu-behavior">
+(function(){
+'use strict';
+const button=document.getElementById('section-menu-toggle'),nav=document.getElementById('library-main-nav');
+if(!button||!nav)return;
+const close=()=>{nav.classList.remove('is-open');button.setAttribute('aria-expanded','false');};
+button.addEventListener('click',()=>{
+ const next=!nav.classList.contains('is-open');
+ nav.classList.toggle('is-open',next);
+ button.setAttribute('aria-expanded',String(next));
+});
+nav.addEventListener('click',event=>{if(event.target.closest('a,button'))close()});
+document.addEventListener('pointerdown',event=>{if(!nav.contains(event.target)&&!button.contains(event.target))close()});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&nav.classList.contains('is-open')){close();button.focus()}});
+window.addEventListener('resize',()=>{if(window.innerWidth>1280)close()});
 })();
 </script>
 </body>
