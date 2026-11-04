@@ -454,6 +454,7 @@ async function routes(request,env,ctx,email,role){
   const method=request.method.toUpperCase();
   // Both the owner and explicitly approved friends may read EPUBs after the
   // owner enables sharing. All uploads, edits and bulk inventory remain owner-only.
+  if(path.startsWith('/api/admin/nu/'))return nuAdminRoutes(request,env,email,role);
   if(path.startsWith('/api/additional/')||path.startsWith('/api/admin/additional/'))return additionalRoutes(request,env,'private',email,role);
   if(path.startsWith('/api/private/edition/'))return editionRoutes(request,env,email,role);
   if(path==='/api/follows'||path.startsWith('/api/notifications'))return followRoutes(request,env,email);
@@ -1669,7 +1670,7 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
    return extraJson({ok:true,novelId:newId});
   }
   if(path==='/api/admin/additional/create'&&method==='POST'){
-   if(!owner||!extraOrigin(request))return extraJson({error:'Owner permission required'},403);
+   if(!editor||!extraOrigin(request))return extraJson({error:'Editor permission required'},403);
    const b=await request.json(),p=extraPayload(b),visibility=b.publish===true?'published':'private';
    const id=await extraInsert(env,p,'',visibility,email);return extraJson({ok:true,id});
   }
@@ -1682,7 +1683,7 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
    return extraJson({ok:true,results});
   }
   if(path==='/api/admin/additional/edit'&&method==='POST'){
-   if(!owner||!extraOrigin(request))return extraJson({error:'Owner permission required'},403);
+   if(!editor||!extraOrigin(request))return extraJson({error:'Editor permission required'},403);
    const b=await request.json(),id=extraId(b.id);if(!id)return extraJson({error:'Invalid additional novel ID'},400);
    const row=await env.COMMUNITY_DB.prepare('SELECT * FROM additional_catalogue_novels WHERE id=?').bind(id).first();if(!row)return extraJson({error:'Novel not found'},404);
    const next=extraPayload({...JSON.parse(row.payload_json||'{}'),...b.patch});
@@ -1691,7 +1692,7 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
    return extraJson({ok:true,id});
   }
   if(path==='/api/admin/additional/auto-cover'&&method==='POST'){
-   if(!owner||!extraOrigin(request))return extraJson({error:'Owner permission required'},403);
+   if(!editor||!extraOrigin(request))return extraJson({error:'Editor permission required'},403);
    const fd=await request.formData(),id=extraId(fd.get('novel_id'));
    if(!id)return extraJson({error:'Invalid additional novel'},400);
    const row=await env.COMMUNITY_DB.prepare('SELECT * FROM additional_catalogue_novels WHERE id=?').bind(id).first();
@@ -1707,4 +1708,120 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
   }
   return extraJson({error:'Not found'},404);
  }catch(e){return extraJson({error:extraTxt(e?.message||'Could not process request',220)},400);}
+}
+
+
+// Novel Updates master staging: always private. No staging routes are registered on public Worker.
+// Run database/NU_STAGING_MIGRATION.sql in COMMUNITY_DB before enabling.
+function nuValidSlug(value){const s=String(value||'');return /^[a-z0-9][a-z0-9-]{0,190}$/.test(s)?s:'';}
+function nuStageItem(row){
+ let p={};try{p=JSON.parse(row.payload_json||'{}')}catch{}
+ return {slug:row.slug,title:row.title,author:row.author,nuUrl:row.nu_url,
+   coverUrl:row.cover_url,state:row.state,publishedId:row.published_id,
+   customLocked:!!row.custom_locked,lastSeenAt:row.last_seen_at,metadata:p};
+}
+async function nuAdminRoutes(request,env,email,role){
+ if(!isEditor(role))return respond({error:'Editor permission required'},403);
+ if(!env.COMMUNITY_DB)return respond({error:'Shared catalogue database is unavailable'},503);
+ const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
+ try{
+  if(path==='/api/admin/nu/status'&&method==='GET'){
+   const [counts,progress]=await Promise.all([
+    env.COMMUNITY_DB.prepare('SELECT state,COUNT(*) AS count FROM nu_staged_series GROUP BY state').all(),
+    env.COMMUNITY_DB.prepare("SELECT * FROM nu_import_progress WHERE source='novelupdates'").first()
+   ]);
+   const result={draft:0,published:0};
+   for(const r of counts.results||[])if(r.state in result)result[r.state]=Number(r.count)||0;
+   return respond({counts:result,progress:progress||null});
+  }
+  if(path==='/api/admin/nu/staging'&&method==='GET'){
+   const q=String(url.searchParams.get('q')||'').trim().slice(0,100);
+   const state=['draft','published','all'].includes(url.searchParams.get('state'))?url.searchParams.get('state'):'draft';
+   const limit=Math.max(1,Math.min(50,Number(url.searchParams.get('limit'))||30));
+   const offset=Math.max(0,Math.min(500000,Number(url.searchParams.get('offset'))||0));
+   const where=[],args=[];
+   if(state!=='all'){where.push('state=?');args.push(state);}
+   if(q){where.push('(title LIKE ? OR author LIKE ? OR slug LIKE ?)');args.push('%'+q+'%','%'+q+'%','%'+q+'%');}
+   const sql=where.length?' WHERE '+where.join(' AND '):'';
+   const [total,rows]=await Promise.all([
+    env.COMMUNITY_DB.prepare('SELECT COUNT(*) AS n FROM nu_staged_series'+sql).bind(...args).first(),
+    env.COMMUNITY_DB.prepare('SELECT * FROM nu_staged_series'+sql+' ORDER BY title COLLATE NOCASE,slug LIMIT ? OFFSET ?').bind(...args,limit,offset).all()
+   ]);
+   return respond({items:(rows.results||[]).map(nuStageItem),total:Number(total?.n)||0,limit,offset});
+  }
+  if(method!=='POST'||!['/api/admin/nu/update','/api/admin/nu/publish'].includes(path))
+   return respond({error:'Not found'},404);
+  if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+  const body=await getJson(request);
+  if(path==='/api/admin/nu/update'){
+   const slug=nuValidSlug(body.slug);
+   const row=slug?await env.COMMUNITY_DB.prepare('SELECT * FROM nu_staged_series WHERE slug=?').bind(slug).first():null;
+   if(!row)return respond({error:'Staged novel not found'},404);
+   if(row.state==='published')return respond({error:'Already published. Use the live catalogue editor to update published entries.'},409);
+   const raw=body.patch&&typeof body.patch==='object'?body.patch:{};
+   const allowed=['title','author','synopsis','genres','tags','originalTitle','originalLanguage','novelOrigin','translation'];
+   const patch={};for(const k of allowed)if(Object.prototype.hasOwnProperty.call(raw,k))patch[k]=raw[k];
+   const p=extraPayload({...JSON.parse(row.payload_json||'{}'),...patch});
+   if(p.title.length<2)return respond({error:'Title cannot be empty'},400);
+   await env.COMMUNITY_DB.prepare("UPDATE nu_staged_series SET title=?,author=?,payload_json=?,custom_locked=1,updated_at=CURRENT_TIMESTAMP WHERE slug=? AND state='draft'")
+     .bind(p.title,p.author,JSON.stringify(p),slug).run();
+   await audit(env,email,'nu.staged.edit',slug,'locked from automatic overwrite');
+   return respond({ok:true,slug});
+  }
+  const slugs=Array.isArray(body.slugs)?[...new Set(body.slugs.map(nuValidSlug).filter(Boolean))]:[];
+  if(!slugs.length||slugs.length>20)return respond({error:'Choose 1–20 valid staged novels'},400);
+  const baseAsset=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',url.origin)));
+  const original=baseAsset.ok?await baseAsset.json():[];
+  const base=Array.isArray(original)?original:original.books||[];
+  const existingByUrl=new Map(),existingByTitle=new Map();
+  for(const b of base){
+   if(b.nuUrl)existingByUrl.set(String(b.nuUrl).replace(/\/+$/,''),b.id);
+   if(b.title)existingByTitle.set(String(b.title).trim().toLowerCase(),b.id);
+  }
+  const results=[];
+  for(const slug of slugs){
+   try{
+    const row=await env.COMMUNITY_DB.prepare('SELECT * FROM nu_staged_series WHERE slug=?').bind(slug).first();
+    if(!row){results.push({slug,error:'Not found'});continue;}
+    if(row.state==='published'){results.push({slug,ok:true,alreadyPublished:true,id:row.published_id});continue;}
+    const p=extraPayload(JSON.parse(row.payload_json||'{}'));
+    if(!p.title||!p.nuUrl)throw Error('Staged title or source URL is missing');
+    let existing=existingByUrl.get(p.nuUrl.replace(/\/+$/,''))||null;
+    if(!existing){
+     const found=await env.COMMUNITY_DB.prepare("SELECT id FROM additional_catalogue_novels WHERE json_extract(payload_json,'$.nuUrl')=? LIMIT 1").bind(p.nuUrl).first();
+     existing=found?.id||null;
+    }
+    if(!existing&&existingByTitle.has(p.title.trim().toLowerCase()))
+     throw Error('Already in the original catalogue. Review it manually instead of making a duplicate.');
+    let coverKey='';
+    if(!existing&&row.cover_url&&env.COMMUNITY_IMAGES){
+     try{
+      const cover=new URL(row.cover_url);
+      if(cover.protocol==='https:'&&(cover.hostname==='novelupdates.com'||cover.hostname.endsWith('.novelupdates.com'))){
+       const res=await fetch(cover.href,{redirect:'error',signal:AbortSignal.timeout(7000)});
+       const typ=(res.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
+       if(res.ok&&['image/jpeg','image/png','image/webp'].includes(typ)&&Number(res.headers.get('content-length')||0)<2800000){
+        const bytes=await res.arrayBuffer();
+        if(bytes.byteLength<2800000)coverKey=await extraPhoto(new File([bytes],'nu-cover',{type:typ}),env);
+       }
+      }
+     }catch{} // Cover failures must not block authorized catalogue publication.
+    }
+    let id=existing;
+    if(!id){
+     try{id=await extraInsert(env,{...p,metadataSource:'Novel Updates (authorized import)',coverRights:!!coverKey,coverCredit:coverKey?'Novel Updates':p.coverCredit},coverKey,'published',email);}
+     catch(e){if(coverKey&&env.COMMUNITY_IMAGES)await env.COMMUNITY_IMAGES.delete(coverKey);throw e;}
+    }
+    await env.COMMUNITY_DB.prepare("UPDATE nu_staged_series SET state='published',published_id=?,published_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE slug=? AND state='draft'")
+      .bind(id,slug).run();
+    await audit(env,email,'nu.publish',slug,String(id));
+    results.push({slug,ok:true,id,linkedExisting:!!existing});
+   }catch(e){results.push({slug,error:String(e?.message||'Publication failed').slice(0,180)});}
+  }
+  return respond({ok:true,results});
+ }catch(e){
+  const msg=String(e?.message||'Staging unavailable');
+  if(/no such table/i.test(msg))return respond({error:'Run database/NU_STAGING_MIGRATION.sql in the community D1 database first.'},503);
+  return respond({error:msg.slice(0,240)},400);
+ }
 }
