@@ -59,13 +59,11 @@ jobs:
           CONFIRM: ${{ inputs.confirmation }}
           CF_API: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          PUBLIC_PROJECT: ${{ vars.PUBLIC_PAGES_PROJECT }}
         run: |
           case "$TARGET:$CONFIRM" in
             private:'DEPLOY PRIVATE') PROJECT="novel-conservatory" ;;
             public:'DEPLOY PUBLIC')
-              if [ -z "$PUBLIC_PROJECT" ]; then echo "::error::Set PUBLIC_PAGES_PROJECT first"; exit 1; fi
-              PROJECT="$PUBLIC_PROJECT" ;;
+              PROJECT="novel-conservatory-public" ;;
             *) echo "::error::Confirmation doesn't match target"; exit 1 ;;
           esac
           if [ -z "$CF_API" ] || [ -z "$CF_ACCOUNT" ]; then
