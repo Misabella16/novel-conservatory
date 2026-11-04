@@ -27,10 +27,19 @@ for item in required_html:
 route_start=worker.index("if(path==='/api/private/epub/availability'&&method==='GET')")
 route_end=worker.index("if(path.startsWith('/api/private/epub/'))",route_start)
 route=worker[route_start:route_end]
-for expected in ["epub_editions", "additional_epub_editions", "private-epub:", "ids:[...linked]", "complete:true"]:
-    assert expected in route, f"Missing complete inventory source: {expected}"
-for private_field in ["filename", "bytes", "httpMetadata", ".get("]:
-    assert private_field not in route, "Presence endpoint must not return files or private metadata"
+# Inventory queries now live in the shared verification helper, not in the
+# public-facing availability handler. Check both layers, and ensure only safe
+# IDs/counts/verification statuses are returned (never private file metadata).
+inventory_start=worker.index("async function epubVerificationInventory(env)")
+inventory_end=worker.index("async function epubVerificationState",inventory_start)
+inventory=worker[inventory_start:inventory_end]
+for expected in ["epub_editions", "additional_epub_editions", "private-epub:"]:
+    assert expected in inventory, f"Missing complete inventory source: {expected}"
+for expected in ["ids,verifiedIds,uploadCount", "complete:true", "epubVerificationInventory(env)"]:
+    assert expected in route, f"Missing safe inventory response: {expected}"
+assert "return respond({ids,verifiedIds,uploadCount:" in route
+for private_field in ["filename:", "object_key:", "httpMetadata", "R2", "fileKey:"]:
+    assert private_field not in route, f"Presence endpoint must not return private file metadata: {private_field}"
 assert "if(path==='/api/private/epub/availability'" in worker
 assert "email=await verifyAccess(request,env)" in worker
 
