@@ -77,6 +77,7 @@ async function choose(item){
   const v=await api('/api/admin/epub-insights/draft?id='+item.novelId);
   if(v.draft?.editionId===item.editionId){
    const d=v.draft;
+   fieldSources=d.fieldSources&&typeof d.fieldSources==='object'?{...d.fieldSources}:{};
    $('title').value=d.title||'';$('synopsis').value=d.synopsis||'';
    $('tags').value=(d.tags||[]).join(', ');$('genres').value=(d.genres||[]).join(', ');
    $('warnings').value=(d.warnings||[]).join(', ');
