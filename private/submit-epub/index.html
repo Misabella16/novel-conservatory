@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>Submit an EPUB | The Novel Conservatory</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f6f1e8;color:#263e34;font:15px/1.6 system-ui,-apple-system,sans-serif}
+header{background:#263f35;padding:19px 22px;color:#fffbea}header a{color:#fffbea;text-decoration:none;font-weight:700}
+main{max-width:760px;margin:35px auto;padding:0 17px 55px}h1,h2{font-family:Georgia,serif;font-weight:500}h1{font-size:clamp(32px,6vw,49px);line-height:1.12;margin:5px 0 11px}p{color:#677569}
+.panel{background:#fffdf8;padding:26px;border:1px solid #d9d9c9;border-radius:13px;box-shadow:0 12px 26px #1c3c2b10}
+label{display:block;font-size:13px;font-weight:750;margin:14px 0 6px}input,textarea{font:inherit;width:100%;padding:11px;border:1px solid #bccbbd;background:white;border-radius:8px;color:#253d33}
+textarea{min-height:100px;resize:vertical}
+input[type=file]{padding:15px;max-width:100%}input[type=checkbox]{width:auto;accent-color:#42684d;transform:scale(1.12);margin:0 8px 0 0}
+.check{display:flex;align-items:flex-start;gap:6px;font-weight:500;line-height:1.45;margin:21px 0}
+button{background:#365e48;color:white;padding:12px 18px;border:0;border-radius:8px;font:750 14px system-ui;cursor:pointer}
+button:disabled{opacity:.55;cursor:not-allowed}
+.notice{border-left:4px solid #ccab67;background:#fff7df;padding:14px 16px;border-radius:7px;font-size:13px;margin:17px 0}
+#status{font-size:13px;font-weight:650;min-height:26px}
+footer{margin-top:24px;font-size:12px;color:#6b786e}
+@media(max-width:550px){main{margin-top:22px}.panel{padding:18px}}
+</style></head><body><header><a href="/">← Novel Conservatory · Private Library</a></header>
+<main><div style="font-size:11px;font-weight:800;color:#9b7545;letter-spacing:1.7px">MEMBERS-ONLY SUBMISSIONS</div><h1>Share an EPUB with the library</h1>
+<p>Found an edition missing from our shelves? Submit it privately for the owner's review. This is not a public upload, and submitting never gives other members permission to read the file.</p>
+<div class="notice"><strong>Private &amp; unlisted.</strong> Cloudflare login is required. Your file goes into a separate review queue, not the public catalogue or the shared reading shelf. Maximum 15 MB.</div>
+<div class="panel">
+<form id="epub-form">
+<label for="novel-title">Book title *</label><input id="novel-title" required minlength="2" maxlength="180" placeholder="Title of the novel" autocomplete="off">
+<label for="novel-id">Catalogue ID (optional)</label><input id="novel-id" inputmode="numeric" type="number" min="1" step="1" placeholder="Example: 257">
+<label for="notes">Message to the owner (optional)</label><textarea id="notes" maxlength="420" placeholder="Edition, translation information, credits, or what makes this copy useful."></textarea>
+<label for="epub-file">EPUB file *</label><input id="epub-file" type="file" accept=".epub,application/epub+zip" required aria-describedby="file-hint"><p id="file-hint" style="font-size:12px">EPUB only, up to 15 MB. No PDF, ZIP archives of multiple books, or executable files.</p>
+<label class="check" for="rights"><input id="rights" type="checkbox" required><span>I have the right or permission to share this file privately for review. I understand it will not be published or shared automatically.</span></label>
+<button id="send" type="submit">Submit EPUB privately</button><p id="status" role="status" aria-live="polite"></p>
+</form></div>
+<footer>The owner may review or reject the submission. If accepted, the owner will separately decide whether and how it is stored in the private library.</footer></main>
+<script>
+const $=id=>document.getElementById(id);
+const prefill=new URLSearchParams(location.search).get('book');
+if(prefill&&/^[1-9]\d{0,8}$/.test(prefill))$('novel-id').value=prefill;
+$('epub-form').addEventListener('submit',async event=>{
+ event.preventDefault();
+ const file=$('epub-file').files[0],status=$('status'),button=$('send');
+ if(!file||!file.name.toLowerCase().endsWith('.epub')){status.textContent='Please choose one EPUB file.';return}
+ if(file.size<100||file.size>15*1024*1024){status.textContent='Choose an EPUB no larger than 15 MB.';return}
+ if(!$('rights').checked){status.textContent='Please confirm permission to submit the file.';return}
+ button.disabled=true;status.textContent='Uploading your EPUB privately…';
+ try{
+  const res=await fetch('/api/epub-submissions/upload',{method:'POST',credentials:'same-origin',headers:{
+   'content-type':'application/epub+zip',
+   'x-epub-rights':'yes',
+   'x-epub-filename':encodeURIComponent(file.name),
+   'x-epub-title':encodeURIComponent($('novel-title').value.trim()),
+   'x-epub-notes':encodeURIComponent($('notes').value.trim()),
+   'x-epub-novel-id':$('novel-id').value.trim()
+  },body:file});
+  const data=await res.json();
+  if(!res.ok)throw Error(data.error||'Upload failed');
+  status.textContent='EPUB received for private owner review. It has not been published.';
+  $('epub-form').reset();
+ }catch(e){status.textContent=e.message||'Could not upload. Please try again.'}
+ finally{button.disabled=false}
+});
+</script></body></html>
