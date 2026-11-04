@@ -1,0 +1,49 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Novel Updates Staging | Conservatory</title><style>
+:root{font-family:system-ui;color:#263b33;background:#f8f6f0}body{margin:0}header{background:#263b33;color:white;padding:25px 5%}header a{color:#e5cfac}main{max-width:1100px;margin:auto;padding:24px}h1,h2{font-family:Georgia,serif;font-weight:400}.panel{background:white;border:1px solid #ddd;border-radius:12px;margin:15px 0;padding:20px}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}input,select,textarea,button{padding:10px;border-radius:6px;border:1px solid #b9c8bb;font:inherit}input[type=search]{flex:1}button{background:#315b47;color:white;cursor:pointer}button:disabled{opacity:.45}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px;border-bottom:1px solid #eee}a{color:#426e51}#status{white-space:pre-wrap}dialog{width:min(700px,92vw);border:1px solid #ccc;border-radius:12px}label{display:block;margin:12px 0 4px;font-weight:bold}dialog input,dialog textarea{width:100%;box-sizing:border-box}dialog textarea{min-height:100px}.muted{color:#697b70}
+</style></head><body><header><a href="/admin/">← Editorial dashboard</a><h1>Novel Updates master catalogue</h1><p>Imported titles remain unpublished until you choose to publish them.</p></header>
+<main><section class="panel"><div class="controls"><p><b id="draft">…</b> unpublished</p><p><b id="published">…</b> published</p><p>Import position: <b id="cursor">…</b></p></div>
+<p class="muted">Changes to staged metadata are locked against future automatic overwrites.</p></section>
+<section class="panel"><div class="controls"><input type="search" id="q" placeholder="Search title, author or series slug"><select id="state"><option value="draft">Unpublished</option><option value="published">Published</option><option value="all">All</option></select><button id="find">Search</button></div></section>
+<section class="panel"><div class="controls"><label><input type="checkbox" id="all"> Select page</label><button id="publish" disabled>Publish selected</button><button id="prev">Previous</button><button id="next">Next</button><span id="range"></span></div>
+<div style="overflow-x:auto"><table><thead><tr><th></th><th>Title and source</th><th>Author</th><th>State</th><th>Action</th></tr></thead><tbody id="results"></tbody></table></div><p id="status" role="status">Loading…</p></section></main>
+<dialog id="dialog"><form method="dialog"><button>Close</button></form><h2 id="editing-heading">Edit metadata</h2><form id="editform"><label>Title<input id="title" maxlength="210"></label><label>Author<input id="author" maxlength="140"></label><label>Synopsis<textarea id="synopsis" maxlength="6000"></textarea></label><label>Genres (commas)<input id="genres"></label><label>Tags (commas)<textarea id="tags"></textarea></label><button type="submit">Save without publishing</button></form></dialog>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+let offset=0,total=0,items=[],editSlug='';
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function api(path,init){const r=await fetch(path,Object.assign({cache:'no-store'},init||{}));const j=await r.json();if(!r.ok)throw Error(j.error||'Request failed');return j}
+function status(s){$('status').textContent=s}
+function chosen(){return [...document.querySelectorAll('.selected:checked')].map(e=>e.dataset.slug)}
+function selectable(){$('publish').disabled=!chosen().length}
+async function stats(){const v=await api('/api/admin/nu/status');$('draft').textContent=v.counts.draft;$('published').textContent=v.counts.published;$('cursor').textContent=v.progress?.next_page||'—'}
+async function load(){
+ try{const params=new URLSearchParams({q:$('q').value.trim(),state:$('state').value,offset:String(offset),limit:'30'});
+ const v=await api('/api/admin/nu/staging?'+params);items=v.items;total=v.total;
+ $('range').textContent=total?(offset+1)+'–'+(offset+items.length)+' of '+total:'No matching novels';
+ const body=$('results');body.replaceChildren();
+ for(const item of items){
+  const row=document.createElement('tr'),check=document.createElement('td'),title=document.createElement('td'),author=document.createElement('td'),state=document.createElement('td'),actions=document.createElement('td');
+  if(item.state==='draft'){const cb=document.createElement('input');cb.type='checkbox';cb.className='selected';cb.dataset.slug=item.slug;cb.addEventListener('change',selectable);check.append(cb)}
+  const b=document.createElement('b');b.textContent=item.title;title.append(b,document.createElement('br'));const a=document.createElement('a');a.href=item.nuUrl;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Novel Updates listing';title.append(a);
+  author.textContent=item.author;state.textContent=item.state+(item.customLocked?' 🔒':'');
+  if(item.state==='draft'){const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.addEventListener('click',()=>openEdit(item.slug));actions.append(btn)}
+  row.append(check,title,author,state,actions);body.append(row);
+ }
+ $('all').checked=false;$('publish').disabled=true;$('prev').disabled=offset===0;$('next').disabled=offset+items.length>=total;
+ status('Select up to 20 titles to publish, or edit staged metadata.');
+ }catch(e){status(e.message)}
+}
+function openEdit(slug){const x=items.find(a=>a.slug===slug);if(!x)return;editSlug=slug;
+ for(const key of ['title','author','synopsis'])$(key).value=x.metadata[key]||x[key]||'';
+ for(const key of ['genres','tags'])$(key).value=(x.metadata[key]||[]).join(', ');
+ $('editing-heading').textContent='Edit '+x.title;$('dialog').showModal()}
+$('editform').addEventListener('submit',async e=>{e.preventDefault();const patch={title:$('title').value,author:$('author').value,synopsis:$('synopsis').value,genres:$('genres').value.split(',').map(x=>x.trim()).filter(Boolean),tags:$('tags').value.split(',').map(x=>x.trim()).filter(Boolean)};
+ try{await api('/api/admin/nu/update',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({slug:editSlug,patch})});$('dialog').close();await load();status('Saved. Automatic imports will preserve your changes.')}catch(err){status(err.message)}});
+$('publish').addEventListener('click',async()=>{const slugs=chosen();if(!slugs.length)return;if(slugs.length>20)return status('Limit: 20 per batch');if(!confirm('Publish '+slugs.length+' novels to the public site?'))return;
+ try{const r=await api('/api/admin/nu/publish',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({slugs})});await Promise.all([stats(),load()]);status(r.results.map(x=>x.slug+': '+(x.ok?'Published or linked':x.error)).join('\n'))}catch(e){status(e.message)}});
+$('all').addEventListener('change',e=>{document.querySelectorAll('.selected').forEach(x=>x.checked=e.target.checked);selectable()});
+$('find').addEventListener('click',()=>{offset=0;load()});$('state').addEventListener('change',()=>{offset=0;load()});$('q').addEventListener('keydown',e=>{if(e.key==='Enter'){offset=0;load()}});
+$('prev').addEventListener('click',()=>{offset=Math.max(0,offset-30);load()});$('next').addEventListener('click',()=>{offset+=30;load()});
+Promise.all([stats(),load()]).catch(e=>status(e.message));
+</script></body></html>
