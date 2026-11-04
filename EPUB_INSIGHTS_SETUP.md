@@ -8,7 +8,7 @@ In the private editorial dashboard open `/admin/epub-insights.html`. Pick an exi
 ## Individual Novel Updates lookup
 In that same page, paste the canonical `https://www.novelupdates.com/series/<slug>/` URL and choose **Retrieve Novel Updates metadata**. The private Worker requests that page from Novel Updates using a bounded, validated HTTPS request, then the browser extracts existing description, genre and tag fields. If the page is blocked or its structure changes, the tool reports an error. It does **not** bypass anti-bot challenges.
 
-Review the retrieved metadata, save an unapproved draft, or approve it as authorized source material. Approvals stay private. This does not modify the source EPUB or automatically publish catalogue entries.
+Review the retrieved metadata, save an unapproved draft, or approve it as authorized source material. After approval, the explicit **Apply approved metadata privately** button writes the reviewed synopsis and tags to the private catalogue. It never modifies the source EPUB or publishes a catalogue record automatically. For already-public additional novels, application is blocked and the existing live catalogue editor must be used.
 
 ## Bulk source retrieval
 `scripts/crawl_novelupdates.py` retrieves directory pages and individual series in small, rate-limited batches, using only the public series paths. It saves original source fields into `nu_staged_series` with state `draft`. A durable `nu_import_progress.next_page` cursor lets subsequent runs resume; the source URL is the stable duplicate key. Hand-edited and already-published records are not overwritten by the crawler.
@@ -29,4 +29,5 @@ Use `python3 scripts/crawl_novelupdates.py --pages 1 --dry-run` first to validat
 - Public catalogue pagination/search needs upgrading beyond its current 5000 additional-entry limit before publishing thousands of staged titles.
 - Individual lookup retrieves the page, but does not automatically link an existing EPUB to a verified Novel Updates series. Paste the correct URL manually and confirm matching title.
 - Only embedded EPUB metadata is extracted; missing synopses and tags remain missing. Warnings are editor-supplied or existing Novel Updates metadata, never invented.
+- Existing private synopsis and tags are overwritten only when an Editor explicitly chooses **Apply approved metadata privately**. That button is disabled until the draft has been approved.
 - No production deployment or live import was run; the feature remains in the branch.
