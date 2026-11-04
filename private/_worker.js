@@ -1701,6 +1701,54 @@ async function nuAdminRoutes(request,env,email,role){
    ]);
    return respond({items:(rows.results||[]).map(nuStageItem),total:Number(total?.n)||0,limit,offset});
   }
+  if(path==='/api/admin/nu/stage-browser'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin submission rejected'},403);
+   // This endpoint receives metadata copied by a signed-in Editor from a
+   // Novel Updates page that they have opened themselves. It never fetches
+   // the external site, reads an EPUB, or exposes private files.
+   const body=await getJson(request);
+   if(!body||body.source!=='novelupdates-browser-v1'||!body.novel||typeof body.novel!=='object'||Array.isArray(body.novel))
+    return respond({error:'Paste metadata copied using the Novel Conservatory bookmarklet'},400);
+   const raw=body.novel;
+   let u;try{u=new URL(String(raw.nuUrl||''))}catch{return respond({error:'Missing a valid Novel Updates series URL'},400)}
+   const slugMatch=/^\/series\/([a-z0-9][a-z0-9-]{0,190})\/?$/.exec(u.pathname);
+   if(u.protocol!=='https:'||u.hostname!=='www.novelupdates.com'||u.username||u.password||u.port||u.search||u.hash||!slugMatch)
+    return respond({error:'Only canonical HTTPS Novel Updates series URLs are supported'},400);
+   const slug=nuValidSlug(slugMatch[1]);
+   if(!slug)return respond({error:'Invalid series slug'},400);
+   if(!Array.isArray(raw.tags)&&raw.tags!==undefined)return respond({error:'Tags must be a list'},400);
+   if(!Array.isArray(raw.genres)&&raw.genres!==undefined)return respond({error:'Genres must be a list'},400);
+   const nuUrl='https://www.novelupdates.com/series/'+slug+'/';
+   const data=extraPayload({
+    title:raw.title,author:raw.author,synopsis:raw.synopsis,
+    tags:raw.tags||[],genres:raw.genres||[],originalTitle:raw.originalTitle,
+    nuUrl,sourceUrl:nuUrl,metadataSource:'Novel Updates (browser-assisted capture)',
+    metadataReview:false
+   });
+   if(data.title.length<2)return respond({error:'Series title is missing from the copied metadata'},400);
+   if(!data.synopsis&&!data.tags.length&&!data.genres.length)
+    return respond({error:'No synopsis, genre, or tag was found on the page. Nothing was staged.'},400);
+   let coverUrl='';
+   try{
+    const cover=new URL(String(raw.coverUrl||''));
+    if(cover.protocol==='https:'&&!cover.username&&!cover.password&&!cover.port)coverUrl=cover.href.slice(0,900);
+   }catch{}
+   const prior=await env.COMMUNITY_DB.prepare('SELECT state,custom_locked FROM nu_staged_series WHERE slug=?').bind(slug).first();
+   if(prior&&(prior.state==='published'||prior.custom_locked===1))
+    return respond({error:prior.state==='published'?'This series is already published; edit the existing entry instead.':'This draft has manually protected changes. Edit the existing staged entry instead.'},409);
+   const content=JSON.stringify(data);
+   const bytes=new TextEncoder().encode(content+'|'+coverUrl);
+   const digest=await crypto.subtle.digest('SHA-256',bytes);
+   const hash=Array.from(new Uint8Array(digest)).map(x=>x.toString(16).padStart(2,'0')).join('');
+   const change=await env.COMMUNITY_DB.prepare(
+    "INSERT INTO nu_staged_series(slug,nu_url,title,author,payload_json,cover_url,source_hash) VALUES(?,?,?,?,?,?,?) "+
+    "ON CONFLICT(slug) DO UPDATE SET nu_url=excluded.nu_url,title=excluded.title,author=excluded.author,payload_json=excluded.payload_json,cover_url=excluded.cover_url,source_hash=excluded.source_hash,last_seen_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP "+
+    "WHERE nu_staged_series.state='draft' AND nu_staged_series.custom_locked=0"
+   ).bind(slug,nuUrl,data.title,data.author,content,coverUrl,hash).run();
+   if(!change.meta?.changes)return respond({error:'The staged entry was protected or could not be saved'},409);
+   await audit(env,email,'nu.stage.browser',slug,nuUrl);
+   return respond({ok:true,slug,title:data.title,nuUrl,state:'draft',notice:'Retrieved metadata staged privately. Nothing has been published.'});
+  }
   if(method!=='POST'||!['/api/admin/nu/update','/api/admin/nu/publish'].includes(path))
    return respond({error:'Not found'},404);
   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
