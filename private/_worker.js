@@ -297,138 +297,11 @@ async function roleFor(email,env){
   return row?.role==='editor'?'editor':'reader';
 }
 const isEditor = role => role==='owner'||role==='editor';
-// Invite codes are high-entropy, single-use, email-bound. Only SHA-256 hashes
-// are stored in D1 site_settings. No new schema/migration is needed.
-const INVITE_PREFIX='invitation-v1:';
-const REGISTERED_PREFIX='site-reader:';
-const REVOKED_PREFIX='site-block:';
-const validInviteId=x=>/^[a-f0-9]{64}$/.test(String(x||''));
-function inviteCode(){const bytes=crypto.getRandomValues(new Uint8Array(32));return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
-async function hashInvite(value){
-  const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join('');
-}
-async function isSiteMember(email,role,env){
-  if(role==='owner')return true;
-  if(!env.DB)return false;
-  const denied=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(REVOKED_PREFIX+email).first();
-  if(denied?.value==='true')return false;
-  if(role==='editor')return true;
-  const [registered,legacy]=await Promise.all([
-    env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(REGISTERED_PREFIX+email).first(),
-    // Preserve the ability to visit for people previously approved for EPUBs.
-    env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('epub-reader:'+email).first()
-  ]);
-  return registered?.value==='true'||legacy?.value==='true';
-}
-function privateResponse(){
-  return new Response('<!doctype html><html lang="en"><meta name="robots" content="noindex"><meta charset="utf-8"><title>Private library</title><body style="font:16px/1.6 system-ui;padding:10vh max(20px,10vw);max-width:640px"><h1>Private library</h1><p>This account does not currently have permission to browse the library.</p><p>If you received an invitation, open the complete invitation link and sign in with the exact email it was sent to.</p></body></html>',
-    {status:403,headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-robots-tag':'noindex,nofollow','referrer-policy':'no-referrer'}});
-}
-async function inviteRoutes(request,env,email,role){
-  const path=new URL(request.url).pathname,method=request.method.toUpperCase();
-  if(path==='/api/invitations/me'&&method==='GET')return respond({email,role,approved:await isSiteMember(email,role,env)});
-  if(path!=='/api/invitations/redeem'||method!=='POST')return respond({error:'Not found'},404);
-  if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
-  if(!env.DB)return respond({error:'D1 is not configured'},503);
-  let code;
-  try{const body=await getJson(request);code=String(body.token||'');}catch{return respond({error:'Invalid invitation request'},400);}
-  if(!/^[A-Za-z0-9_-]{43}$/.test(code))return respond({error:'Invalid invitation code'},400);
-  const hashed=await hashInvite(code),key=INVITE_PREFIX+hashed;
-  const row=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(key).first();
-  if(!row)return respond({error:'Invitation not found. Ask the owner for a new one.'},404);
-  let invite;try{invite=JSON.parse(row.value)}catch{return respond({error:'Invalid invitation record'},400)}
-  if(emailNorm(invite.email)!==email)return respond({error:'This invitation was issued to a different email address. Sign in with the invited email.'},403);
-  if(invite.status==='accepted'&&await isSiteMember(email,role,env))return respond({ok:true,alreadyAccepted:true,home:'/'});
-  if(invite.status!=='pending')return respond({error:'This invitation is no longer active.'},410);
-  if(!Number.isFinite(invite.expiresAt)||invite.expiresAt<=Date.now())return respond({error:'This invitation has expired. Request another invitation.'},410);
-  const next=JSON.stringify({...invite,status:'accepted',acceptedAt:new Date().toISOString()});
-  const registered=REGISTERED_PREFIX+email;
-  // D1 batch runs in a single transaction. The compare-and-set prevents two
-  // concurrent uses of the same code; a revoked code cannot grant access.
-  const results=await env.DB.batch([
-    env.DB.prepare('UPDATE site_settings SET value=?,updated_at=CURRENT_TIMESTAMP WHERE key=? AND value=?').bind(next,key,row.value),
-    env.DB.prepare(`INSERT INTO site_settings(key,value) SELECT ?,'true' WHERE EXISTS (SELECT 1 FROM site_settings WHERE key=? AND value=?) ON CONFLICT(key) DO UPDATE SET value='true',updated_at=CURRENT_TIMESTAMP`).bind(registered,key,next),
-    env.DB.prepare('DELETE FROM site_settings WHERE key=? AND EXISTS (SELECT 1 FROM site_settings WHERE key=? AND value=?)').bind(REVOKED_PREFIX+email,key,next)
-  ]);
-  if(results[0]?.meta?.changes!==1)return respond({error:'Invitation was already used or changed.'},409);
-  await audit(env,email,'invite.accept',email);
-  return respond({ok:true,home:'/'});
-}
-async function inviteAdminRoutes(request,env,email,role){
-  if(role!=='owner')return respond({error:'Only the owner can manage invitations'},403);
-  if(!env.DB)return respond({error:'D1 database is not connected'},503);
-  const method=request.method.toUpperCase();
-  if(method==='GET'){
-    const [invites,readers,editors,epub]=await Promise.all([
-      env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'invitation-v1:%' ORDER BY updated_at DESC LIMIT 300").all(),
-      env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'site-reader:%' OR key LIKE 'site-block:%' ORDER BY key LIMIT 500").all(),
-      env.DB.prepare('SELECT email FROM editor_roles ORDER BY email LIMIT 500').all(),
-      env.DB.prepare("SELECT key FROM site_settings WHERE key LIKE 'epub-reader:%' AND value='true' LIMIT 500").all()
-    ]);
-    const blocked=new Set((readers.results||[]).filter(x=>x.key.startsWith(REVOKED_PREFIX)&&x.value==='true').map(x=>x.key.slice(REVOKED_PREFIX.length)));
-    const membership=new Map();
-    for(const r of readers.results||[])if(r.key.startsWith(REGISTERED_PREFIX)&&r.value==='true')membership.set(r.key.slice(REGISTERED_PREFIX.length),'Reader');
-    for(const r of epub.results||[])if(!membership.has(r.key.slice(12)))membership.set(r.key.slice(12),'Existing EPUB reader');
-    for(const r of editors.results||[])membership.set(r.email,'Editor');
-    const members=[...membership].filter(x=>emailValid(x[0])).map(([account,permission])=>({email:account,permission,blocked:blocked.has(account)}));
-    for(const account of blocked)if(!membership.has(account))members.push({email:account,permission:'Revoked',blocked:true});
-    const invitations=[];
-    for(const record of invites.results||[]){
-      const id=record.key.slice(INVITE_PREFIX.length);if(!validInviteId(id))continue;
-      try{const i=JSON.parse(record.value);
-        invitations.push({id,email:i.email,createdAt:i.createdAt,expiresAt:i.expiresAt,status:i.status==='pending'&&i.expiresAt<Date.now()?'expired':i.status,acceptedAt:i.acceptedAt||null});
-      }catch{}
-    }
-    return respond({invitations,members,owner:emailNorm(env.OWNER_EMAIL),oneTimeSetupRequired:true});
-  }
-  if(method!=='POST')return respond({error:'Method not allowed'},405);
-  if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
-  let body;try{body=await getJson(request)}catch{return respond({error:'Invalid JSON body'},400)}
-  if(body.action==='create'){
-    const target=emailNorm(body.email);if(!emailValid(target))return respond({error:'Enter a valid email address'},400);
-    if(target===emailNorm(env.OWNER_EMAIL))return respond({error:'The owner is already authorized'},400);
-    const days=Number(body.days||7);if(![1,3,7,14,30].includes(days))return respond({error:'Invalid expiration period'},400);
-    const code=inviteCode(),id=await hashInvite(code),created=Date.now();
-    const record={email:target,status:'pending',createdAt:new Date(created).toISOString(),expiresAt:created+days*86400000,invitedBy:email};
-    await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES (?,?)').bind(INVITE_PREFIX+id,JSON.stringify(record)).run();
-    await audit(env,email,'invite.create',target,`expires:${days}d`);
-    return respond({ok:true,email:target,expiresAt:record.expiresAt,url:getOrigin(request)+'/join/?token='+encodeURIComponent(code)});
-  }
-  if(body.action==='revoke'){
-    const id=String(body.id||'');if(!validInviteId(id))return respond({error:'Invalid invitation ID'},400);
-    const key=INVITE_PREFIX+id;
-    const found=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(key).first();
-    if(!found)return respond({error:'Invitation not found'},404);
-    const record=JSON.parse(found.value);
-    if(record.status!=='pending')return respond({error:'Only pending invitations can be canceled. Revoke the member instead.'},409);
-    const updated={...record,status:'revoked',revokedAt:new Date().toISOString()};
-    await env.DB.prepare('UPDATE site_settings SET value=?,updated_at=CURRENT_TIMESTAMP WHERE key=? AND value=?').bind(JSON.stringify(updated),key,found.value).run();
-    await audit(env,email,'invite.revoke',record.email);
-    return respond({ok:true});
-  }
-  if(body.action==='remove-member'){
-    const target=emailNorm(body.email);if(!emailValid(target)||target===emailNorm(env.OWNER_EMAIL))return respond({error:'Invalid member email'},400);
-    await env.DB.batch([
-      env.DB.prepare("INSERT INTO site_settings(key,value) VALUES (?,'true') ON CONFLICT(key) DO UPDATE SET value='true',updated_at=CURRENT_TIMESTAMP").bind(REVOKED_PREFIX+target),
-      env.DB.prepare('DELETE FROM site_settings WHERE key=?').bind(REGISTERED_PREFIX+target),
-      env.DB.prepare('DELETE FROM site_settings WHERE key=?').bind('epub-reader:'+target),
-      env.DB.prepare('DELETE FROM editor_roles WHERE email=?').bind(target)
-    ]);
-    // Cancel any still-pending invitations so revocation cannot be bypassed by
-    // redeeming an old link. An audit entry stays in the invitation history.
-    const outstanding=await env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'invitation-v1:%'").all();
-    for(const item of outstanding.results||[]){
-      let record;try{record=JSON.parse(item.value)}catch{continue}
-      if(record.email!==target||record.status!=='pending')continue;
-      const update=JSON.stringify({...record,status:'revoked',revokedAt:new Date().toISOString()});
-      await env.DB.prepare('UPDATE site_settings SET value=?,updated_at=CURRENT_TIMESTAMP WHERE key=? AND value=?').bind(update,item.key,item.value).run();
-    }
-    await audit(env,email,'site.access.revoke',target);
-    return respond({ok:true});
-  }
-  return respond({error:'Unknown invitation action'},400);
-}
+// Cloudflare Access is the sole reader-membership authority.
+// A caller arrives here only after verifyAccess validates the signed JWT,
+// issuer, audience, expiry, signature and verified email.
+// Editorial and private EPUB permissions remain separate in private D1.
+async function isSiteMember(email,role,env){return emailValid(email);}
 
 // Approval to read is independent of editing permission. The entire stored
 // EPUB library remains private until the owner explicitly enables sharing.
@@ -603,7 +476,6 @@ async function routes(request,env,ctx,email,role){
     const head=new Headers(res.headers);head.set('cache-control','private,no-store');head.set('x-robots-tag','noindex,nofollow');
     return new Response(res.body,{status:res.status,statusText:res.statusText,headers:head});
   }
-  if(path==='/api/admin/invitations')return inviteAdminRoutes(request,env,email,role);
   if(path.startsWith('/api/admin/')){
     if(!isEditor(role))return respond({error:'Editor access required'},403);
     if(!env.DB)return respond({error:'D1 DB is not configured'},503);
@@ -1227,21 +1099,14 @@ export default {
     try {email=await verifyAccess(request,env);role=await roleFor(email,env);}
     catch(e){return respond({error:'Access verification failed. Check your login and Access settings.'},403);}
     const path=new URL(request.url).pathname;
-    if(path==='/api/invitations/me'||path==='/api/invitations/redeem'){
-      try{return await inviteRoutes(request,env,email,role)}
-      catch{return respond({error:'Invitation could not be processed. Please try again.'},500)}
-    }
-    if(path==='/join')return Response.redirect(new URL('/join/'+new URL(request.url).search,request.url),302);
-    if(path==='/join/'||path==='/join/index.html'){
-      const res=await env.ASSETS.fetch(request);const headers=new Headers(res.headers);
-      headers.set('cache-control','private,no-store');headers.set('referrer-policy','no-referrer');headers.set('x-robots-tag','noindex,nofollow');
-      headers.set('content-security-policy',"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
-      return new Response(res.body,{status:res.status,statusText:res.statusText,headers});
-    }
-    // Fail closed for every private asset and API, not just the homepage.
-    // Cloudflare Access authenticates; this D1 allowlist authorizes the site.
-    try{if(!await isSiteMember(email,role,env))return path.startsWith('/api/')?respond({error:'This email has not been approved for the private library.'},403):privateResponse();}
-    catch{return respond({error:'Membership database temporarily unavailable.'},503)}
+    // General reader access comes entirely from verified Cloudflare Access.
+    // The retired invitation pages redirect, and their APIs cannot grant access.
+    if(path==='/join'||path==='/join/'||path==='/join/index.html')
+      return Response.redirect(new URL('/',request.url),302);
+    if(path==='/admin/invitations.html')
+      return Response.redirect(new URL('/admin/',request.url),302);
+    if(path.startsWith('/api/invitations/')||path==='/api/admin/invitations')
+      return respond({error:'Website invitations have been retired. Manage readers through Cloudflare Zero Trust.'},410);
     if(path==='/read'||path.startsWith('/read/')){
       if(!await canReadEpubs(email,role,env))return respond({error:'You do not have permission to open private EPUBs.'},403);
       if(path==='/read')return Response.redirect(new URL('/read/',request.url),302);
