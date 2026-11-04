@@ -49,6 +49,8 @@ jobs:
         run: python tests/check_member_verification_and_compact_discover.py
       - name: Verify Add Novels editor and owner permission tabs
         run: node tests/check_add_novels_editor_roles.js
+      - name: Verify unified Submit EPUB and Add Novel Entry tabs
+        run: node tests/check_unified_submit_epub.js
       - name: Check migration SQL offline
         run: |
           python - <<'PY'
