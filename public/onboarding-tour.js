@@ -82,7 +82,7 @@ function render(){
   const r=target.getBoundingClientRect();
   if(r.top<115||r.top>window.innerHeight*.44){
    const y=Math.max(0,window.scrollY+r.top-Math.max(115,Math.min(190,window.innerHeight*.22)));
-   window.scrollTo({top:y,behavior:reduced?'instant':'smooth'});
+   window.scrollTo({top:y,behavior:reduced?'auto':'smooth'});
   }
  }
  within('#conservatory-tour-count').textContent=(site==='private'?'Private':'Public')+' library · Step '+(index+1)+' of '+steps.length;
