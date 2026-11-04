@@ -378,9 +378,38 @@ header{background:rgba(255,251,244,.98);box-shadow:0 4px 22px #182a2111;border-b
  #tab-covers .toolbar #tag-picker-open{order:13;flex:1 0 100%;width:100%!important;min-height:43px}
 }
 </style>
+
+<style id="visible-section-navigation">
+/* All sections are intentionally discoverable; no hidden horizontal swipe. */
+.section-menu-toggle{display:none;align-items:center;gap:9px;margin-left:auto;border:1px solid #cad5c9;border-radius:8px;padding:11px 15px;background:#f4f1e8;color:#284c40;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
+.section-menu-toggle:focus-visible{outline:3px solid #a97b49;outline-offset:2px}
+@media(max-width:1280px){
+ header .top{position:relative;flex-wrap:wrap}
+ .section-menu-toggle{display:inline-flex}
+ header .top>.nav{display:none!important}
+ header .top>.nav.is-open{
+  display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));position:absolute;
+  top:calc(100% - 1px);left:14px;right:14px;width:auto;margin:0;padding:12px;gap:7px;
+  background:#fffbf4;border:1px solid #d7dacc;border-radius:0 0 13px 13px;
+  box-shadow:0 18px 38px rgba(25,52,42,.2);max-height:calc(100vh - 115px);
+  overflow-y:auto;overflow-x:hidden;z-index:60
+ }
+ header .top>.nav .navbtn{display:flex;align-items:center;justify-content:flex-start;
+  width:100%;min-height:48px;text-align:left;white-space:normal;font-size:12px;
+  background:#f7f6ee;border-radius:7px;padding:11px 12px;letter-spacing:.25px;
+  line-height:1.35;border:1px solid #e3e8db;box-shadow:none;text-decoration:none}
+ header .top>.nav .navbtn.active{background:#e5ede2;color:#24503c;border-color:#a5bdab;box-shadow:none}
+}
+@media(max-width:560px){
+ .section-menu-toggle{padding:10px 12px;font-size:12px}
+ header .top>.nav.is-open{grid-template-columns:1fr 1fr;left:7px;right:7px;gap:6px}
+ header .top>.nav .navbtn{font-size:11px;padding:10px}
+}
+@media(min-width:1281px){header .top>.nav{display:flex!important}}
+</style>
 </head>
 <body>
-<header><div class="top"><a href="#top" class="brand" aria-label="The Novel Conservatory, home"><div class="brand-mark" aria-hidden="true">文</div><div><strong>The Novel Conservatory</strong><span>GENRES · RELATIONSHIPS · STORY WORLDS</span></div></a><nav class="nav" aria-label="Library sections"><button type="button" id="explore-nav" class="navbtn active">Discover</button><button type="button" id="covers-nav" class="navbtn">Browse novels</button><a href="/admin/" id="edit-site-nav" class="navbtn" style="display:none;text-decoration:none;white-space:nowrap">✎ Edit Site</a><button type="button" id="saved-nav" class="navbtn">Device favorites <span id="saved-badge" class="nav-count">0</span></button><a href="/shelves/" class="navbtn" style="text-decoration:none;white-space:nowrap">Friends’ shelves</a><button type="button" id="about-nav" class="navbtn">About</button></nav><div class="invite" title="The website must remain behind Cloudflare Access"><i></i> Friends' reading room</div></div></header>
+<header><div class="top"><a href="#top" class="brand" aria-label="The Novel Conservatory, home"><div class="brand-mark" aria-hidden="true">文</div><div><strong>The Novel Conservatory</strong><span>GENRES · RELATIONSHIPS · STORY WORLDS</span></div></a><button type="button" id="section-menu-toggle" class="section-menu-toggle" aria-controls="library-main-nav" aria-expanded="false" aria-label="Show all library sections">☰ All sections <span aria-hidden="true">▾</span></button><nav id="library-main-nav" class="nav" aria-label="Library sections"><button type="button" id="explore-nav" class="navbtn active">Discover</button><button type="button" id="covers-nav" class="navbtn">Browse novels</button><a href="/admin/" id="edit-site-nav" class="navbtn" style="display:none;text-decoration:none;white-space:nowrap">✎ Edit Site</a><button type="button" id="saved-nav" class="navbtn">Device favorites <span id="saved-badge" class="nav-count">0</span></button><a href="/shelves/" class="navbtn" style="text-decoration:none;white-space:nowrap">Friends’ shelves</a><button type="button" id="about-nav" class="navbtn">About</button></nav><div class="invite" title="The website must remain behind Cloudflare Access"><i></i> Friends' reading room</div></div></header>
 <main id="top"><div class="editor-announcement" hidden="" id="editable-announcement"></div>
 <div id="tab-discover" class="tab-panel" data-tab="discover">
 <section class="hero"><div aria-hidden="true" class="hero-custom-art hide" id="hero-custom-art-wrap"><img alt="" id="hero-custom-art"/></div><div class="hero-inner"><div class="hero-copy"><div class="eyebrow">A LIBRARY OF STRANGE AND WONDERFUL STORIES</div><h1 id="editable-hero-title">Stories worth<br/><em>getting lost in.</em></h1><p id="editable-hero-description">Discover a novel by its cover, then search by genre, character, relationship dynamics and the story elements you love.</p><div class="hero-cta"><button class="button cream" id="browse-btn">Browse all covers <span aria-hidden="true">↗</span></button><button class="text-link" id="surprise-btn" style="border:0;background:none;padding:10px 2px" type="button">Let fate choose a novel ✧</button></div><div class="hero-note">962 STORIES · GENRES · TROPES · EVERY KIND OF OBSESSION</div></div><div aria-hidden="true" class="book-scene" id="hero-default-scene"><div class="scene-seal">書</div><div class="scene-small">纸上有天地<br/><span>Entire worlds within a page</span></div><div class="book-graphic one"><span class="scene-glyph">仙</span><b>Cultivation<br/>&amp; fate</b></div><div class="book-graphic three"><span class="scene-glyph">별</span><b>Strange<br/>new worlds</b></div><div class="book-graphic two"><span class="scene-glyph">怪</span><b>Beyond the<br/>last threshold</b></div></div></div></section><div class="container">
@@ -860,5 +889,23 @@ loadLiveEditorChanges();
 fetch('/api/me',{credentials:'same-origin',cache:'no-store'}).then(r=>r.ok?r.json():null).then(u=>{if(u){window.novelConservatoryRole=u.role;window.novelConservatoryCanReadEpubs=!!u.canReadEpubs;if(['owner','editor'].includes(u.role)){window.novelConservatoryCanEdit=true;document.getElementById('edit-site-nav').style.display='inline-block'}}}).catch(()=>{});
 
 </script>
-<a href="/follows/" style="position:fixed;bottom:14px;right:14px;z-index:999;padding:10px 14px;border-radius:20px;color:white;background:#245c4b;text-decoration:none;box-shadow:0 4px 18px #0004" aria-label="Follow novels and translators">🔔 Follow updates</a></body>
+<a href="/follows/" style="position:fixed;bottom:14px;right:14px;z-index:999;padding:10px 14px;border-radius:20px;color:white;background:#245c4b;text-decoration:none;box-shadow:0 4px 18px #0004" aria-label="Follow novels and translators">🔔 Follow updates</a>
+<script id="section-menu-behavior">
+(function(){
+'use strict';
+const button=document.getElementById('section-menu-toggle'),nav=document.getElementById('library-main-nav');
+if(!button||!nav)return;
+const close=()=>{nav.classList.remove('is-open');button.setAttribute('aria-expanded','false');};
+button.addEventListener('click',()=>{
+ const next=!nav.classList.contains('is-open');
+ nav.classList.toggle('is-open',next);
+ button.setAttribute('aria-expanded',String(next));
+});
+nav.addEventListener('click',event=>{if(event.target.closest('a,button'))close()});
+document.addEventListener('pointerdown',event=>{if(!nav.contains(event.target)&&!button.contains(event.target))close()});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&nav.classList.contains('is-open')){close();button.focus()}});
+window.addEventListener('resize',()=>{if(window.innerWidth>1280)close()});
+})();
+</script>
+</body>
 </html>

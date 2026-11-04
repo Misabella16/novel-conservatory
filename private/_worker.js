@@ -298,9 +298,9 @@ async function roleFor(email,env){
 }
 const isEditor = role => role==='owner'||role==='editor';
 // Cloudflare Access is the sole reader-membership authority.
-// A caller arrives here only after verifyAccess validates the signed JWT,
-// issuer, audience, expiry, signature and verified email.
-// Editorial and private EPUB permissions remain separate in private D1.
+// This helper is called only AFTER verifyAccess has validated the signed JWT,
+// issuer, audience, expiry and email for this private application.
+// Editorial roles and EPUB reading entitlements remain separate in private D1.
 async function isSiteMember(email,role,env){return emailValid(email);}
 
 // Approval to read is independent of editing permission. The entire stored
@@ -328,6 +328,7 @@ async function routes(request,env,ctx,email,role){
   // Both the owner and explicitly approved friends may read EPUBs after the
   // owner enables sharing. All uploads, edits and bulk inventory remain owner-only.
   if(path.startsWith('/api/admin/nu/'))return nuAdminRoutes(request,env,email,role);
+  if(path.startsWith('/api/admin/epub-insights/'))return epubInsightsRoutes(request,env,email,role);
   if(path.startsWith('/api/additional/')||path.startsWith('/api/admin/additional/'))return additionalRoutes(request,env,'private',email,role);
   if(path.startsWith('/api/private/edition/'))return editionRoutes(request,env,email,role);
   if(path==='/api/follows'||path.startsWith('/api/notifications'))return followRoutes(request,env,email);
@@ -438,7 +439,7 @@ async function routes(request,env,ctx,email,role){
   }
   if(path==='/api/site/config')return siteConfigRoute(request,env,'private');
   if(path==='/api/site/feedback')return siteFeedbackRoute(request,env,'private',email);
-  if(path==='/api/admin/site-config'||path==='/api/admin/site-feedback')return siteAdminRoute(request,env,email,role);
+  if(['/api/admin/site-config','/api/admin/site-feedback','/api/admin/public-banner','/api/admin/public-banner-preview','/api/admin/public-banner-copy','/api/admin/site-copy-from-private'].includes(path))return siteAdminRoute(request,env,email,role);
   if(path.startsWith('/api/community/'))return communityDispatch(request,env,'private',{email,role});
   if(path==='/api/catalogue'&&method==='GET'){
    const response=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',url.origin)));
@@ -1099,14 +1100,15 @@ export default {
     try {email=await verifyAccess(request,env);role=await roleFor(email,env);}
     catch(e){return respond({error:'Access verification failed. Check your login and Access settings.'},403);}
     const path=new URL(request.url).pathname;
-    // General reader access comes entirely from verified Cloudflare Access.
-    // The retired invitation pages redirect, and their APIs cannot grant access.
+    // Cloudflare Access's signed JWT and its application policy are the only
+    // authorization gates for general browsing. No second invitation or D1
+    // approved-reader list is needed.
     if(path==='/join'||path==='/join/'||path==='/join/index.html')
       return Response.redirect(new URL('/',request.url),302);
     if(path==='/admin/invitations.html')
       return Response.redirect(new URL('/admin/',request.url),302);
     if(path.startsWith('/api/invitations/')||path==='/api/admin/invitations')
-      return respond({error:'Website invitations have been retired. Manage readers through Cloudflare Zero Trust.'},410);
+      return respond({error:'Website invitations have been retired. Access is managed through Cloudflare Zero Trust.'},410);
     if(path==='/read'||path.startsWith('/read/')){
       if(!await canReadEpubs(email,role,env))return respond({error:'You do not have permission to open private EPUBs.'},403);
       if(path==='/read')return Response.redirect(new URL('/read/',request.url),302);
@@ -1409,6 +1411,43 @@ async function siteAdminRoute(request,env,email,role){
   await env.COMMUNITY_IMAGES.put('public-banners/'+key,bytes,{httpMetadata:{contentType:ct}});
   return siteOut({ok:true,key,url:'https://'+url.host+'/banner-media/'+key});
  }
+ if(path==='/api/admin/site-copy-from-private'&&method==='POST'){
+  if(request.headers.get('Origin')!==url.origin)return siteOut({error:'Wrong origin'},403);
+  if(!env.DB)return siteOut({error:'Private homepage database unavailable'},503);
+  const row=await env.DB.prepare("SELECT value FROM site_settings WHERE key='homepage'").first();
+  let home={};try{home=JSON.parse(row?.value||'{}')}catch{return siteOut({error:'Invalid private homepage'},503)}
+  const old=await siteGet(env,'public');
+  const updated=siteClean({...old,homeHeadline:siteTrim(home.heroTitle||'',110),homeFlavor:siteTrim(home.heroDescription||'',350)});
+  await env.COMMUNITY_DB.prepare('INSERT INTO conservatory_site_config(scope,config_json,updated_by) VALUES (?,?,?) ON CONFLICT(scope) DO UPDATE SET config_json=excluded.config_json,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP')
+    .bind('public',JSON.stringify(updated),email).run();
+  return siteOut({ok:true,settings:updated});
+ }
+ if(path==='/api/admin/public-banner-copy'&&method==='POST'){
+  if(request.headers.get('Origin')!==url.origin)return siteOut({error:'Wrong origin'},403);
+  if(!env.DB||!env.IMAGES||!env.COMMUNITY_IMAGES)return siteOut({error:'Required private and public-safe storage unavailable'},503);
+  const row=await env.DB.prepare("SELECT value FROM site_settings WHERE key='homepage'").first();
+  let home={};try{home=JSON.parse(row?.value||'{}')}catch{return siteOut({error:'Private homepage settings unavailable'},503)}
+  const match=/^\/media\/([a-f0-9-]{36}\.(?:png|jpg|webp))$/.exec(home.heroImage||'');
+  if(!match)return siteOut({error:'Private banner is not a saved JPG/PNG/WebP. Use the public website editor to upload the image instead.'},400);
+  const oldFile=await env.IMAGES.get(match[1]);
+  if(!oldFile)return siteOut({error:'Stored private banner was not found'},404);
+  const mime=oldFile.httpMetadata?.contentType||'';
+  if(!['image/png','image/jpeg','image/webp'].includes(mime)||oldFile.size<100||oldFile.size>3000000)
+   return siteOut({error:'Private banner must be JPG, PNG, or WebP under 3 MB'},400);
+  const ext=mime==='image/png'?'png':mime==='image/webp'?'webp':'jpg';
+  const bytes=await oldFile.arrayBuffer();
+  if(!communityMagic(mime,bytes))return siteOut({error:'Private banner validation failed'},415);
+  const key=crypto.randomUUID()+'.'+ext;
+  await env.COMMUNITY_IMAGES.put('public-banners/'+key,bytes,{httpMetadata:{contentType:mime}});
+  try{
+   const previous=await siteGet(env,'public');
+   const next=siteClean({...previous,publicBannerKey:key});
+   await env.COMMUNITY_DB.prepare('INSERT INTO conservatory_site_config(scope,config_json,updated_by) VALUES (?,?,?) ON CONFLICT(scope) DO UPDATE SET config_json=excluded.config_json,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP')
+    .bind('public',JSON.stringify(next),email).run();
+   await audit(env,email,'public.banner.copy-private',key);
+  }catch(e){await env.COMMUNITY_IMAGES.delete('public-banners/'+key);return siteOut({error:'Could not publish public banner'},503)}
+  return siteOut({ok:true,image:'/banner-media/'+key});
+ }
  if(path==='/api/admin/site-config'){
   if(method==='GET'){
    try{return siteOut({public:await siteGet(env,'public'),private:await siteGet(env,'private')})}catch{return siteOut({error:'Run the shared site-settings migration first'},503)}
@@ -1622,6 +1661,22 @@ async function nuAdminRoutes(request,env,email,role){
  if(!env.COMMUNITY_DB)return respond({error:'Shared catalogue database is unavailable'},503);
  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
  try{
+  if(path==='/api/admin/nu/lookup'&&method==='GET'){
+   const source=u=>{try{const x=new URL(u);if(x.protocol!=='https:'||x.hostname!=='www.novelupdates.com'||x.port||x.username||x.password||x.search||x.hash||!/^\/series\/[a-z0-9-]+\/?$/.test(x.pathname))return null;return x.href;}catch{return null;}};
+   const target=source(url.searchParams.get('url'));
+   if(!target)return respond({error:'Enter a valid HTTPS Novel Updates series URL'},400);
+   let result;try{result=await fetch(target,{method:'GET',redirect:'manual',headers:{accept:'text/html'},signal:AbortSignal.timeout(12000)});}
+   catch{return respond({error:'Novel Updates did not respond. Try again later or use its authorized data export.'},502)}
+   if(result.status===403||result.status===429)return respond({error:'Novel Updates rejected the automatic request ('+result.status+'). No bypass is attempted. An authorized export/feed may be required.'},502);
+   if(result.status>=300&&result.status<400)return respond({error:'Novel Updates redirected the request; confirm the canonical series URL.'},502);
+   if(!result.ok)return respond({error:'Novel Updates returned '+result.status},502);
+   const contentType=result.headers.get('content-type')||'';
+   if(!/text\/html/i.test(contentType))return respond({error:'Novel Updates did not return an HTML series page'},502);
+   if(Number(result.headers.get('content-length')||0)>1500000)return respond({error:'Series page is too large'},502);
+   const page=await result.text();if(page.length>1500000)return respond({error:'Series page exceeds the safety limit'},502);
+   // Return as JSON to avoid executing any untrusted third-party markup.
+   return respond({url:target,html:page,source:'Novel Updates',retrievedAt:new Date().toISOString()});
+  }
   if(path==='/api/admin/nu/status'&&method==='GET'){
    const [counts,progress]=await Promise.all([
     env.COMMUNITY_DB.prepare('SELECT state,COUNT(*) AS count FROM nu_staged_series GROUP BY state').all(),
@@ -1721,4 +1776,96 @@ async function nuAdminRoutes(request,env,email,role){
   if(/no such table/i.test(msg))return respond({error:'Run database/NU_STAGING_MIGRATION.sql in the community D1 database first.'},503);
   return respond({error:msg.slice(0,240)},400);
  }
+}
+
+const INSIGHT_KEY='epub-insights-v1:';
+const insightTrim=(v,max)=>String(v??'').trim().slice(0,max);
+const insightList=(v,max=24)=>Array.isArray(v)?[...new Set(v.filter(x=>typeof x==='string').map(x=>x.trim().slice(0,70)).filter(Boolean))].slice(0,max):[];
+async function epubInsightsRoutes(request,env,email,role){
+ if(!isEditor(role)||!await canReadEpubs(email,role,env))return editionJson({error:'Editor access and private EPUB reading permission are required'},403);
+ if(!env.DB)return editionJson({error:'Private D1 database unavailable'},503);
+ const u=new URL(request.url),path=u.pathname,method=request.method.toUpperCase();
+ try{
+  if(path==='/api/admin/epub-insights/editions'&&method==='GET'){
+   const [a,b,c]=await Promise.all([
+    env.DB.prepare('SELECT novel_id AS novelId,id AS editionId,filename,bytes FROM epub_editions LIMIT 1500').all(),
+    env.DB.prepare('SELECT novel_id AS novelId,id AS editionId,filename,bytes FROM additional_epub_editions LIMIT 1500').all(),
+    env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-epub:%' LIMIT 1100").all()
+   ]);
+   const items=[...(a.results||[]),...(b.results||[])].map(x=>({novelId:Number(x.novelId),editionId:x.editionId,filename:x.filename,size:x.bytes,legacy:false}));
+   for(const x of c.results||[]){
+    const m=/^private-epub:([1-9][0-9]*)$/.exec(x.key);if(!m||Number(m[1])>962)continue;
+    try{const v=JSON.parse(x.value);if(/^private-epubs\/[0-9a-f-]{36}\.epub$/.test(v.key||''))
+     items.push({novelId:Number(m[1]),editionId:'legacy',filename:insightTrim(v.name||'book.epub',160),size:Number(v.size)||0,legacy:true});}catch{}
+   }
+   const q=insightTrim(u.searchParams.get('q'),90).toLowerCase();
+   const matches=q?items.filter(x=>String(x.novelId).includes(q)||x.filename.toLowerCase().includes(q)):items;
+   matches.sort((x,y)=>x.novelId-y.novelId||x.filename.localeCompare(y.filename));
+   const offset=Math.max(0,Math.min(100000,Number(u.searchParams.get('offset'))||0)),limit=Math.min(50,Math.max(1,Number(u.searchParams.get('limit'))||30));
+   return editionJson({items:matches.slice(offset,offset+limit),total:matches.length,offset,limit});
+  }
+  if(path==='/api/admin/epub-insights/draft'&&method==='GET'){
+   const id=editionBook(u.searchParams.get('id'));if(!id)return editionJson({error:'Invalid novel'},400);
+   const x=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(INSIGHT_KEY+id).first();
+   let draft=null;try{draft=x?JSON.parse(x.value):null}catch{}
+   return editionJson({draft,novelId:id});
+  }
+  if(method!=='POST'||!strictOrigin(request))return editionJson({error:'Method or origin rejected'},403);
+  const body=await getJson(request),id=editionBook(body.novelId);
+  if(!id)return editionJson({error:'Choose a valid novel'},400);
+  if(path==='/api/admin/epub-insights/draft'){
+   const edition=body.editionId==='legacy'?'legacy':editionUuid(body.editionId);
+   if(!edition)return editionJson({error:'Invalid edition'},400);
+   const valid=edition==='legacy'&&id<=962?
+    !!await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+id).first():
+    !!await env.DB.prepare('SELECT id FROM '+editionTable(id)+' WHERE novel_id=? AND id=?').bind(id,edition).first();
+   if(!valid)return editionJson({error:'Selected stored EPUB was not found'},404);
+   const data={novelId:id,editionId:edition,title:insightTrim(body.title,210),synopsis:insightTrim(body.synopsis,2000),
+    tags:insightList(body.tags),genres:insightList(body.genres,15),warnings:insightList(body.warnings,15),
+    approved:body.action==='approve',source:insightTrim(body.source,80)||'EPUB inspection',
+    reviewedBy:body.action==='approve'?email:null,updatedBy:email,updatedAt:new Date().toISOString()};
+   if(!data.synopsis&&!data.tags.length&&!data.genres.length)return editionJson({error:'Add a synopsis, tag or genre before saving'},400);
+   if(data.approved&&body.rightsConfirmed!==true)return editionJson({error:'Confirm the synopsis is original or authorized'},400);
+   await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP')
+    .bind(INSIGHT_KEY+id,JSON.stringify(data)).run();
+   await audit(env,email,data.approved?'epub.insights.approve':'epub.insights.draft',id,edition);
+   return editionJson({ok:true,draft:data,publicPublished:false});
+  }
+  if(path==='/api/admin/epub-insights/apply'){
+   if(body.confirmApply!==true)return editionJson({error:'Explicit approval required before applying private metadata'},400);
+   const row=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(INSIGHT_KEY+id).first();
+   if(!row)return editionJson({error:'No saved metadata draft for this novel'},404);
+   let approved;try{approved=JSON.parse(row.value)}catch{return editionJson({error:'Draft could not be read'},500)}
+   if(!approved.approved||approved.novelId!==id)return editionJson({error:'Review and approve this exact novel first'},409);
+   const patch={metadataReview:true,metadataSource:insightTrim(approved.source,80)||'Reviewed source metadata'};
+   if(approved.synopsis)patch.synopsis=approved.synopsis;
+   if(Array.isArray(approved.tags)&&approved.tags.length)patch.tags=insightList(approved.tags);
+   if(Array.isArray(approved.genres)&&approved.genres.length)patch.genres=insightList(approved.genres,15);
+   if(!patch.synopsis&&!patch.tags?.length&&!patch.genres?.length)return editionJson({error:'No approved fields to apply'},409);
+   if(id<=962){
+    // The original 962 series store private overrides here; this does not
+    // alter public catalogue overrides or EPUB contents.
+    const previous=await env.DB.prepare('SELECT patch FROM novel_edits WHERE id=?').bind(id).first();
+    let old={};try{old=JSON.parse(previous?.patch||'{}')}catch{}
+    const next={...old};
+    if(patch.synopsis)next.synopsis=patch.synopsis;
+    if(patch.tags?.length)next.tags=patch.tags;
+    next.metadataReview=true;next.metadataSource=patch.metadataSource;
+    await env.DB.prepare('INSERT INTO novel_edits(id,patch) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET patch=excluded.patch,updated_at=CURRENT_TIMESTAMP')
+     .bind(id,JSON.stringify(next)).run();
+   }else{
+    if(!env.COMMUNITY_DB)return editionJson({error:'Shared catalogue database is unavailable'},503);
+    const additional=await env.COMMUNITY_DB.prepare('SELECT title,payload_json,visibility FROM additional_catalogue_novels WHERE id=?').bind(id).first();
+    if(!additional)return editionJson({error:'Additional novel was not found'},404);
+    if(additional.visibility!=='private')return editionJson({error:'This novel is already published. Use the live catalogue editor to update public metadata instead.'},409);
+    const prior=JSON.parse(additional.payload_json||'{}');
+    const merged=extraPayload({...prior,...patch});
+    await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET payload_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND visibility='private'")
+      .bind(JSON.stringify(merged),id).run();
+   }
+   await audit(env,email,'epub.metadata.apply-private',id,approved.editionId||'');
+   return editionJson({ok:true,novelId:id,scope:'private',message:'Approved metadata applied privately. Public metadata unchanged.'});
+  }
+  return editionJson({error:'Not found'},404);
+ }catch(e){return editionJson({error:insightTrim(e?.message||'Private EPUB analysis unavailable',200)},500)}
 }
