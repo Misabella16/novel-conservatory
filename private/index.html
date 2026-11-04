@@ -419,6 +419,14 @@ header{background:rgba(255,251,244,.98);box-shadow:0 4px 22px #182a2111;border-b
 .epub-inventory-status{color:#687265;font-size:11px}
 @media(max-width:560px){.epub-inventory-filters{align-items:stretch}.epub-inventory-filters label{width:100%}.epub-inventory-filters select{flex:1;max-width:none}}
 </style>
+<style id="exclude-tags-style">
+#exclude-tag-search{width:100%;padding:9px 10px;border:1px solid #cfd8c9;border-radius:8px;background:#fffefa;color:#263f35;font-size:12px;margin:6px 0 7px}
+.excluded-tag-options{max-height:216px;overflow-y:auto;overscroll-behavior:contain;border:1px solid #e4e9e0;border-radius:7px;padding:5px 11px;background:#fdfcf8}
+.excluded-tag-options .check{margin:7px 0}.excluded-tag-options small{white-space:nowrap}
+.exclude-tag-hint{display:block;color:#647364;font-size:12px;font-weight:650}
+.exclude-tag-count{font-size:10px;color:#9b5c3e;background:#fff2e9;border:1px solid #e7d2c5;padding:2px 6px;border-radius:12px;letter-spacing:0;text-transform:none}
+.exclude-tag-empty{font-size:12px;color:#6b786e;padding:8px}
+</style>
 </head>
 <body>
 <header><div class="top"><a href="#top" class="brand" aria-label="The Novel Conservatory, home"><div class="brand-mark" aria-hidden="true">文</div><div><strong>The Novel Conservatory</strong><span>GENRES · RELATIONSHIPS · STORY WORLDS</span></div></a><button type="button" id="section-menu-toggle" class="section-menu-toggle" aria-controls="library-main-nav" aria-expanded="false" aria-label="Show all library sections">☰ All sections <span aria-hidden="true">▾</span></button><nav id="library-main-nav" class="nav" aria-label="Library sections"><button type="button" id="explore-nav" class="navbtn active">Discover</button><button type="button" id="covers-nav" class="navbtn">Browse novels</button><a href="/admin/" id="edit-site-nav" class="navbtn" style="display:none;text-decoration:none;white-space:nowrap">✎ Edit Site</a><button type="button" id="saved-nav" class="navbtn">Device favorites <span id="saved-badge" class="nav-count">0</span></button><a href="/shelves/" class="navbtn" style="text-decoration:none;white-space:nowrap">Friends’ shelves</a><button type="button" id="about-nav" class="navbtn">About</button></nav><div class="invite" title="The website must remain behind Cloudflare Access"><i></i> Friends' reading room</div></div></header>
@@ -458,7 +466,15 @@ header{background:rgba(255,251,244,.98);box-shadow:0 4px 22px #182a2111;border-b
 </section>
 </div></div>
 <div id="tab-covers" class="tab-panel" data-tab="covers" hidden>
-<div class="container"><div class="section-head" id="browse"><div><div class="sec-kicker">Explore the archive</div><h2 id="section-title">The series listing</h2></div><p id="section-description">A readable series list with covers, titles, translation information and reviewed story tags. Switch to Cover View whenever you want the gallery.</p></div><div class="explorer"><aside class="filter-panel" id="filter-panel"><div class="filter-row"><div class="filter-title">Translation status <button class="quiet-link" id="clear-filters" type="button">Clear</button></div><div id="status-filters"></div></div><div hidden="" id="language-filters"></div><div class="filter-row"><div class="filter-title">Catalogue availability</div><div id="availability-filters"></div><p class="filter-note">Cataloguing information only. Private EPUBs are accessible only to the owner and explicitly approved readers while sharing is enabled.</p></div><div class="filter-row"><div class="filter-title">Genres</div><div id="genre-filters"></div><p class="filter-note">Only titles with verified genre assignments appear in genre results.</p></div><div class="filter-row"><div class="filter-title">Story tags</div><div id="tag-filters"></div></div><div class="filter-row"><div class="filter-title">Avoid content warnings</div><div id="warning-filters"></div><p class="filter-note">An unchecked warning is not a safety guarantee. Titles without reviewed warnings are excluded when you use this filter.</p></div><div class="filter-row"><label class="check"><input id="rich-only" type="checkbox"/><strong>Reviewed descriptions only</strong></label><p class="filter-note">Show novels with manually checked genres and original reading hooks.</p></div><div class="filter-row"><div class="filter-title">Themes in titles</div><div id="theme-filters"></div><p class="filter-note">These are title keyword matches, not verified Novel Updates genre tags.</p></div></aside><div class="catalog-area"><div class="toolbar"><div class="searchwrap"><svg aria-hidden="true" fill="none" height="18" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24" width="18"><circle cx="10.5" cy="10.5" r="7.5"></circle><path d="m16 16 5 5"></path></svg><input aria-label="Search the library" autocomplete="off" id="search" placeholder="Search titles, original titles, authors, translators..." type="search"/></div><select aria-label="Sort novels" class="sort" id="sort"><option value="featured">✦ Curated first</option><option value="art">Artwork first</option><option value="az">Title: A to Z</option><option value="za">Title: Z to A</option><option value="random">Shuffle shelf</option></select><button aria-label="Toggle compact covers" aria-pressed="true" class="small-btn density-toggle" id="density-toggle" title="Toggle compact covers" type="button">▦ Compact</button><button type="button" class="small-btn tag-picker-open" id="tag-picker-open" title="Select multiple story tags in A-Z order">Choose story tags</button><div class="view-choice" role="group" aria-label="Choose catalogue layout"><button type="button" id="view-list" aria-pressed="true">List View</button><button type="button" id="view-covers" aria-pressed="false">Cover View</button></div><button aria-controls="filter-panel" aria-expanded="false" class="small-btn" id="filters-toggle" title="Show advanced filters" type="button">☰</button></div><div class="epub-inventory-filters" aria-label="Private EPUB availability filter">
+<div class="container"><div class="section-head" id="browse"><div><div class="sec-kicker">Explore the archive</div><h2 id="section-title">The series listing</h2></div><p id="section-description">A readable series list with covers, titles, translation information and reviewed story tags. Switch to Cover View whenever you want the gallery.</p></div><div class="explorer"><aside class="filter-panel" id="filter-panel"><div class="filter-row"><div class="filter-title">Translation status <button class="quiet-link" id="clear-filters" type="button">Clear</button></div><div id="status-filters"></div></div><div hidden="" id="language-filters"></div><div class="filter-row"><div class="filter-title">Catalogue availability</div><div id="availability-filters"></div><p class="filter-note">Cataloguing information only. Private EPUBs are accessible only to the owner and explicitly approved readers while sharing is enabled.</p></div><div class="filter-row"><div class="filter-title">Genres</div><div id="genre-filters"></div><p class="filter-note">Only titles with verified genre assignments appear in genre results.</p></div><div class="filter-row"><div class="filter-title">Story tags to include</div><div id="tag-filters"></div></div>
+ <div class="filter-row" id="exclude-story-tags-section">
+  <div class="filter-title">🚫 Exclude story tags <span id="excluded-tag-active-count" class="exclude-tag-count">0 excluded</span></div>
+  <label for="exclude-tag-search" class="exclude-tag-hint">Find tags you don't want to see</label>
+  <input id="exclude-tag-search" type="search" autocomplete="off" placeholder="Search tags to exclude…" aria-describedby="excluded-tag-help" />
+  <div id="excluded-tag-filters" class="excluded-tag-options" aria-label="Tags to exclude"></div>
+  <p id="excluded-tag-help" class="filter-note">Any selected tag hides books carrying that tag, even when another tag matches. Books with missing tags stay visible because their content is unknown.</p>
+  <p id="excluded-tag-status" class="filter-note" role="status" aria-live="polite"></p>
+ </div><div class="filter-row"><div class="filter-title">Avoid content warnings</div><div id="warning-filters"></div><p class="filter-note">An unchecked warning is not a safety guarantee. Titles without reviewed warnings are excluded when you use this filter.</p></div><div class="filter-row"><label class="check"><input id="rich-only" type="checkbox"/><strong>Reviewed descriptions only</strong></label><p class="filter-note">Show novels with manually checked genres and original reading hooks.</p></div><div class="filter-row"><div class="filter-title">Themes in titles</div><div id="theme-filters"></div><p class="filter-note">These are title keyword matches, not verified Novel Updates genre tags.</p></div></aside><div class="catalog-area"><div class="toolbar"><div class="searchwrap"><svg aria-hidden="true" fill="none" height="18" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24" width="18"><circle cx="10.5" cy="10.5" r="7.5"></circle><path d="m16 16 5 5"></path></svg><input aria-label="Search the library" autocomplete="off" id="search" placeholder="Search titles, original titles, authors, translators..." type="search"/></div><select aria-label="Sort novels" class="sort" id="sort"><option value="featured">✦ Curated first</option><option value="art">Artwork first</option><option value="az">Title: A to Z</option><option value="za">Title: Z to A</option><option value="random">Shuffle shelf</option></select><button aria-label="Toggle compact covers" aria-pressed="true" class="small-btn density-toggle" id="density-toggle" title="Toggle compact covers" type="button">▦ Compact</button><button type="button" class="small-btn tag-picker-open" id="tag-picker-open" title="Select multiple story tags in A-Z order">Choose story tags</button><div class="view-choice" role="group" aria-label="Choose catalogue layout"><button type="button" id="view-list" aria-pressed="true">List View</button><button type="button" id="view-covers" aria-pressed="false">Cover View</button></div><button aria-controls="filter-panel" aria-expanded="false" class="small-btn" id="filters-toggle" title="Show advanced filters" type="button">☰</button></div><div class="epub-inventory-filters" aria-label="Private EPUB availability filter">
 <label for="epub-presence-filter">📖 EPUB availability</label>
 <select id="epub-presence-filter" aria-label="Filter novels by linked EPUB" disabled>
 <option value="all">All novels</option>
@@ -484,7 +500,7 @@ const data=initialData.slice();
 let compactCovers=true;try{compactCovers=localStorage.getItem('conservatory-cover-density')!=='roomy'}catch(e){}
 let liveFeaturedIds=[];
 const $=q=>document.querySelector(q),$$=q=>Array.from(document.querySelectorAll(q));
-let selectedStatus=new Set(),selectedThemes=new Set(),selectedLanguages=new Set(),selectedAvailability=new Set(),selectedGenres=new Set(),selectedTags=new Set(),excludedWarnings=new Set(),richOnly=false;
+let selectedStatus=new Set(),selectedThemes=new Set(),selectedLanguages=new Set(),selectedAvailability=new Set(),selectedGenres=new Set(),selectedTags=new Set(),excludedTags=new Set(),excludedWarnings=new Set(),richOnly=false;
 let savedOnly=false,visible=48,listView=true,randomIds=[],searchTerm='',sortKey='featured',approvedOnly=false;
 let privateEpubLinked=new Set(),privateEpubReady=false,privateEpubFilter='all';
 try{listView=localStorage.getItem('conservatory-browse-mode')!=='covers'}catch(e){}
@@ -604,6 +620,45 @@ let selectedHomeShelf='all';
 function syncHomeShelf(){$$('[data-home-genre]').forEach(b=>b.classList.toggle('active',b.dataset.homeGenre===selectedHomeShelf))}
 let selectedStoryTags=new Set(),tagMatchMode='any';
 let tagLibraryGroups={},tagLibraryLimit=120;
+
+/* Negative filters are a separate set, so include and exclude can coexist.
+   Exclusion wins if a novel matches both. Never guess missing tag metadata. */
+function renderExcludedTagFilters(){
+ const host=$('#excluded-tag-filters');
+ if(!host)return;
+ const count=new Map(),display=new Map();
+ for(const d of data){
+  const seen=new Set();
+  for(const value of d.tags||[]){
+   const key=normStoryTag(value);
+   if(!key||seen.has(key))continue;
+   seen.add(key);count.set(key,(count.get(key)||0)+1);
+   if(!display.has(key))display.set(key,String(value));
+  }
+ }
+ const needle=$('#exclude-tag-search').value.trim().toLocaleLowerCase();
+ const values=[...count.keys()].filter(key=>!needle||key.includes(needle)||display.get(key).toLocaleLowerCase().includes(needle));
+ values.sort((a,b)=>Number(excludedTags.has(b))-Number(excludedTags.has(a))||a.localeCompare(b));
+ const visible=values.slice(0,55);
+ host.innerHTML=visible.length?visible.map(key=>{
+  const label=display.get(key),checked=excludedTags.has(key)?'checked':'';
+  return '<label class="check"><input type="checkbox" data-excluded-tag="'+esc(key)+'" '+checked+'><span>'+esc(label)+'</span><small>'+count.get(key)+'</small></label>';
+ }).join(''):'<p class="exclude-tag-empty">No matching tags in the current catalogue.</p>';
+ $('#excluded-tag-active-count').textContent=excludedTags.size+' excluded';
+ $('#excluded-tag-status').textContent=values.length>visible.length
+ ?'Showing '+visible.length+' of '+values.length+' tags; type to narrow the list.'
+ :values.length+' matching tag'+(values.length===1?'':'s')+'.';
+}
+$('#exclude-tag-search').addEventListener('input',renderExcludedTagFilters);
+$('#excluded-tag-filters').addEventListener('change',event=>{
+ const input=event.target.closest('input[data-excluded-tag]');
+ if(!input)return;
+ const key=normStoryTag(input.dataset.excludedTag);
+ if(input.checked)excludedTags.add(key);else excludedTags.delete(key);
+ visible=48;
+ renderExcludedTagFilters();renderBooks();
+});
+
 function normStoryTag(t){const s=String(t||'').trim().toLowerCase();return ({'enemies to lovers':'enemies become lovers','rivals to lovers':'rivals to lovers','infinite flow':'unlimited flow','sci fi':'sci-fi','abo':'omegaverse'})[s]||s;}
 function storyTagCounts(){const counts={};for(const d of data){if(!isDiscoverable(d))continue;for(const t of d.tags||[]){const k=normStoryTag(t);counts[k]=(counts[k]||0)+1;}}return counts;}
 function chooseStoryTag(label){savedOnly=false;selectedHomeShelf='all';selectedStatus.clear();selectedAvailability.clear();selectedLanguages.clear();selectedThemes.clear();selectedGenres.clear();selectedTags=new Set([label]);selectedStoryTags=new Set([normStoryTag(label)]);tagMatchMode='any';excludedWarnings.clear();richOnly=false;visible=48;renderFilters();renderBooks();syncHomeShelf();goBrowse();}
@@ -667,6 +722,7 @@ function renderFilters(){
  makeChecks('#theme-filters',cues,cueCounts,selectedThemes,'theme');
  makeChecks('#genre-filters',Object.keys(genreCounts).sort(),genreCounts,selectedGenres,'genre');
  makeChecks('#tag-filters',Object.keys(tagCounts).sort(),tagCounts,selectedTags,'tag');
+ renderExcludedTagFilters();
  makeChecks('#warning-filters',Object.keys(warningCounts).sort(),warningCounts,excludedWarnings,'warning');
  $('#rich-only').checked=richOnly;
  for(const [selector,attr,set] of [['[data-status]','status','status'],['[data-language]','language','language'],['[data-availability]','availability','availability'],['[data-theme]','theme','theme'],['[data-genre]','genre','genre'],['[data-tag]','tag','tag'],['[data-warning]','warning','warning']]){
@@ -699,6 +755,7 @@ function matches(d){
  if((excludedWarnings.size||richOnly)&&!isReviewed(d))return false;
  if(selectedGenres.size&&![...selectedGenres].every(x=>(d.genres||[]).some(g=>normalizeGenre(g)===normalizeGenre(x))))return false;
  if(selectedTags.size&&!(tagMatchMode==='any'?[...selectedTags].some(x=>(d.tags||[]).some(t=>normStoryTag(t)===normStoryTag(x))):[...selectedTags].every(x=>(d.tags||[]).some(t=>normStoryTag(t)===normStoryTag(x)))))return false;
+ if(excludedTags.size&&(d.tags||[]).some(t=>excludedTags.has(normStoryTag(t))))return false;
  if(excludedWarnings.size&&[...excludedWarnings].some(x=>(d.contentWarnings||[]).includes(x)))return false;
  const search=searchTerm.trim().toLocaleLowerCase();
  if(search){const hay=[d.title,d.originalTitle,d.author,d.translator,...translationEditions(d).flatMap(v=>[v.name,v.label,v.language,v.notes]),d.language,d.synopsis,(d.genres||[]).join(' '),(d.tags||[]).join(' '),(d.contentWarnings||[]).join(' '),(d.titleCues||[]).join(' ')].join(' ').toLocaleLowerCase();if(!search.split(/\s+/).every(t=>hay.includes(t)))return false}
@@ -863,7 +920,7 @@ for(const [id,isList] of [['#view-list',true],['#view-covers',false]])$(id).addE
 $('#filters-toggle').addEventListener('click',()=>{const open=$('.explorer').classList.toggle('filters-open');$('#filters-toggle').setAttribute('aria-expanded',String(open));});
 $('#art-only-toggle').addEventListener('click',()=>{approvedOnly=!approvedOnly;$('#art-only-toggle').classList.toggle('active',approvedOnly);$('#art-only-toggle').setAttribute('aria-pressed',String(approvedOnly));visible=48;renderBooks()});
 $('#load-more').addEventListener('click',()=>{visible+=48;renderBooks()});
-$('#clear-filters').addEventListener('click',()=>{privateEpubFilter='all';$('#epub-presence-filter').value='all';approvedOnly=false;$('#art-only-toggle').classList.remove('active');$('#art-only-toggle').setAttribute('aria-pressed','false');selectedStatus.clear();selectedThemes.clear();selectedLanguages.clear();selectedAvailability.clear();selectedGenres.clear();selectedTags.clear();selectedStoryTags.clear();tagMatchMode='any';$('#tag-match-mode').value='any';excludedWarnings.clear();richOnly=false;selectedHomeShelf='all';visible=48;renderFilters();syncPresets();syncHomeShelf();renderBooks();renderTagLibrary()});
+$('#clear-filters').addEventListener('click',()=>{privateEpubFilter='all';$('#epub-presence-filter').value='all';approvedOnly=false;$('#art-only-toggle').classList.remove('active');$('#art-only-toggle').setAttribute('aria-pressed','false');selectedStatus.clear();selectedThemes.clear();selectedLanguages.clear();selectedAvailability.clear();selectedGenres.clear();selectedTags.clear();selectedStoryTags.clear();tagMatchMode='any';$('#tag-match-mode').value='any';excludedWarnings.clear();excludedTags.clear();$('#exclude-tag-search').value='';richOnly=false;selectedHomeShelf='all';visible=48;renderFilters();syncPresets();syncHomeShelf();renderBooks();renderTagLibrary()});
 $('#rich-only').addEventListener('change',e=>{richOnly=e.target.checked;visible=48;renderBooks()});
 $$('.pill').forEach(p=>p.addEventListener('click',()=>{selectedStatus=new Set(p.dataset.preset==='all'?[]:[p.dataset.preset]);visible=48;renderFilters();syncPresets();renderBooks()}));
 $('#surprise-btn').addEventListener('click',()=>{const pool=data.filter(matches);if(pool.length)openDetail(pool[Math.floor(Math.random()*pool.length)])});
