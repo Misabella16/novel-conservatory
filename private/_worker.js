@@ -566,7 +566,7 @@ async function routes(request,env,ctx,email,role){
   }
   if(path==='/api/site/config')return siteConfigRoute(request,env,'private');
   if(path==='/api/site/feedback')return siteFeedbackRoute(request,env,'private',email);
-  if(path==='/api/admin/site-config'||path==='/api/admin/site-feedback')return siteAdminRoute(request,env,email,role);
+  if(['/api/admin/site-config','/api/admin/site-feedback','/api/admin/public-banner','/api/admin/public-banner-preview','/api/admin/public-banner-copy','/api/admin/site-copy-from-private'].includes(path))return siteAdminRoute(request,env,email,role);
   if(path.startsWith('/api/community/'))return communityDispatch(request,env,'private',{email,role});
   if(path==='/api/catalogue'&&method==='GET'){
    const response=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',url.origin)));
@@ -1544,6 +1544,43 @@ async function siteAdminRoute(request,env,email,role){
   const key=crypto.randomUUID()+'.'+ext;
   await env.COMMUNITY_IMAGES.put('public-banners/'+key,bytes,{httpMetadata:{contentType:ct}});
   return siteOut({ok:true,key,url:'https://'+url.host+'/banner-media/'+key});
+ }
+ if(path==='/api/admin/site-copy-from-private'&&method==='POST'){
+  if(request.headers.get('Origin')!==url.origin)return siteOut({error:'Wrong origin'},403);
+  if(!env.DB)return siteOut({error:'Private homepage database unavailable'},503);
+  const row=await env.DB.prepare("SELECT value FROM site_settings WHERE key='homepage'").first();
+  let home={};try{home=JSON.parse(row?.value||'{}')}catch{return siteOut({error:'Invalid private homepage'},503)}
+  const old=await siteGet(env,'public');
+  const updated=siteClean({...old,homeHeadline:siteTrim(home.heroTitle||'',110),homeFlavor:siteTrim(home.heroDescription||'',350)});
+  await env.COMMUNITY_DB.prepare('INSERT INTO conservatory_site_config(scope,config_json,updated_by) VALUES (?,?,?) ON CONFLICT(scope) DO UPDATE SET config_json=excluded.config_json,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP')
+    .bind('public',JSON.stringify(updated),email).run();
+  return siteOut({ok:true,settings:updated});
+ }
+ if(path==='/api/admin/public-banner-copy'&&method==='POST'){
+  if(request.headers.get('Origin')!==url.origin)return siteOut({error:'Wrong origin'},403);
+  if(!env.DB||!env.IMAGES||!env.COMMUNITY_IMAGES)return siteOut({error:'Required private and public-safe storage unavailable'},503);
+  const row=await env.DB.prepare("SELECT value FROM site_settings WHERE key='homepage'").first();
+  let home={};try{home=JSON.parse(row?.value||'{}')}catch{return siteOut({error:'Private homepage settings unavailable'},503)}
+  const match=/^\/media\/([a-f0-9-]{36}\.(?:png|jpg|webp))$/.exec(home.heroImage||'');
+  if(!match)return siteOut({error:'Private banner is not a saved JPG/PNG/WebP. Use the public website editor to upload the image instead.'},400);
+  const oldFile=await env.IMAGES.get(match[1]);
+  if(!oldFile)return siteOut({error:'Stored private banner was not found'},404);
+  const mime=oldFile.httpMetadata?.contentType||'';
+  if(!['image/png','image/jpeg','image/webp'].includes(mime)||oldFile.size<100||oldFile.size>3000000)
+   return siteOut({error:'Private banner must be JPG, PNG, or WebP under 3 MB'},400);
+  const ext=mime==='image/png'?'png':mime==='image/webp'?'webp':'jpg';
+  const bytes=await oldFile.arrayBuffer();
+  if(!communityMagic(mime,bytes))return siteOut({error:'Private banner validation failed'},415);
+  const key=crypto.randomUUID()+'.'+ext;
+  await env.COMMUNITY_IMAGES.put('public-banners/'+key,bytes,{httpMetadata:{contentType:mime}});
+  try{
+   const previous=await siteGet(env,'public');
+   const next=siteClean({...previous,publicBannerKey:key});
+   await env.COMMUNITY_DB.prepare('INSERT INTO conservatory_site_config(scope,config_json,updated_by) VALUES (?,?,?) ON CONFLICT(scope) DO UPDATE SET config_json=excluded.config_json,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP')
+    .bind('public',JSON.stringify(next),email).run();
+   await audit(env,email,'public.banner.copy-private',key);
+  }catch(e){await env.COMMUNITY_IMAGES.delete('public-banners/'+key);return siteOut({error:'Could not publish public banner'},503)}
+  return siteOut({ok:true,image:'/banner-media/'+key});
  }
  if(path==='/api/admin/site-config'){
   if(method==='GET'){
