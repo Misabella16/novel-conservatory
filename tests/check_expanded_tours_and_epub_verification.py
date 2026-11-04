@@ -76,7 +76,7 @@ assert "site_settings" in worker
 assert "epub-verification:" in worker
 assert "private-epub-submissions/" not in worker[worker.index("async function epubVerificationInventory"):worker.index("async function editionRoutes")]
 assert '<a href="/admin/epub-verification/"' in owner
-assert "Private EPUB" in review
+assert "EPUB verification checklist" in review
 assert "Owner login is required." in review
 assert "/api/private/epub/review" in review
 assert "confirm(" in review
