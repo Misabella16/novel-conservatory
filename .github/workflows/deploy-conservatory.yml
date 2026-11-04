@@ -1,88 +1,83 @@
-name: Deploy Novel Conservatory
+name: Conservatory — Safe Preview / Manual Production Deploy
+
+# SAFETY HOLD: Private branding must be recovered and verified before enabling auto-deploy.
+# Code changes do not silently overwrite either live site.
 on:
   push:
     branches: [main]
     paths:
-      - 'private/**'
-      - 'public/**'
-      - '.github/workflows/deploy-conservatory.yml'
+      - "private/**"
+      - "public/**"
+      - ".github/workflows/deploy-conservatory.yml"
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Choose EXACTLY one website to deploy"
+        type: choice
+        required: true
+        options:
+          - public
+          - private
+      confirmation:
+        description: "Type DEPLOY PUBLIC or DEPLOY PRIVATE to confirm"
+        type: string
+        required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: conservatory-production
+  group: conservatory-manual-production
   cancel-in-progress: false
 
 jobs:
-  deploy-private:
+  check-source:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check uploaded private source files
-        id: source
+      - name: Verify separate site roots (if uploaded)
         run: |
-          if [ -f private/_worker.js ] && [ -f private/index.html ] && [ -f private/admin/add-novels.js ]; then
-            node --check private/_worker.js
-            node --check private/admin/add-novels.js
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Source folders not uploaded yet; skipping private deployment."
-          fi
-      - name: Check Cloudflare deployment credentials
-        id: creds
-        env:
-          CF_API: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          if [ -n "$CF_API" ] && [ -n "$CF_ACCOUNT" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "Cloudflare secrets are not configured; skipping deployment."
-          fi
-      - name: Deploy existing private Pages project
-        if: steps.creds.outputs.enabled == 'true' && steps.source.outputs.ready == 'true'
-        uses: cloudflare/wrangler-action@v4
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy private --project-name=novel-conservatory --branch=main
+          for site in private public; do
+            if [ -f "$site/index.html" ] && [ -f "$site/_worker.js" ]; then
+              echo "Checking $site"
+              node --check "$site/_worker.js"
+            else
+              echo "No deployable $site folder committed yet. This is not an error."
+            fi
+          done
 
-  deploy-public:
-    if: ${{ vars.PUBLIC_PAGES_PROJECT != '' }}
+  deploy-one-site:
+    if: github.event_name == 'workflow_dispatch'
+    needs: check-source
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check uploaded public source files
-        id: source
-        run: |
-          if [ -f public/_worker.js ] && [ -f public/index.html ] && [ -f public/submit-novel/form.js ]; then
-            node --check public/_worker.js
-            node --check public/submit-novel/form.js
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Source folders not uploaded yet; skipping public deployment."
-          fi
-      - name: Check Cloudflare deployment credentials
-        id: creds
+      - name: Explicit target confirmation
+        id: gate
         env:
+          TARGET: ${{ inputs.target }}
+          CONFIRM: ${{ inputs.confirmation }}
           CF_API: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PUBLIC_PROJECT: ${{ vars.PUBLIC_PAGES_PROJECT }}
         run: |
-          if [ -n "$CF_API" ] && [ -n "$CF_ACCOUNT" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "Cloudflare secrets are not configured; skipping deployment."
+          case "$TARGET:$CONFIRM" in
+            private:'DEPLOY PRIVATE') PROJECT="novel-conservatory" ;;
+            public:'DEPLOY PUBLIC')
+              if [ -z "$PUBLIC_PROJECT" ]; then echo "::error::Set PUBLIC_PAGES_PROJECT first"; exit 1; fi
+              PROJECT="$PUBLIC_PROJECT" ;;
+            *) echo "::error::Confirmation doesn't match target"; exit 1 ;;
+          esac
+          if [ -z "$CF_API" ] || [ -z "$CF_ACCOUNT" ]; then
+            echo "::error::Cloudflare deployment secrets not configured"; exit 1
           fi
-      - name: Deploy public backend-enabled Pages project
-        if: steps.creds.outputs.enabled == 'true' && steps.source.outputs.ready == 'true'
-        uses: cloudflare/wrangler-action@v4
+          if [ ! -f "$TARGET/_worker.js" ] || [ ! -f "$TARGET/index.html" ]; then
+            echo "::error::$TARGET site source not uploaded"; exit 1
+          fi
+          echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
+      - name: Deploy selected site only
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy public --project-name=${{ vars.PUBLIC_PAGES_PROJECT }} --branch=main
+          command: pages deploy ${{ inputs.target }} --project-name=${{ steps.gate.outputs.project }} --branch=main
