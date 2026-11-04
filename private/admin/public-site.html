@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Edit Public Conservatory | Momo</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color:#29423a;background:#f6f3e9}*{box-sizing:border-box}body{margin:0}main{max-width:900px;margin:auto;padding:28px 18px 60px}
+h1{font-family:Georgia,serif;font-size:clamp(27px,5vw,43px);margin:12px 0}h2{font-family:Georgia,serif}p{line-height:1.55}
+.panel{background:#fff;border:1px solid #d8ded3;border-radius:14px;padding:20px;margin:20px 0}
+label{display:block;font-weight:650;margin:13px 0 5px}input,textarea{width:100%;border:1px solid #bbc9bd;border-radius:8px;padding:12px;font:inherit;background:#fff;color:#263d32}textarea{min-height:95px}
+button{border:0;border-radius:8px;background:#365f4c;color:white;padding:11px 18px;font-weight:700;cursor:pointer}button:disabled{opacity:.6;cursor:wait}
+small,.muted{color:#657568}a{color:#23593c} .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:13px}
+.notice{padding:12px 14px;background:#e6efe6;border-radius:9px}img{max-width:100%;max-height:290px;border-radius:10px;object-fit:cover}#banner-preview{display:none}
+</style></head><body><main>
+<a href="/admin/">← Back to private editor</a>
+<p class="muted">OWNER CONTROLS · PUBLIC SITE ONLY</p>
+<h1>Edit Public Conservatory</h1>
+<p>This changes only your <strong>public</strong> headlines, section descriptions, contact link and banner. Your private homepage, banner and EPUB library are not modified.</p>
+<p class="notice" id="status" role="status">Checking your owner access…</p>
+<form id="form" hidden>
+<section class="panel"><h2>Public homepage</h2>
+<div class="grid"><div><label for="homeEyebrow">Small heading above the headline</label><input id="homeEyebrow" maxlength="100"></div><div><label for="homeHeadline">Main headline</label><input id="homeHeadline" maxlength="110"></div></div>
+<label for="homeFlavor">Intro / flavor text</label><textarea id="homeFlavor" maxlength="350"></textarea>
+<label for="noticeText">Public notice</label><textarea id="noticeText" maxlength="320"></textarea>
+</section>
+<section class="panel"><h2>Public sections</h2><div class="grid">
+<div><label for="storyTagsHeadline">Story tags heading</label><input id="storyTagsHeadline" maxlength="100"></div>
+<div><label for="browseHeadline">Browse heading</label><input id="browseHeadline" maxlength="100"></div>
+<div><label for="curatedHeadline">Collections heading</label><input id="curatedHeadline" maxlength="100"></div></div>
+<label for="storyTagsFlavor">Story tags description</label><textarea id="storyTagsFlavor" maxlength="320"></textarea>
+<label for="curatedFlavor">Collections description</label><textarea id="curatedFlavor" maxlength="320"></textarea>
+</section>
+<section class="panel"><h2>Public contact</h2><div class="grid"><div><label for="instagram">Instagram username or profile URL</label><input id="instagram" placeholder="@account"></div><div><label for="instagramLabel">Contact link wording</label><input id="instagramLabel" maxlength="70"></div></div></section>
+<section class="panel"><h2>Public banner</h2>
+<p class="muted">Select a different public image without changing the private banner. Images are stored in the shared community-art bucket, not with private EPUBs.</p>
+<img alt="Current public banner preview" id="banner-preview">
+<label for="banner">Replace public banner (PNG, JPG or WebP, up to 3 MB)</label><input id="banner" type="file" accept="image/png,image/jpeg,image/webp">
+<div class="grid"><div><label for="publicBannerX">Horizontal focus (0–100%)</label><input id="publicBannerX" type="number" min="0" max="100" value="50"></div><div><label for="publicBannerY">Vertical focus (0–100%)</label><input id="publicBannerY" type="number" min="0" max="100" value="50"></div></div>
+<button type="button" id="upload-banner">Upload selected banner</button> <span id="banner-result" class="muted"></span>
+<p><small>Uploading only prepares the image. Click Save public website settings afterward to publish it.</small></p>
+</section>
+<button id="save" type="submit">Save public website settings</button>
+</form><p><small>Website created by Momo</small></p>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const keys=['homeEyebrow','homeHeadline','homeFlavor','noticeText','storyTagsHeadline','browseHeadline','curatedHeadline','storyTagsFlavor','curatedFlavor','instagram','instagramLabel','publicBannerX','publicBannerY'];
+let current={},pendingBannerKey=null;
+const status=s=>$('status').textContent=s;
+function preview(key){const img=$('banner-preview');if(key){img.src='/api/admin/public-banner-preview?key='+encodeURIComponent(key);img.style.display='block';}else{img.removeAttribute('src');img.style.display='none';}}
+(async()=>{try{const me=await fetch('/api/me',{cache:'no-store'});if(!me.ok)throw Error('Log in to the private Conservatory.');const m=await me.json();if(m.role!=='owner')throw Error('Only the owner can edit the public site.');
+const r=await fetch('/api/admin/site-config',{cache:'no-store'});const j=await r.json();if(!r.ok)throw Error(j.error||'Could not read public settings');current=j.public||{};for(const k of keys)$(k).value=current[k]??'';pendingBannerKey=current.publicBannerKey||'';if(pendingBannerKey){const p=await fetch('/api/admin/public-banner-preview?key='+encodeURIComponent(pendingBannerKey));if(p.ok){$('banner-preview').src=p.url;$('banner-preview').style.display='block';}}
+$('form').hidden=false;status('Ready. Your private settings are separate and will not change.');}catch(e){status(e.message)}})();
+$('upload-banner').addEventListener('click',async()=>{const f=$('banner').files[0];if(!f){$('banner-result').textContent='Choose an image first.';return;}if(f.size>3000000){$('banner-result').textContent='Maximum 3 MB.';return;}const b=$('upload-banner');b.disabled=true;$('banner-result').textContent='Uploading…';try{const r=await fetch('/api/admin/public-banner',{method:'POST',headers:{'Content-Type':f.type},body:f});const j=await r.json();if(!r.ok)throw Error(j.error||'Upload failed');pendingBannerKey=j.key;$('banner-preview').src='/api/admin/public-banner-preview?key='+encodeURIComponent(j.key);$('banner-preview').style.display='block';$('banner-result').textContent='Ready to publish. Click Save below.';}catch(e){$('banner-result').textContent=e.message}finally{b.disabled=false}});
+$('form').addEventListener('submit',async e=>{e.preventDefault();const b=$('save');b.disabled=true;status('Saving public settings…');try{const settings={...current};for(const k of keys)settings[k]=['publicBannerX','publicBannerY'].includes(k)?Number($(k).value):$(k).value;settings.publicBannerKey=pendingBannerKey||'';const r=await fetch('/api/admin/site-config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:'public',settings})});const j=await r.json();if(!r.ok)throw Error(j.error||'Could not save');current=j.settings;status('Saved! Refresh the public website to see the new wording or banner. Private site unchanged.');}catch(e){status(e.message)}finally{b.disabled=false}});
+</script></main></body></html>

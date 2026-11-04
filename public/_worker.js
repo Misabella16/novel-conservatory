@@ -1,26 +1,14 @@
-// PUBLIC read-only showcase. The public Pages project gets only an R2 binding
-// called BANNER_STORE pointing at the private site's existing covers bucket.
-// Only the owner's published banner key can be served; nothing can be edited here.
+// Public site: separate public branding, approved catalogue and community artwork.
+// Never bind the private DB, EPUB bucket or private banner storage to this Worker.
 const respond=(b,s=200)=>new Response(JSON.stringify(b),{status:s,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 const validKey=k=>/^[a-f0-9-]{36}\.(?:png|jpg|webp|gif)$/.test(k);
 const clamp=v=>Number.isFinite(Number(v))?Math.max(0,Math.min(100,Math.round(Number(v)))):50;
 async function activeBanner(env){
- // Newly published banners live only in the public-safe shared image bucket.
- if(env.COMMUNITY_DB&&env.COMMUNITY_IMAGES){
-  try{
-   const c=await env.COMMUNITY_DB.prepare("SELECT config_json FROM conservatory_site_config WHERE scope='public'").first();
-   const key=JSON.parse(c?.config_json||'{}').bannerKey||'';
-   if(validKey(key))return {image:'/banner-media/'+key,positionX:50,positionY:50,configured:true,store:'community'};
-  }catch{}
- }
- // Preserve the older published banner if no new banner has been set.
- if(!env.BANNER_STORE)return {image:'',positionX:50,positionY:50,configured:false};
- const obj=await env.BANNER_STORE.get('banner/current.json');
- if(!obj)return {image:'',positionX:50,positionY:50,configured:true};
- const b=await obj.json(),key=String(b.key||'');
- return {image:validKey(key)?'/banner-media/'+key:'',positionX:clamp(b.positionX),positionY:clamp(b.positionY),configured:true,store:'legacy'};
+ if(!env.COMMUNITY_DB||!env.COMMUNITY_IMAGES)return {image:'',positionX:50,positionY:50,configured:false};
+ const settings=await siteGet(env,'public');
+ const key=String(settings.publicBannerKey||'');
+ return {image:validKey(key)?'/banner-media/'+key:'',positionX:clamp(settings.publicBannerX),positionY:clamp(settings.publicBannerY),configured:true};
 }
-
 export default {async fetch(request,env){
  const url=new URL(request.url),path=url.pathname;
  if(path.startsWith('/api/additional/'))return additionalRoutes(request,env,'public');
@@ -31,7 +19,24 @@ export default {async fetch(request,env){
   try{const r=await env.COMMUNITY_DB.prepare('SELECT novel_id,patch_json,updated_at FROM published_catalogue_overrides ORDER BY novel_id LIMIT 1000').all();
    const allowed=new Set(['tags','nuUrl','translatorUrl','translatorLinks','synopsis','translation','title','cover','coverRights','coverCredit','metadataReview','metadataSource']);
    const overrides=(r.results||[]).map(row=>{let patch={};try{for(const [k,v] of Object.entries(JSON.parse(row.patch_json||'{}')))if(allowed.has(k))patch[k]=v;}catch{}return {id:row.novel_id,patch,updatedAt:row.updated_at};});
-   return respond({configured:true,overrides});
+   // Community additions appear immediately without overwriting the canonical records.
+   // Removing an approved contribution through the editor queue removes it from this feed.
+   const byId=new Map(overrides.map(x=>[x.id,x]));
+   try{
+    const additions=await env.COMMUNITY_DB.prepare("SELECT novel_id,kind,body,tags_json FROM community_entries WHERE scope='public' AND status='approved' AND kind IN ('tags','update') ORDER BY created_at ASC LIMIT 5000").all();
+    for(const entry of additions.results||[]){
+     const novel=Number(entry.novel_id);if(!Number.isInteger(novel)||novel<1||novel>962)continue;
+     let record=byId.get(novel);if(!record){record={id:novel,patch:{},updatedAt:null};byId.set(novel,record);}
+     let tags=[];try{tags=JSON.parse(entry.tags_json||'[]');}catch{}
+     if(entry.kind==='tags'){
+      const existing=new Set((record.patch.communityTags||[]).map(t=>t.toLowerCase()));
+      for(const tag of tags){if(typeof tag==='string'&&tag.length<=70&&!existing.has(tag.toLowerCase())){(record.patch.communityTags||=[]).push(tag);existing.add(tag.toLowerCase());}}
+     }else if(tags.includes('__synopsis__')&&typeof entry.body==='string'){
+      record.patch.communitySynopsis=entry.body.slice(0,2000);
+     }
+    }
+   }catch{}
+   return respond({configured:true,overrides:[...byId.values()]});
   }catch{return respond({error:'Published corrections not configured'},503)}
  }
  if(path.startsWith('/api/community/')) return communityDispatch(request,env,'public',null);
@@ -40,13 +45,10 @@ export default {async fetch(request,env){
  }
  if(request.method==='GET'&&path.startsWith('/banner-media/')){
   const key=path.slice('/banner-media/'.length);
-  if(!validKey(key))return new Response('Not found',{status:404});
+  if(!validKey(key)||!env.COMMUNITY_IMAGES)return new Response('Not found',{status:404});
   const active=await activeBanner(env);
   if(active.image!=='/banner-media/'+key)return new Response('Not found',{status:404});
-  const bucket=active.store==='community'?env.COMMUNITY_IMAGES:env.BANNER_STORE;
-  if(!bucket)return new Response('Not found',{status:404});
-  const file=await bucket.get(active.store==='community'?'site-banners/'+key:key);
-  if(!file)return new Response('Not found',{status:404});
+  const file=await env.COMMUNITY_IMAGES.get('public-banners/'+key);if(!file)return new Response('Not found',{status:404});
   return new Response(file.body,{headers:{'content-type':file.httpMetadata?.contentType||'application/octet-stream','cache-control':'public,max-age=300','x-content-type-options':'nosniff'}});
  }
  // This separate public site never exposes the private editing API or media.
@@ -225,11 +227,13 @@ async function communityDispatch(request,env,scope,identity){
      imageKey='community-submissions/'+id+'.'+ext;
      await env.COMMUNITY_IMAGES.put(imageKey,bytes,{httpMetadata:{contentType:file.type}});
    }
+   const direct=scope==='public'&&(kind==='tags'||kind==='image'||(kind==='update'&&suggestionField==='synopsis'));
+   const status=direct?'approved':'pending';
    try{
     await env.COMMUNITY_DB.prepare('INSERT INTO community_entries(id,scope,novel_id,kind,display_name,author_identity,body,rating,spoiler,tags_json,external_url,image_key,image_credit,parent_id,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-     .bind(id,scope,book,kind,name,identity?.email||'',body,rating,spoiler,JSON.stringify(tags),url,imageKey,imageCredit,parentId,'pending').run();
+     .bind(id,scope,book,kind,name,identity?.email||'',body,rating,spoiler,JSON.stringify(tags),url,imageKey,imageCredit,parentId,status).run();
    }catch(e){if(imageKey&&env.COMMUNITY_IMAGES)await env.COMMUNITY_IMAGES.delete(imageKey);throw e;}
-   return communityJson({ok:true,id,status:'pending'},201);
+   return communityJson({ok:true,id,status},201);
   }
   return communityJson({error:'Not found'},404);
  }catch(e){
@@ -243,9 +247,9 @@ async function communityDispatch(request,env,scope,identity){
 const SITE_COPY_FIELDS={
  homeEyebrow:100,homeHeadline:110,homeFlavor:350,storyTagsHeadline:100,
  storyTagsFlavor:320,browseHeadline:100,curatedHeadline:100,curatedFlavor:320,
- noticeText:320,bannerKey:90
+ noticeText:320
 };
-const SITE_DEFAULT={creator:'Momo',instagram:'',instagramLabel:'Message Momo on Instagram',
+const SITE_DEFAULT={creator:'Momo',instagram:'',instagramLabel:'Message Momo on Instagram',publicBannerKey:'',publicBannerX:50,publicBannerY:50,
  homeEyebrow:'',homeHeadline:'',homeFlavor:'',storyTagsHeadline:'',storyTagsFlavor:'',
  browseHeadline:'',curatedHeadline:'',curatedFlavor:'',noticeText:''};
 const siteOut=(obj,status=200)=>new Response(JSON.stringify(obj),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer'}});
@@ -266,6 +270,10 @@ function siteClean(raw){
  if(insta===null)return null;
  const result={...SITE_DEFAULT,instagram:insta,instagramLabel:siteTrim(raw.instagramLabel,70)||SITE_DEFAULT.instagramLabel};
  for(const [key,len] of Object.entries(SITE_COPY_FIELDS))result[key]=siteTrim(raw[key],len);
+ const bannerKey=String(raw.publicBannerKey||'');
+ result.publicBannerKey=validKey(bannerKey)?bannerKey:'';
+ result.publicBannerX=clamp(raw.publicBannerX);
+ result.publicBannerY=clamp(raw.publicBannerY);
  return result;
 }
 async function siteGet(env,scope){
