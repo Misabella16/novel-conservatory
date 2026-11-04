@@ -58,11 +58,12 @@ async function choose(item){
    $('apply').disabled=!d.approved;$('publish-public').disabled=!d.approved;
   }
   setStatus('Checking the uploaded EPUB metadata first. Novel Updates is available for missing fields.');
-  if(!v.draft)$('inspect').click();
+  if(!v.draft){if(Number(item.size)>120*1048576)setStatus('Stored EPUB is over 120 MiB; automatic browser inspection skipped. Use reviewed metadata or Novel Updates fallback.');else $('inspect').click();}
  }catch(e){setStatus(e.message,true)}
 }
 $('inspect').addEventListener('click',async()=>{
  if(!selected)return;
+ if(Number(selected.size)>120*1048576)return setStatus('This EPUB is too large for browser metadata inspection. No file was downloaded.',true);
  const button=$('inspect');button.disabled=true;setStatus('Inspecting EPUB privately in your browser…');
  try{
   const base=selected.editionId==='legacy'?'/api/private/epub/file?id='+selected.novelId:
