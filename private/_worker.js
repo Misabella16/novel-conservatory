@@ -349,19 +349,20 @@ async function routes(request,env,ctx,email,role){
         env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-epub:%'").all()
       ]);
       const linked=new Set();
+      let uploadCount=0;
       for(const row of editions.results||[]){
         const id=Number(row.id);
-        if(Number.isSafeInteger(id)&&id>0)linked.add(id);
+        if(Number.isSafeInteger(id)&&id>0){linked.add(id);uploadCount++}
       }
       for(const row of legacy.results||[]){
         const match=/^private-epub:([1-9][0-9]*)$/.exec(row.key||'');
         if(!match||Number(match[1])>962)continue;
         try{
           const meta=JSON.parse(row.value||'{}');
-          if(/^private-epubs\/[0-9a-f-]{36}\.epub$/.test(meta.key||''))linked.add(Number(match[1]));
+          if(/^private-epubs\/[0-9a-f-]{36}\.epub$/.test(meta.key||'')){linked.add(Number(match[1]));uploadCount++}
         }catch{}
       }
-      return respond({ids:[...linked].sort((a,b)=>a-b),complete:true});
+      return respond({ids:[...linked].sort((a,b)=>a-b),uploadCount,complete:true});
     }catch{return respond({error:'EPUB inventory could not be loaded'},503)}
   }
   if(path.startsWith('/api/private/epub/')){
