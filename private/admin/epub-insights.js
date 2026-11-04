@@ -57,7 +57,8 @@ async function choose(item){
    $('origin').textContent=d.approved?'Previously approved draft for this edition':'Previously saved draft, not yet approved';
    $('apply').disabled=!d.approved;$('publish-public').disabled=!d.approved;
   }
-  setStatus('Ready to inspect this stored EPUB. Review changes before saving.');
+  setStatus('Checking the uploaded EPUB metadata first. Novel Updates is available for missing fields.');
+  if(!v.draft)$('inspect').click();
  }catch(e){setStatus(e.message,true)}
 }
 $('inspect').addEventListener('click',async()=>{
@@ -71,10 +72,10 @@ $('inspect').addEventListener('click',async()=>{
   if(data.title&&!$('title').value)$('title').value=data.title;
   if(data.synopsis&&!$('synopsis').value)$('synopsis').value=short(data.synopsis);
   if(data.tags.length&&!$('tags').value)$('tags').value=data.tags.join(', ');
-  source='EPUB package metadata';
+  if(data.synopsis||data.tags.length)source='EPUB package metadata';
   $('origin').textContent='Embedded title: '+(data.title||'not found')+' • Author: '+(data.author||'not found')+
    ' • Existing description: '+(data.synopsis?'present':'missing')+' • Subject tags: '+data.tags.length;
-  setStatus('Retrieved embedded EPUB metadata. Fields missing from the file are left blank.');
+  setStatus('EPUB checked first. '+(data.synopsis?'Embedded synopsis found. ':'No embedded synopsis. ')+(data.tags.length?'Embedded subject tags found.':'No embedded subject tags.')+' For missing fields, use the Novel Updates browser capture fallback.');
  }catch(e){setStatus(e.message,true)}
  finally{button.disabled=false}
 });
@@ -143,7 +144,7 @@ $('nu-source-apply').addEventListener('click',()=>{
   if(genres.length&&!$('genres').value.trim())$('genres').value=genres.join(', ');
   source=source.includes('EPUB package')?'EPUB package; Novel Updates fallback':'Novel Updates: '+url.origin+url.pathname;
   $('origin').textContent='Retrieved source for '+title+': '+url.origin+url.pathname;
-  $('nu-source-result').textContent='Retrieved fields filled for review. Choose Save as review draft, then Approve and Apply privately.';
+  $('nu-source-result').textContent='Only missing metadata fields were filled. Review, approve, and apply privately when ready.';
   $('apply').disabled=true;
   setStatus('Novel Updates source metadata filled for review. No database changes yet.');
  }catch(e){$('nu-source-result').textContent=e.message;setStatus(e.message,true)}
