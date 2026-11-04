@@ -1946,7 +1946,7 @@ async function epubInsightsRoutes(request,env,email,role){
        const val=JSON.stringify(next),old=row?.patch_json||'';
        if(!row){
          const result=await env.COMMUNITY_DB.prepare('INSERT INTO published_catalogue_overrides(novel_id,patch_json,source_entry_id,published_by) VALUES (?,?,?,?) ON CONFLICT DO NOTHING')
-           .bind(id,val,'epub-insights:'+id,email).run();
+           .bind(id,val,null,email).run();
          updated=(result.meta?.changes??0)>0;
        }else{
          const result=await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=?,updated_at=CURRENT_TIMESTAMP,published_by=? WHERE novel_id=? AND patch_json=?')
