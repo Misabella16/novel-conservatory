@@ -10,6 +10,13 @@ $('start').addEventListener('click',()=>{
  $('nu-url').focus();
 });
 try{if(localStorage.getItem(modalKey)!=='1')showInfo()}catch(e){showInfo()}
+const params=new URLSearchParams(location.search);
+const rawBook=params.get('book')||'';
+const selectedBook=/^[1-9]\d{0,9}$/.test(rawBook)&&Number.isSafeInteger(Number(rawBook))?Number(rawBook):null;
+if(selectedBook){
+ $('linked-novel').hidden=false;
+ $('linked-novel-title').textContent=(params.get('title')||'Selected book').slice(0,180)+' · Catalogue #'+selectedBook;
+}
 let enabled=false,widgetId=null,token='';
 const status=(msg,err=false)=>{$('status').textContent=msg;$('status').classList.toggle('error',err)};
 function canonical(raw){
@@ -43,7 +50,7 @@ $('nu-form').addEventListener('submit',async e=>{
  status('Sending your link to the private review queue…');
  try{
   const r=await fetch('/api/nu-links/submit',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({
-    nuUrl:url,name:$('visitor').value.trim(),replyTo:$('reply').value.trim(),note:$('notes').value.trim(),website:$('website').value,turnstile:token
+    nuUrl:url,novelId:selectedBook,name:$('visitor').value.trim(),replyTo:$('reply').value.trim(),note:$('notes').value.trim(),website:$('website').value,turnstile:token
   })});
   const data=await r.json().catch(()=>({}));
   if(!r.ok)throw Error(data.error||'Could not save link');

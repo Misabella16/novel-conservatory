@@ -1852,6 +1852,69 @@ async function nuAdminRoutes(request,env,email,role){
  if(!env.COMMUNITY_DB)return respond({error:'Shared catalogue database is unavailable'},503);
  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
  try{
+
+  if(path==='/api/admin/nu/apply-submitted-link'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   const body=await getJson(request),submissionId=String(body?.submissionId||'');
+   if(!/^[a-f0-9-]{36}$/.test(submissionId)||body?.confirm!==true)
+    return respond({error:'Choose a pending link and confirm the correction'},400);
+   const row=await env.COMMUNITY_DB.prepare("SELECT id,subject,message,status FROM conservatory_site_feedback WHERE id=? AND scope='public' AND kind='suggestion'").bind(submissionId).first();
+   if(!row||row.status!=='pending'||!String(row.subject||'').startsWith('Novel Updates link: '))
+    return respond({error:'Pending Novel Updates request not found'},404);
+   const match=/^Novel Updates series: (https:\/\/www\.novelupdates\.com\/series\/([a-z0-9][a-z0-9-]{0,190})\/)\nCatalogue ID: ([1-9][0-9]*)\nCatalogue title: ([^\n]{1,180})(?:\n|$)/.exec(row.message||'');
+   if(!match)return respond({error:'This is a new-series suggestion, not an existing-novel correction'},409);
+   const novelId=Number(match[3]),link=match[1];
+   if(!Number.isSafeInteger(novelId)||novelId<1)return respond({error:'Invalid novel ID'},400);
+   let oldUrl='',title='',prior=null,privateSynced=true;
+   if(novelId<=962){
+    const baseResp=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',url.origin)));
+    if(!baseResp.ok)return respond({error:'Catalogue unavailable'},503);
+    const catalogue=await baseResp.json(),base=(Array.isArray(catalogue)?catalogue:catalogue.books||[]).find(x=>x.id===novelId);
+    if(!base)return respond({error:'Novel not found'},404);
+    title=String(base.title||'');
+    prior=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(novelId).first();
+    let patch={};try{if(prior)patch=JSON.parse(prior.patch_json)}catch{return respond({error:'Invalid current catalogue patch'},409)}
+    oldUrl=String(patch.nuUrl||base.nuUrl||'');
+    if(oldUrl===link){
+     await env.COMMUNITY_DB.prepare("UPDATE conservatory_site_feedback SET status='resolved',moderated_by=?,moderated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(email,submissionId).run();
+     return respond({ok:true,alreadyLinked:true,novelId,title,nuUrl:link,privateSynced:true});
+    }
+    if(oldUrl&&body.replaceExisting!==true)return respond({error:'This novel already has a Novel Updates link. Confirm replacement before approving.',currentUrl:oldUrl},409);
+    const val=JSON.stringify({...patch,nuUrl:link});
+    const result=prior?await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=?,source_entry_id=?,published_by=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND patch_json=?')
+      .bind(val,submissionId,email,novelId,prior.patch_json).run()
+     :await env.COMMUNITY_DB.prepare('INSERT INTO published_catalogue_overrides(novel_id,patch_json,source_entry_id,published_by) VALUES (?,?,?,?) ON CONFLICT DO NOTHING')
+      .bind(novelId,val,submissionId,email).run();
+    if((result.meta?.changes||0)!==1)return respond({error:'Another editor changed this entry. Refresh and retry.'},409);
+    if(env.DB){
+     try{
+      const current=await env.DB.prepare('SELECT patch FROM novel_edits WHERE id=?').bind(novelId).first();
+      const priv=current?JSON.parse(current.patch||'{}'):{};
+      await env.DB.prepare('INSERT INTO novel_edits(id,patch) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET patch=excluded.patch,updated_at=CURRENT_TIMESTAMP')
+        .bind(novelId,JSON.stringify({...priv,nuUrl:link})).run();
+     }catch{privateSynced=false}
+    }else privateSynced=false;
+    await env.COMMUNITY_DB.prepare('INSERT INTO published_correction_history(id,source_entry_id,novel_id,field_name,published_value,actor_email) VALUES(?,?,?,?,?,?)')
+      .bind(crypto.randomUUID(),submissionId,novelId,'nuUrl',JSON.stringify(link),email).run();
+   }else{
+    const rowBook=await env.COMMUNITY_DB.prepare("SELECT title,payload_json FROM additional_catalogue_novels WHERE id=? AND visibility='published'").bind(novelId).first();
+    if(!rowBook)return respond({error:'Published novel not found'},404);
+    title=String(rowBook.title||'');
+    let obj;try{obj=JSON.parse(rowBook.payload_json||'{}')}catch{return respond({error:'Invalid additional novel metadata'},409)}
+    oldUrl=String(obj.nuUrl||'');
+    if(oldUrl===link){
+     await env.COMMUNITY_DB.prepare("UPDATE conservatory_site_feedback SET status='resolved',moderated_by=?,moderated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(email,submissionId).run();
+     return respond({ok:true,alreadyLinked:true,novelId,title,nuUrl:link,privateSynced:true});
+    }
+    if(oldUrl&&body.replaceExisting!==true)return respond({error:'This novel already has a Novel Updates link. Confirm replacement before approving.',currentUrl:oldUrl},409);
+    const updated=await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET payload_json=? WHERE id=? AND payload_json=? AND visibility='published'")
+     .bind(JSON.stringify({...obj,nuUrl:link}),novelId,rowBook.payload_json).run();
+    if((updated.meta?.changes||0)!==1)return respond({error:'Another editor changed the novel. Refresh and retry.'},409);
+   }
+   await env.COMMUNITY_DB.prepare("UPDATE conservatory_site_feedback SET status='resolved',moderated_by=?,moderated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(email,submissionId).run();
+   try{await audit(env,email,'nu.link.correction.approved',novelId,'Submitted link #'+submissionId)}catch{}
+   return respond({ok:true,novelId,title,nuUrl:link,replaced:!!oldUrl,privateSynced});
+  }
   if(path==='/api/admin/nu/lookup'&&method==='GET'){
    const source=u=>{try{const x=new URL(u);if(x.protocol!=='https:'||x.hostname!=='www.novelupdates.com'||x.port||x.username||x.password||x.search||x.hash||!/^\/series\/[a-z0-9-]+\/?$/.test(x.pathname))return null;return x.href;}catch{return null;}};
    const target=source(url.searchParams.get('url'));

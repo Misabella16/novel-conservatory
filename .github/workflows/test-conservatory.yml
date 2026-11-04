@@ -51,6 +51,8 @@ jobs:
         run: node tests/check_add_novels_editor_roles.js
       - name: Verify unified Submit EPUB and Add Novel Entry tabs
         run: node tests/check_unified_submit_epub.js
+      - name: Verify per-book Novel Updates corrections
+        run: python tests/check_per_novel_nu_corrections.py
       - name: Check migration SQL offline
         run: |
           python - <<'PY'
