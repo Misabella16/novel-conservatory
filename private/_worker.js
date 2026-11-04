@@ -1512,6 +1512,18 @@ async function siteAdminRoute(request,env,email,role){
  if(role!=='owner')return siteOut({error:'Owner access required'},403);
  if(!env.COMMUNITY_DB)return siteOut({error:'Shared database unavailable'},503);
  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
+ if(path==='/api/admin/site-copy-from-private'&&method==='POST'){
+  if(request.headers.get('Origin')!==url.origin)return siteOut({error:'Wrong origin'},403);
+  if(!env.DB)return siteOut({error:'Private homepage unavailable'},503);
+  const current=await env.DB.prepare("SELECT value FROM site_settings WHERE key='homepage'").first();
+  let home={};try{home=JSON.parse(current?.value||'{}')}catch{return siteOut({error:'Invalid homepage settings'},503)}
+  const original=await siteGet(env,'public');
+  const next={...original,homeHeadline:siteTrim(home.heroTitle||'Stories worth getting lost in.',110),
+   homeFlavor:siteTrim(home.heroDescription||'Discover stories worth getting lost in.',350)};
+  await env.COMMUNITY_DB.prepare('INSERT INTO conservatory_site_config(scope,config_json,updated_by) VALUES (?,?,?) ON CONFLICT(scope) DO UPDATE SET config_json=excluded.config_json,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP')
+    .bind('public',JSON.stringify(next),email).run();
+  return siteOut({ok:true,settings:next,note:'Public headline and description synced. Upload/publish the banner image separately; private images are not exposed.'});
+ }
  if(path==='/api/admin/site-config'){
   if(method==='GET'){
    try{return siteOut({public:await siteGet(env,'public'),private:await siteGet(env,'private')})}catch{return siteOut({error:'Run the shared site-settings migration first'},503)}
