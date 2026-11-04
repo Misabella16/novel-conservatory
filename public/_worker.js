@@ -5,12 +5,22 @@ const respond=(b,s=200)=>new Response(JSON.stringify(b),{status:s,headers:{'cont
 const validKey=k=>/^[a-f0-9-]{36}\.(?:png|jpg|webp|gif)$/.test(k);
 const clamp=v=>Number.isFinite(Number(v))?Math.max(0,Math.min(100,Math.round(Number(v)))):50;
 async function activeBanner(env){
+ // Newly published banners live only in the public-safe shared image bucket.
+ if(env.COMMUNITY_DB&&env.COMMUNITY_IMAGES){
+  try{
+   const c=await env.COMMUNITY_DB.prepare("SELECT config_json FROM conservatory_site_config WHERE scope='public'").first();
+   const key=JSON.parse(c?.config_json||'{}').bannerKey||'';
+   if(validKey(key))return {image:'/banner-media/'+key,positionX:50,positionY:50,configured:true,store:'community'};
+  }catch{}
+ }
+ // Preserve the older published banner if no new banner has been set.
  if(!env.BANNER_STORE)return {image:'',positionX:50,positionY:50,configured:false};
  const obj=await env.BANNER_STORE.get('banner/current.json');
  if(!obj)return {image:'',positionX:50,positionY:50,configured:true};
  const b=await obj.json(),key=String(b.key||'');
- return {image:validKey(key)?'/banner-media/'+key:'',positionX:clamp(b.positionX),positionY:clamp(b.positionY),configured:true};
+ return {image:validKey(key)?'/banner-media/'+key:'',positionX:clamp(b.positionX),positionY:clamp(b.positionY),configured:true,store:'legacy'};
 }
+
 export default {async fetch(request,env){
  const url=new URL(request.url),path=url.pathname;
  if(path.startsWith('/api/additional/'))return additionalRoutes(request,env,'public');
@@ -30,10 +40,13 @@ export default {async fetch(request,env){
  }
  if(request.method==='GET'&&path.startsWith('/banner-media/')){
   const key=path.slice('/banner-media/'.length);
-  if(!validKey(key)||!env.BANNER_STORE)return new Response('Not found',{status:404});
+  if(!validKey(key))return new Response('Not found',{status:404});
   const active=await activeBanner(env);
   if(active.image!=='/banner-media/'+key)return new Response('Not found',{status:404});
-  const file=await env.BANNER_STORE.get(key);if(!file)return new Response('Not found',{status:404});
+  const bucket=active.store==='community'?env.COMMUNITY_IMAGES:env.BANNER_STORE;
+  if(!bucket)return new Response('Not found',{status:404});
+  const file=await bucket.get(active.store==='community'?'site-banners/'+key:key);
+  if(!file)return new Response('Not found',{status:404});
   return new Response(file.body,{headers:{'content-type':file.httpMetadata?.contentType||'application/octet-stream','cache-control':'public,max-age=300','x-content-type-options':'nosniff'}});
  }
  // This separate public site never exposes the private editing API or media.
@@ -230,7 +243,7 @@ async function communityDispatch(request,env,scope,identity){
 const SITE_COPY_FIELDS={
  homeEyebrow:100,homeHeadline:110,homeFlavor:350,storyTagsHeadline:100,
  storyTagsFlavor:320,browseHeadline:100,curatedHeadline:100,curatedFlavor:320,
- noticeText:320
+ noticeText:320,bannerKey:90
 };
 const SITE_DEFAULT={creator:'Momo',instagram:'',instagramLabel:'Message Momo on Instagram',
  homeEyebrow:'',homeHeadline:'',homeFlavor:'',storyTagsHeadline:'',storyTagsFlavor:'',
