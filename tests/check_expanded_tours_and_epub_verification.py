@@ -77,19 +77,21 @@ assert "review.has(item.fileKey)?review.get(item.fileKey):existing.has(item.file
 assert "if(!epubVerifyFileKey(row.object_key))continue" in worker
 assert "await ensureEpubVerificationBaseline(env);" in worker
 assert worker.count("await ensureEpubVerificationBaseline(env);")>=2
-assert "if(path==='/api/private/epub/review'" in worker
-assert "if(role!=='owner')return respond({error:'Owner permission required'},403)" in worker
+assert "const memberReview=path==='/api/private/epub/review'" in worker
+assert "const memberReview=path==='/api/private/epub/review'" in worker
+assert "else if(!memberReview&&role!=='owner')" in worker
+assert "method==='POST'&&!sameOrigin(request)" in worker
 assert "if(typeof body?.verified!=='boolean')" in worker
 assert "site_settings" in worker
 assert "epub-verification:" in worker
 assert "private-epub-submissions/" not in worker[worker.index("async function epubVerificationInventory"):worker.index("async function editionRoutes")]
 assert '<a href="/admin/epub-verification/"' in owner
-assert "EPUB verification checklist" in review
-assert "Owner login is required." in review
+assert "Community EPUB verification" in review
+assert "Sign in through Cloudflare Access" in review
 assert "/api/private/epub/review" in review
 assert "confirm(" in review
 assert "✓ Mark verified" in review
 assert "Remove checkmark" in review
 assert "Awaiting verification" in review
 embedded_scripts_ok(review)
-print('Expanded tutorials + owner-reviewed per-edition EPUB verification checks: OK')
+print('Expanded tutorials + member-reviewed per-edition EPUB verification checks: OK')

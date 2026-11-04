@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>Community EPUB Verification | Novel Conservatory</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}
+body{margin:0;background:#f7f4ed;color:#263e33;font:14px/1.55 system-ui,-apple-system,sans-serif}
+header{background:#294536;padding:20px max(17px,calc((100% - 1020px)/2))}
+header a{color:#fffdf3;text-decoration:none;font-weight:700}
+main{max-width:1020px;margin:29px auto 60px;padding:0 18px}
+h1,h2{font-family:Georgia,serif;font-weight:500}h1{font-size:clamp(30px,5vw,46px);margin:5px 0}p{color:#5c7564}
+.kicker{color:#946b3d;font-size:11px;font-weight:800;letter-spacing:1.1px}
+.notice{background:#fff5d9;border-left:4px solid #cea35c;border-radius:9px;padding:14px 17px;margin:22px 0}
+.notice strong{color:#70542e}
+.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:17px 0 22px}
+.metric{background:#fffefa;border:1px solid #d8dfd3;border-radius:10px;padding:17px}
+.metric strong{display:block;font:500 30px Georgia,serif}.metric span{font-size:12px;color:#667769}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:22px 0}
+input,select{font:inherit;border:1px solid #b3c6b7;background:white;color:#234638;padding:10px;border-radius:8px}
+#search{min-width:200px;flex:1}
+button{cursor:pointer;border:1px solid #c4d4c7;background:#eef5eb;color:#2c543d;border-radius:8px;padding:10px 13px;font:700 12px system-ui}
+button:disabled{opacity:.58;cursor:wait}
+button.verify{background:#315e44;color:white;border-color:#315e44}
+button.undo{background:#fff1e4;border-color:#e1c2b1;color:#86452f}
+.row{background:#fffdf8;border:1px solid #deded0;border-radius:11px;padding:16px 18px;margin-bottom:11px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:12px}
+.title{font:500 19px Georgia,serif;margin:0 0 4px;overflow-wrap:anywhere}
+.sub{font-size:12px;color:#6d7a70;overflow-wrap:anywhere}
+.badge{font:800 10px system-ui;padding:4px 8px;border-radius:20px;display:inline-block;margin:4px 0}
+.badge.yes{background:#e5f4e5;color:#2c6b3e}.badge.no{background:#fff2da;color:#765429}
+#status{min-height:26px;font-size:12px;color:#40674e}
+footer{border-top:1px solid #d7ddcf;padding-top:16px;margin-top:26px;font-size:12px;color:#718072}
+@media(max-width:620px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.row{grid-template-columns:1fr}.toolbar{align-items:stretch}.toolbar>*{flex:1}.title{font-size:17px}main{margin-top:18px}}
+</style></head>
+<body><header><a href="/">← Back to the private library</a></header>
+<main>
+<div class="kicker">PRIVATE MEMBERS · SHARED EPUB QUALITY</div><h1>Community EPUB verification</h1>
+<p>Every approved private member can review an EPUB edition and mark it perfect. A novel earns its <strong>✓ EPUB verified</strong> badge only when all stored editions are verified. Your checks update the shared private library.</p>
+<div class="notice"><strong>Initial verification.</strong> At your request, the EPUBs already in private storage are marked verified when this feature first reads the inventory. Newly uploaded or replaced files start <strong>Awaiting verification</strong> until a private member confirms them. A checkmark means a member has reviewed the edition for quality, not an automated scan or a guarantee to readers.</div>
+<div class="metrics">
+<div class="metric"><strong id="total">—</strong><span>EPUB editions</span></div>
+<div class="metric"><strong id="verified">—</strong><span>Verified editions ✓</span></div>
+<div class="metric"><strong id="pending">—</strong><span>Awaiting member review</span></div>
+</div>
+<div class="toolbar"><input type="search" id="search" placeholder="Search filename or novel ID" aria-label="Search EPUB editions"><select id="filter" aria-label="Verification status"><option value="all">All EPUBs</option><option value="unverified">Awaiting verification</option><option value="verified">Verified ✓</option></select><button id="refresh" type="button">↻ Refresh</button></div>
+<p id="status" role="status" aria-live="polite">Loading private EPUB inventory…</p>
+<section id="items" aria-label="EPUB editions"></section>
+<footer>All signed-in private members see the same verification status because reviews are saved centrally in Cloudflare D1. The reviewer is recorded for accountability. Verification does not share an EPUB with someone who lacks reading permission, and nothing is published to the public site.</footer>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+let records=[],saving=false,loading=false;
+async function api(path,init){
+ const r=await fetch(path,{credentials:'same-origin',cache:'no-store',...init});
+ const data=await r.json().catch(()=>({}));
+ if(!r.ok)throw Error(data.error||'Could not access verification service');
+ return data;
+}
+function el(tag,cls,text){
+ const e=document.createElement(tag);
+ if(cls)e.className=cls;
+ if(text!==undefined)e.textContent=text;
+ return e;
+}
+function updateCounts(){
+ $('total').textContent=records.length.toLocaleString();
+ const count=records.filter(r=>r.verified).length;
+ $('verified').textContent=count.toLocaleString();
+ $('pending').textContent=(records.length-count).toLocaleString();
+}
+function render(){
+ updateCounts();const query=$('search').value.trim().toLocaleLowerCase(),filter=$('filter').value;
+ const matches=records.filter(r=>{
+  if(filter==='verified'&&!r.verified)return false;
+  if(filter==='unverified'&&r.verified)return false;
+  return !query||String(r.novelId).includes(query)||String(r.filename||'').toLocaleLowerCase().includes(query);
+ });
+ $('items').replaceChildren();
+ $('status').textContent='Showing '+matches.length+' of '+records.length+' stored EPUB edition'+(records.length===1?'':'s')+'.';
+ if(!matches.length){$('items').appendChild(el('p','sub','No EPUBs match this selection.'));return;}
+ for(const record of matches){
+  const box=el('article','row');
+  const info=el('div'),title=el('h2','title',record.filename||'Unnamed EPUB');
+  const meta=el('div','sub','Novel #'+record.novelId+(record.kind==='legacy'?' · Original EPUB upload':' · Additional edition'));
+  const badge=el('span','badge '+(record.verified?'yes':'no'),record.verified?'✓ Verified':'Awaiting verification');
+  info.append(title,meta,badge);
+  const button=el('button',record.verified?'undo':'verify',record.verified?'Remove checkmark':'✓ Mark verified');
+  button.type='button';
+  button.setAttribute('aria-label',(record.verified?'Remove verification for ':'Mark verified: ')+(record.filename||'EPUB'));
+  button.addEventListener('click',async()=>{
+   if(saving)return;
+   const newValue=!record.verified;
+   if(!confirm((newValue?'Confirm you reviewed this EPUB edition and found it perfect? The badge will update for all private members.':'Remove verification for this edition? This change will be visible to all private members.')+'\n\n'+(record.filename||'EPUB')))return;
+   saving=true;button.disabled=true;
+   try{
+    await api('/api/private/epub/review',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kind:record.kind,novelId:record.novelId,editionId:record.editionId,verified:newValue})});
+    record.verified=newValue;render();
+   }catch(err){$('status').textContent=err.message;button.disabled=false}
+   finally{saving=false}
+  });
+  box.append(info,button);$('items').appendChild(box);
+ }
+}
+async function load(){
+ $('status').textContent='Loading private EPUB verification…';
+ try{
+  const data=await api('/api/private/epub/review');
+  if(!Array.isArray(data.items))throw Error('Inventory response incomplete');
+  records=data.items;
+  records.sort((a,b)=>a.novelId-b.novelId||String(a.filename).localeCompare(String(b.filename)));
+  render();
+ }catch(err){if(!quiet)$('items').replaceChildren();$('status').textContent=(err.message||'Could not load verification')+'. Sign in through Cloudflare Access to use member verification.'}
+ finally{loading=false}
+}
+$('search').addEventListener('input',render);
+$('filter').addEventListener('change',render);
+$('refresh').addEventListener('click',()=>load());
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)load({quiet:true})});
+window.addEventListener('focus',()=>load({quiet:true}));
+setInterval(()=>load({quiet:true}),30000);
+load();
+</script>
+</body></html>

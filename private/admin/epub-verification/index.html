@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>EPUB Verification | Novel Conservatory</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>Community EPUB Verification | Novel Conservatory</title>
 <style>
 :root{color-scheme:light}*{box-sizing:border-box}
 body{margin:0;background:#f7f4ed;color:#263e33;font:14px/1.55 system-ui,-apple-system,sans-serif}
@@ -29,25 +29,25 @@ button.undo{background:#fff1e4;border-color:#e1c2b1;color:#86452f}
 footer{border-top:1px solid #d7ddcf;padding-top:16px;margin-top:26px;font-size:12px;color:#718072}
 @media(max-width:620px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.row{grid-template-columns:1fr}.toolbar{align-items:stretch}.toolbar>*{flex:1}.title{font-size:17px}main{margin-top:18px}}
 </style></head>
-<body><header><a href="/admin/">← Back to the private editor</a></header>
+<body><header><a href="/">← Back to the private library</a></header>
 <main>
-<div class="kicker">OWNER ONLY · PRIVATE FILE QUALITY</div><h1>EPUB verification checklist</h1>
-<p>Review individual EPUB editions and mark files you've personally checked as perfect. A novel earns its <strong>✓ EPUB verified</strong> badge only when all of its stored editions are verified.</p>
-<div class="notice"><strong>Initial verification.</strong> At your request, the EPUBs already in private storage are marked verified when this feature first reads the inventory. Newly uploaded or replaced files start <strong>Awaiting verification</strong> until you explicitly confirm them. This checkmark means owner-reviewed quality, not a malware scan or a guarantee to readers.</div>
+<div class="kicker">PRIVATE MEMBERS · SHARED EPUB QUALITY</div><h1>Community EPUB verification</h1>
+<p>Every approved private member can review an EPUB edition and mark it perfect. A novel earns its <strong>✓ EPUB verified</strong> badge only when all stored editions are verified. Your checks update the shared private library.</p>
+<div class="notice"><strong>Initial verification.</strong> At your request, the EPUBs already in private storage are marked verified when this feature first reads the inventory. Newly uploaded or replaced files start <strong>Awaiting verification</strong> until a private member confirms them. A checkmark means a member has reviewed the edition for quality, not an automated scan or a guarantee to readers.</div>
 <div class="metrics">
 <div class="metric"><strong id="total">—</strong><span>EPUB editions</span></div>
 <div class="metric"><strong id="verified">—</strong><span>Verified editions ✓</span></div>
-<div class="metric"><strong id="pending">—</strong><span>Awaiting your review</span></div>
+<div class="metric"><strong id="pending">—</strong><span>Awaiting member review</span></div>
 </div>
 <div class="toolbar"><input type="search" id="search" placeholder="Search filename or novel ID" aria-label="Search EPUB editions"><select id="filter" aria-label="Verification status"><option value="all">All EPUBs</option><option value="unverified">Awaiting verification</option><option value="verified">Verified ✓</option></select><button id="refresh" type="button">↻ Refresh</button></div>
 <p id="status" role="status" aria-live="polite">Loading private EPUB inventory…</p>
 <section id="items" aria-label="EPUB editions"></section>
-<footer>Verification status is saved privately in the Cloudflare D1 database. Nothing is published to the public Conservatory and no reading permissions change.</footer>
+<footer>All signed-in private members see the same verification status because reviews are saved centrally in Cloudflare D1. The reviewer is recorded for accountability. Verification does not share an EPUB with someone who lacks reading permission, and nothing is published to the public site.</footer>
 </main>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-let records=[],saving=false;
+let records=[],saving=false,loading=false;
 async function api(path,init){
  const r=await fetch(path,{credentials:'same-origin',cache:'no-store',...init});
  const data=await r.json().catch(()=>({}));
@@ -88,7 +88,7 @@ function render(){
   button.addEventListener('click',async()=>{
    if(saving)return;
    const newValue=!record.verified;
-   if(!confirm((newValue?'Confirm this EPUB edition is perfect and mark it verified?':'Remove the verified checkmark for this EPUB edition?')+'\n\n'+(record.filename||'EPUB')))return;
+   if(!confirm((newValue?'Confirm you reviewed this EPUB edition and found it perfect? The badge will update for all private members.':'Remove verification for this edition? This change will be visible to all private members.')+'\n\n'+(record.filename||'EPUB')))return;
    saving=true;button.disabled=true;
    try{
     await api('/api/private/epub/review',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kind:record.kind,novelId:record.novelId,editionId:record.editionId,verified:newValue})});
@@ -107,11 +107,15 @@ async function load(){
   records=data.items;
   records.sort((a,b)=>a.novelId-b.novelId||String(a.filename).localeCompare(String(b.filename)));
   render();
- }catch(err){$('items').replaceChildren();$('status').textContent=err.message+'. Owner login is required.'}
+ }catch(err){if(!quiet)$('items').replaceChildren();$('status').textContent=(err.message||'Could not load verification')+'. Sign in through Cloudflare Access to use member verification.'}
+ finally{loading=false}
 }
 $('search').addEventListener('input',render);
 $('filter').addEventListener('change',render);
-$('refresh').addEventListener('click',load);
+$('refresh').addEventListener('click',()=>load());
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)load({quiet:true})});
+window.addEventListener('focus',()=>load({quiet:true}));
+setInterval(()=>load({quiet:true}),30000);
 load();
 </script>
 </body></html>
