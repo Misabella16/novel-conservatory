@@ -1686,6 +1686,17 @@ async function nuAdminRoutes(request,env,email,role){
    for(const r of counts.results||[])if(r.state in result)result[r.state]=Number(r.count)||0;
    return respond({counts:result,progress:progress||null});
   }
+  if(path==='/api/admin/nu/staged-by-url'&&method==='GET'){
+   let parsed;try{parsed=new URL(String(url.searchParams.get('url')||''))}catch{return respond({error:'Enter a Novel Updates series URL'},400)}
+   const match=/^\/series\/([a-z0-9][a-z0-9-]{0,190})\/?$/.exec(parsed.pathname);
+   if(parsed.protocol!=='https:'||parsed.hostname!=='www.novelupdates.com'||parsed.port||parsed.username||parsed.password||parsed.search||parsed.hash||!match)
+    return respond({error:'Use an exact https://www.novelupdates.com/series/... URL'},400);
+   const canonical='https://www.novelupdates.com/series/'+match[1]+'/';
+   const row=await env.COMMUNITY_DB.prepare('SELECT title,author,payload_json,nu_url,custom_locked FROM nu_staged_series WHERE slug=? LIMIT 1').bind(match[1]).first();
+   if(!row)return respond({error:'That Novel Updates series has not been captured yet. Use Capture Novel Updates on the series page, then stage it in the master catalogue.'},404);
+   let metadata={};try{metadata=JSON.parse(row.payload_json||'{}')}catch{}
+   return respond({metadata:{title:row.title,author:row.author,synopsis:extraTxt(metadata.synopsis,6000),tags:extraTags(metadata.tags),genres:extraTags(metadata.genres),nuUrl:canonical},source:'Novel Updates (captured)',notice:'This is staged source metadata, not published catalogue content.'});
+  }
   if(path==='/api/admin/nu/staging'&&method==='GET'){
    const q=String(url.searchParams.get('q')||'').trim().slice(0,100);
    const state=['draft','published','all'].includes(url.searchParams.get('state'))?url.searchParams.get('state'):'draft';
@@ -1852,6 +1863,19 @@ async function epubInsightsRoutes(request,env,email,role){
    const offset=Math.max(0,Math.min(100000,Number(u.searchParams.get('offset'))||0)),limit=Math.min(50,Math.max(1,Number(u.searchParams.get('limit'))||30));
    return editionJson({items:matches.slice(offset,offset+limit),total:matches.length,offset,limit});
   }
+  if(path==='/api/admin/epub-insights/has-epub'&&method==='GET'){
+   const novelId=editionBook(u.searchParams.get('id'));
+   if(!novelId)return editionJson({error:'Choose a valid novel ID'},400);
+   if(novelId>962){
+    if(!env.COMMUNITY_DB)return editionJson({error:'Shared catalogue database is unavailable'},503);
+    const found=await env.COMMUNITY_DB.prepare('SELECT id FROM additional_catalogue_novels WHERE id=?').bind(novelId).first();
+    if(!found)return editionJson({error:'No novel with that ID exists. Create it in the catalogue first.'},404);
+   }
+   const table=editionTable(novelId);
+   const stored=await env.DB.prepare('SELECT id,filename FROM '+table+' WHERE novel_id=? LIMIT 1').bind(novelId).first();
+   const legacy=novelId<=962?await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+novelId).first():null;
+   return editionJson({novelId,hasEpub:!!stored||!!legacy,editionId:stored?.id||(legacy?'legacy':null)});
+  }
   if(path==='/api/admin/epub-insights/draft'&&method==='GET'){
    const id=editionBook(u.searchParams.get('id'));if(!id)return editionJson({error:'Invalid novel'},400);
    const x=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(INSIGHT_KEY+id).first();
@@ -1862,15 +1886,31 @@ async function epubInsightsRoutes(request,env,email,role){
   const body=await getJson(request),id=editionBook(body.novelId);
   if(!id)return editionJson({error:'Choose a valid novel'},400);
   if(path==='/api/admin/epub-insights/draft'){
-   const edition=body.editionId==='legacy'?'legacy':editionUuid(body.editionId);
+   const edition=body.editionId==='none'?'none':body.editionId==='legacy'?'legacy':editionUuid(body.editionId);
    if(!edition)return editionJson({error:'Invalid edition'},400);
-   const valid=edition==='legacy'&&id<=962?
-    !!await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+id).first():
-    !!await env.DB.prepare('SELECT id FROM '+editionTable(id)+' WHERE novel_id=? AND id=?').bind(id,edition).first();
+   let valid=false;
+   if(edition==='none'){
+    if(id>962){
+     if(!env.COMMUNITY_DB)return editionJson({error:'Shared catalogue database unavailable'},503);
+     const existing=await env.COMMUNITY_DB.prepare('SELECT id FROM additional_catalogue_novels WHERE id=?').bind(id).first();
+     if(!existing)return editionJson({error:'Novel ID was not found in the catalogue'},404);
+    }
+    // A Novel Updates-only draft is allowed only when there is genuinely no
+    // stored EPUB edition for this novel in either private storage scheme.
+    const stored=await env.DB.prepare('SELECT id FROM '+editionTable(id)+' WHERE novel_id=? LIMIT 1').bind(id).first();
+    const legacy=id<=962?await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+id).first():null;
+    if(stored||legacy)return editionJson({error:'This novel has an EPUB; inspect it first before using Novel Updates for missing metadata.'},409);
+    valid=true;
+   }else if(edition==='legacy'&&id<=962){
+    valid=!!await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+id).first();
+   }else{
+    valid=!!await env.DB.prepare('SELECT id FROM '+editionTable(id)+' WHERE novel_id=? AND id=?').bind(id,edition).first();
+   }
    if(!valid)return editionJson({error:'Selected stored EPUB was not found'},404);
    const data={novelId:id,editionId:edition,title:insightTrim(body.title,210),synopsis:insightTrim(body.synopsis,2000),
     tags:insightList(body.tags),genres:insightList(body.genres,15),warnings:insightList(body.warnings,15),
-    approved:body.action==='approve',source:insightTrim(body.source,80)||'EPUB inspection',
+    fieldSources:Object.fromEntries(Object.entries(body.fieldSources&&typeof body.fieldSources==='object'?body.fieldSources:{}).filter(([k,v])=>['title','synopsis','tags','genres'].includes(k)&&['EPUB','Novel Updates','Novel Updates (staged)','Novel Updates (browser capture)'].includes(v))),
+    approved:body.action==='approve',source:insightTrim(body.source,80)||'Retrieved metadata',
     reviewedBy:body.action==='approve'?email:null,updatedBy:email,updatedAt:new Date().toISOString()};
    if(!data.synopsis&&!data.tags.length&&!data.genres.length)return editionJson({error:'Add a synopsis, tag or genre before saving'},400);
    if(data.approved&&body.rightsConfirmed!==true)return editionJson({error:'Confirm the synopsis is original or authorized'},400);
@@ -1890,29 +1930,58 @@ async function epubInsightsRoutes(request,env,email,role){
    if(Array.isArray(approved.tags)&&approved.tags.length)patch.tags=insightList(approved.tags);
    if(Array.isArray(approved.genres)&&approved.genres.length)patch.genres=insightList(approved.genres,15);
    if(!patch.synopsis&&!patch.tags?.length&&!patch.genres?.length)return editionJson({error:'No approved fields to apply'},409);
+   const validSource=x=>String(x||'').startsWith('Novel Updates')?'Novel Updates':x==='EPUB'?'EPUB':'manual';
+   const rank=x=>x==='EPUB'?2:x==='Novel Updates'?1:3;
+   const sources=approved.fieldSources&&typeof approved.fieldSources==='object'?approved.fieldSources:{};
+   const accept=(field,oldValue,oldSource)=>{
+    const incoming=patch[field],incomingSource=validSource(sources[field]||approved.source);
+    if(!incoming||(Array.isArray(incoming)&&!incoming.length))return false;
+    if(!oldValue||(Array.isArray(oldValue)&&!oldValue.length))return true;
+    return rank(incomingSource)>rank(validSource(oldSource||'manual'));
+   };
+   let changed=[];
    if(id<=962){
-    // The original 962 series store private overrides here; this does not
-    // alter public catalogue overrides or EPUB contents.
+    // Existing private edits are manually curated unless explicitly marked as
+    // coming from an earlier source import. The canonical library is not touched.
     const previous=await env.DB.prepare('SELECT patch FROM novel_edits WHERE id=?').bind(id).first();
     let old={};try{old=JSON.parse(previous?.patch||'{}')}catch{}
-    const next={...old};
-    if(patch.synopsis)next.synopsis=patch.synopsis;
-    if(patch.tags?.length)next.tags=patch.tags;
-    next.metadataReview=true;next.metadataSource=patch.metadataSource;
-    await env.DB.prepare('INSERT INTO novel_edits(id,patch) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET patch=excluded.patch,updated_at=CURRENT_TIMESTAMP')
-     .bind(id,JSON.stringify(next)).run();
+    const next={...old,metadataFieldSources:{...(old.metadataFieldSources||{})}};
+    for(const key of ['synopsis','tags','genres']){
+     if(accept(key,old[key],next.metadataFieldSources[key])){
+      next[key]=patch[key];
+      next.metadataFieldSources[key]=validSource(sources[key]||approved.source);
+      changed.push(key);
+     }
+    }
+    if(changed.length){
+     next.metadataReview=true;next.metadataSource=patch.metadataSource;
+     await env.DB.prepare('INSERT INTO novel_edits(id,patch) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET patch=excluded.patch,updated_at=CURRENT_TIMESTAMP')
+       .bind(id,JSON.stringify(next)).run();
+    }
    }else{
     if(!env.COMMUNITY_DB)return editionJson({error:'Shared catalogue database is unavailable'},503);
     const additional=await env.COMMUNITY_DB.prepare('SELECT title,payload_json,visibility FROM additional_catalogue_novels WHERE id=?').bind(id).first();
     if(!additional)return editionJson({error:'Additional novel was not found'},404);
-    if(additional.visibility!=='private')return editionJson({error:'This novel is already published. Use the live catalogue editor to update public metadata instead.'},409);
+    if(additional.visibility!=='private')return editionJson({error:'This novel is already published. Use the catalogue editor to update public metadata instead.'},409);
     const prior=JSON.parse(additional.payload_json||'{}');
-    const merged=extraPayload({...prior,...patch});
-    await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET payload_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND visibility='private'")
-      .bind(JSON.stringify(merged),id).run();
+    const updated={...prior,metadataFieldSources:{...(prior.metadataFieldSources||{})}};
+    for(const key of ['synopsis','tags','genres']){
+     const oldSource=updated.metadataFieldSources[key]||(String(prior.metadataSource||'').startsWith('Novel Updates')?'Novel Updates':'manual');
+     if(accept(key,prior[key],oldSource)){
+      updated[key]=patch[key];
+      updated.metadataFieldSources[key]=validSource(sources[key]||approved.source);
+      changed.push(key);
+     }
+    }
+    if(changed.length){
+     updated.metadataReview=true;updated.metadataSource='Private EPUB / Novel Updates source review';
+     await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET payload_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND visibility='private'")
+       .bind(JSON.stringify(updated),id).run();
+    }
    }
+   if(!changed.length)return editionJson({ok:true,novelId:id,scope:'private',fieldsChanged:[],message:'No empty or lower-priority fields needed updating. Existing manual/EPUB metadata was preserved.'});
    await audit(env,email,'epub.metadata.apply-private',id,approved.editionId||'');
-   return editionJson({ok:true,novelId:id,scope:'private',message:'Approved metadata applied privately. Public metadata unchanged.'});
+   return editionJson({ok:true,novelId:id,scope:'private',fieldsChanged:changed,message:'Filled private fields: '+changed.join(', ')+'. Public metadata unchanged.'});
   }
   return editionJson({error:'Not found'},404);
  }catch(e){return editionJson({error:insightTrim(e?.message||'Private EPUB analysis unavailable',200)},500)}
