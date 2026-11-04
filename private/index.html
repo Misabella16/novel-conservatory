@@ -568,7 +568,7 @@ function detailCuteTag(value,kind){
 
 const safeUrl=u=>{try{let x=new URL(u);return ['https:','http:'].includes(x.protocol)&&!/(^|\.)((drive|docs)\.google\.com|mega\.nz|dropbox\.com|onedrive\.live\.com|1drv\.ms)$/.test(x.hostname)?x.href:''}catch(e){return ''}};
 const coverSrc=d=>{if(!d.coverRights||!d.cover)return '';if(/^\/media\/[a-f0-9-]{36}\.(png|jpe?g|webp|gif)$/.test(d.cover)||/^\/api\/additional\/cover\?id=[0-9]+$/.test(d.cover))return d.cover;if(/^covers\/[0-9]+\.(png|jpe?g|webp)$/.test(d.cover))return d.cover;return safeUrl(d.cover)};
-const isReviewed=d=>!!(d.metadataReview && ((d.genres||[]).length || (d.tags||[]).length));
+const isReviewed=d=>!!(d.metadataReview && ((d.genres||[]).length || (d.tags||[]).length || !!String(d.synopsis||'').trim()));
 const hasImportedMetadata=d=>d.metadataOrigin==='epub' && (!!d.synopsis || !!(d.tags||[]).length);
 const isDiscoverable=d=>isReviewed(d)||hasImportedMetadata(d);
 const allUnique=key=>[...new Set(data.flatMap(d=>d[key]||[]))].sort((a,b)=>a.localeCompare(b));
