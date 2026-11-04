@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS additional_epub_upload_sessions (
  id TEXT PRIMARY KEY,
  novel_id INTEGER NOT NULL CHECK(novel_id >= 100000),
  owner_email TEXT NOT NULL,
- object_key TEXT NOT NULL,
+ object_key TEXT NOT NULL UNIQUE,
  upload_id TEXT NOT NULL,
  filename TEXT NOT NULL,
  bytes INTEGER NOT NULL,
