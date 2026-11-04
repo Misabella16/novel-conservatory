@@ -14,6 +14,7 @@ export default {async fetch(request,env){
  if(path.startsWith('/api/additional/'))return additionalRoutes(request,env,'public');
  if(path==='/api/site/config')return siteConfigRoute(request,env,'public');
  if(path==='/api/site/feedback')return siteFeedbackRoute(request,env,'public','');
+ if(path==='/api/nu-links/submit')return publicNovelUpdatesLinkSubmit(request,env);
  if(path==='/api/published/novels'&&request.method==='GET'){
   if(!env.COMMUNITY_DB)return respond({overrides:[],configured:false});
   try{const r=await env.COMMUNITY_DB.prepare('SELECT novel_id,patch_json,updated_at FROM published_catalogue_overrides ORDER BY novel_id LIMIT 1000').all();
@@ -286,6 +287,57 @@ async function siteConfigRoute(request,env,scope){
  try{return siteOut({settings:await siteGet(env,scope),configured:true,feedbackEnabled:scope==='private'||!!(env.TURNSTILE_SECRET&&env.TURNSTILE_SITE_KEY),turnstileSiteKey:scope==='public'?(env.TURNSTILE_SITE_KEY||''):''})}
  catch{return siteOut({settings:SITE_DEFAULT,configured:false,feedbackEnabled:false},503)}
 }
+// Public, link-only Novel Updates contribution intake.
+// Accepted URLs are editorial suggestions, never automatically published records.
+// Only this fixed hostname/path is accepted: no redirects, credentials or SSRF.
+async function publicNovelUpdatesLinkSubmit(request,env){
+ if(request.method!=='POST')return siteOut({error:'Method not allowed'},405);
+ const url=new URL(request.url);
+ if(request.headers.get('Origin')!==url.origin)return siteOut({error:'Wrong origin'},403);
+ if(!env.COMMUNITY_DB||!env.TURNSTILE_SECRET||!env.TURNSTILE_SITE_KEY)
+  return siteOut({error:'Link submissions are not configured'},503);
+ if(!(request.headers.get('content-type')||'').startsWith('application/json'))
+  return siteOut({error:'Expected JSON'},415);
+ let input;
+ try{const raw=await request.text();if(raw.length>4000)return siteOut({error:'Request too large'},413);input=JSON.parse(raw)}
+ catch{return siteOut({error:'Invalid submission'},400)}
+ if(!input||typeof input!=='object'||Array.isArray(input))return siteOut({error:'Invalid submission'},400);
+ if(input.website)return siteOut({ok:true,status:'pending'},201);
+ const canonicalNU=raw=>{
+  if(typeof raw!=='string'||raw.length>700)return null;
+  try{
+   const u=new URL(raw.trim());
+   const slug=/^\/series\/([a-z0-9][a-z0-9-]{0,190})\/?$/.exec(u.pathname);
+   if(u.protocol!=='https:'||u.hostname!=='www.novelupdates.com'||u.port||u.username||u.password||u.search||u.hash||!slug)return null;
+   return {url:'https://www.novelupdates.com/series/'+slug[1]+'/',slug:slug[1]};
+  }catch{return null}
+ };
+ const link=canonicalNU(input.nuUrl);
+ if(!link)return siteOut({error:'Paste an exact HTTPS Novel Updates series URL (www.novelupdates.com/series/...)'},400);
+ const displayName=siteTrim(input.name,70)||'Reader';
+ const replyTo=siteTrim(input.replyTo,160),note=siteTrim(input.note,1200);
+ if(replyTo&&(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyTo)||replyTo.length>160))
+  return siteOut({error:'Enter a valid reply email or leave it blank'},400);
+ try{
+  if(!await communityVerifyTurnstile(request,env,siteTrim(input.turnstile,1800)))
+   return siteOut({error:'Complete the verification challenge and try again'},403);
+ }catch{return siteOut({error:'Security check temporarily unavailable'},503)}
+ const subject='Novel Updates link: '+link.slug.slice(0,95);
+ try{
+  // Do not flood the owner inbox with repeated pending submissions of one series.
+  const exists=await env.COMMUNITY_DB.prepare(
+   "SELECT id FROM conservatory_site_feedback WHERE scope='public' AND status='pending' AND subject=? LIMIT 1"
+  ).bind(subject).first();
+  if(exists)return siteOut({ok:true,status:'already_submitted',message:'This Novel Updates link is already waiting for editorial review.'});
+  const id=crypto.randomUUID();
+  const message='Novel Updates series: '+link.url+(note?'\nReader note: '+note:'');
+  await env.COMMUNITY_DB.prepare(
+   'INSERT INTO conservatory_site_feedback(id,scope,kind,display_name,reply_to,subject,message,status,member_email) VALUES(?,?,?,?,?,?,?,?,?)'
+  ).bind(id,'public','suggestion',displayName,replyTo,subject,message,'pending','').run();
+  return siteOut({ok:true,id,status:'pending',message:'Link received. The editor will retrieve source metadata, review and publish it when approved.'},201);
+ }catch{return siteOut({error:'Could not save your Novel Updates link. Try again later.'},503)}
+}
+
 async function siteFeedbackRoute(request,env,scope,email){
  if(request.method!=='POST')return siteOut({error:'Method not allowed'},405);
  if(request.headers.get('Origin')!==new URL(request.url).origin)return siteOut({error:'Wrong origin'},403);
