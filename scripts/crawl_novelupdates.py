@@ -118,8 +118,9 @@ def main():
             with urllib.request.urlopen(request,timeout=20) as r:response=json.load(r)
             page=max(1,int((response["result"][0].get("results") or [{"next_page":1}])[0]["next_page"]))
         except Exception as exc:raise RuntimeError("Could not load import cursor. Ensure migration is applied: "+str(exc)) from exc
-    saved=0
+    total_saved=0
     for number in range(page,page+args.pages):
+        page_saved=0
         directory=ORIGIN+"/novelslisting/?pg="+str(number)
         print("Directory",directory,flush=True)
         links=listing_links(get(directory))
@@ -127,20 +128,23 @@ def main():
             raise RuntimeError("No series links found. Stopping: directory may be blocked or the page structure changed.")
         for index,url in enumerate(links,1):
             if (number,index)!=(page,1):time.sleep(PAUSE+random.uniform(0,1))
-            try:result=info(get(url),url)
-            except RuntimeError:
-                raise
+            try:
+                result=info(get(url),url)
+                row=parse(result)
+                if not row:raise ValueError("No valid canonical Novel Updates record")
+                if args.dry_run:
+                    print(json.dumps(result,ensure_ascii=False)[:450])
+                else:
+                    d1(SQL,list(row))
+                    page_saved+=1
+                    total_saved+=1
             except Exception as exc:
-                print("Skipped",url,str(exc)[:150],file=sys.stderr)
-                continue
-            row=parse(result)
-            if not row:continue
-            if args.dry_run:
-                print(json.dumps(result,ensure_ascii=False)[:450]);continue
-            d1(SQL,list(row));saved+=1
+                # Stop on failure rather than silently advancing the page cursor.
+                # Retrying the page is safe because staging is keyed by series slug.
+                raise RuntimeError("Import stopped on "+url+"; resume at directory page "+str(number)+": "+str(exc)[:200]) from exc
         if not args.dry_run:
-            d1("UPDATE nu_import_progress SET next_page=?,last_run_at=CURRENT_TIMESTAMP,last_success_at=CURRENT_TIMESTAMP,last_error='',processed_count=processed_count+? WHERE source='novelupdates'",[number+1,saved])
-        print("Completed page",number,"series",len(links),"newly staged this run",saved,flush=True)
-    print("Done. No entries published. Next cursor",page+args.pages)
+            d1("UPDATE nu_import_progress SET next_page=?,last_run_at=CURRENT_TIMESTAMP,last_success_at=CURRENT_TIMESTAMP,last_error='',processed_count=processed_count+? WHERE source='novelupdates'",[number+1,page_saved])
+        print("Completed page",number,"series",len(links),"newly staged this page",page_saved,flush=True)
+    print("Done. No entries published. Next cursor",page+args.pages, "staged",total_saved)
 if __name__=="__main__":
     main()
