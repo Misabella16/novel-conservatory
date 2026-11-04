@@ -35,6 +35,8 @@ jobs:
           python -m unittest discover -s tests -p 'test_nu_importer.py' -v
       - name: Validate public About guide
         run: python tests/check_public_about_guide.py
+      - name: Verify first-visit tours and exclude-tag filters
+        run: python tests/check_onboarding_tours.py
       - name: Check migration SQL offline
         run: |
           python - <<'PY'
