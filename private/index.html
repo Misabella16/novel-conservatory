@@ -656,8 +656,9 @@ $('#excluded-tag-filters').addEventListener('change',event=>{
  if(!input)return;
  const key=normStoryTag(input.dataset.excludedTag);
  if(input.checked)excludedTags.add(key);else excludedTags.delete(key);
+ $('#excluded-tag-active-count').textContent=excludedTags.size+' excluded';
  visible=48;
- renderExcludedTagFilters();renderBooks();
+ renderBooks();
 });
 
 function normStoryTag(t){const s=String(t||'').trim().toLowerCase();return ({'enemies to lovers':'enemies become lovers','rivals to lovers':'rivals to lovers','infinite flow':'unlimited flow','sci fi':'sci-fi','abo':'omegaverse'})[s]||s;}
