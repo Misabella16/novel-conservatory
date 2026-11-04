@@ -4,6 +4,18 @@ This private repository contains the source for two websites:
 - **Private**: invitation-only reading library with EPUB editions, member shelves, and owner editing tools.
 - **Public**: discovery catalogue, browser-saved collections, moderated submissions, and community reviews.
 
+## Private access: Cloudflare-only approval
+
+The private library uses **Cloudflare Zero Trust → Access → Applications** as its **sole reader allowlist**. To add a reader, add their exact email to the private application's **Allow** policy in Cloudflare and share the normal private website URL. Do not use an Everyone/public rule. Readers sign in through Cloudflare's email verification flow. There is **no second on-site invitation or redemption step**.
+
+The private Worker independently verifies the Cloudflare Access JWT signature, issuer, audience, expiry, and email for every asset/API request. The on-site invitation endpoints return HTTP 410. Old `/join/` and `/admin/invitations.html` links redirect to the homepage/editor respectively. Historic invitation records remain in D1 but are no longer consulted, so their links grant no privileges.
+
+Owner/editor roles remain governed by the private editorial database; an Access-approved friend is a **Reader** by default. EPUB reading is a **separate** owner-controlled permission with a global sharing switch and per-email approval. A Cloudflare-approved reader cannot access EPUBs just by being allowed to browse the catalogue.
+
+To revoke a visitor's access, remove their email from the applicable Cloudflare Access Allow policy and, for urgent revocations, revoke their active Access sessions. Do not rely on the old on-site member controls.
+
+**Note:** Retiring the on-site invitations does not resolve a missing email verification code. Cloudflare sends that code independently; troubleshoot its login policy and email deliverability if someone still cannot sign in.
+
 ## First-time setup
 
 1. Back up the existing Cloudflare D1 databases and R2 buckets.
