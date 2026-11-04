@@ -6,10 +6,15 @@ from html.parser import HTMLParser
 ROOT=Path(__file__).resolve().parents[1]
 
 def embedded_scripts_ok(html):
-    for match in re.finditer(r'<script\b[^>]*>([\s\S]*?)</script\s*>',html,re.I):
-        if not match.group(1).strip():continue
+    for match in re.finditer(r'<script\b([^>]*)>([\s\S]*?)</script\s*>',html,re.I):
+        attrs,body=match.group(1),match.group(2)
+        if not body.strip():continue
+        if 'application/json' in attrs or 'application/ld+json' in attrs:
+            import json
+            json.loads(body)
+            continue
         with tempfile.NamedTemporaryFile(suffix='.js',mode='w',encoding='utf-8') as temp:
-            temp.write(match.group(1));temp.flush()
+            temp.write(body);temp.flush()
             subprocess.run(['node','--check',temp.name],check=True)
 
 for site in ('public','private'):
