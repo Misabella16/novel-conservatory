@@ -33,6 +33,8 @@ jobs:
           python -m pip install 'beautifulsoup4>=4.12,<5'
           python -m py_compile scripts/import_novelupdates.py scripts/crawl_novelupdates.py
           python -m unittest discover -s tests -p 'test_nu_importer.py' -v
+      - name: Validate public About guide
+        run: python tests/check_public_about_guide.py
       - name: Check migration SQL offline
         run: |
           python - <<'PY'
