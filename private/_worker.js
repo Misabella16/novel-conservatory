@@ -1866,6 +1866,11 @@ async function epubInsightsRoutes(request,env,email,role){
   if(path==='/api/admin/epub-insights/has-epub'&&method==='GET'){
    const novelId=editionBook(u.searchParams.get('id'));
    if(!novelId)return editionJson({error:'Choose a valid novel ID'},400);
+   if(novelId>962){
+    if(!env.COMMUNITY_DB)return editionJson({error:'Shared catalogue database is unavailable'},503);
+    const found=await env.COMMUNITY_DB.prepare('SELECT id FROM additional_catalogue_novels WHERE id=?').bind(novelId).first();
+    if(!found)return editionJson({error:'No novel with that ID exists. Create it in the catalogue first.'},404);
+   }
    const table=editionTable(novelId);
    const stored=await env.DB.prepare('SELECT id,filename FROM '+table+' WHERE novel_id=? LIMIT 1').bind(novelId).first();
    const legacy=novelId<=962?await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+novelId).first():null;
@@ -1885,6 +1890,11 @@ async function epubInsightsRoutes(request,env,email,role){
    if(!edition)return editionJson({error:'Invalid edition'},400);
    let valid=false;
    if(edition==='none'){
+    if(id>962){
+     if(!env.COMMUNITY_DB)return editionJson({error:'Shared catalogue database unavailable'},503);
+     const existing=await env.COMMUNITY_DB.prepare('SELECT id FROM additional_catalogue_novels WHERE id=?').bind(id).first();
+     if(!existing)return editionJson({error:'Novel ID was not found in the catalogue'},404);
+    }
     // A Novel Updates-only draft is allowed only when there is genuinely no
     // stored EPUB edition for this novel in either private storage scheme.
     const stored=await env.DB.prepare('SELECT id FROM '+editionTable(id)+' WHERE novel_id=? LIMIT 1').bind(id).first();
@@ -1936,7 +1946,7 @@ async function epubInsightsRoutes(request,env,email,role){
     const previous=await env.DB.prepare('SELECT patch FROM novel_edits WHERE id=?').bind(id).first();
     let old={};try{old=JSON.parse(previous?.patch||'{}')}catch{}
     const next={...old,metadataFieldSources:{...(old.metadataFieldSources||{})}};
-    for(const key of ['synopsis','tags']){
+    for(const key of ['synopsis','tags','genres']){
      if(accept(key,old[key],next.metadataFieldSources[key])){
       next[key]=patch[key];
       next.metadataFieldSources[key]=validSource(sources[key]||approved.source);
