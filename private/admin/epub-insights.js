@@ -43,7 +43,7 @@ async function choose(item){
  selected=item;source='not scanned';
  $('selected-title').textContent=item.filename;$('selected-detail').textContent='Novel #'+item.novelId+' • Private stored EPUB';
  $('editor').hidden=false;$('title').value='';$('synopsis').value='';$('tags').value='';$('genres').value='';$('warnings').value='';
- $('rights').checked=false;$('nu-url').value='';
+ $('rights').checked=false;$('nu-url').value='';$('apply').disabled=true;
  $('origin').textContent='No EPUB text inspected yet.';
  await load();
  try{
@@ -55,6 +55,7 @@ async function choose(item){
    $('warnings').value=(d.warnings||[]).join(', ');
    source=d.source||'saved review';
    $('origin').textContent=d.approved?'Previously approved draft for this edition':'Previously saved draft, not yet approved';
+   $('apply').disabled=!d.approved;
   }
   setStatus('Ready to inspect this stored EPUB. Review changes before saving.');
  }catch(e){setStatus(e.message,true)}
@@ -125,10 +126,22 @@ async function save(action){
   tags:unique($('tags').value),genres:unique($('genres').value),warnings:unique($('warnings').value),
   source,action,rightsConfirmed:action==='approve'&&$('rights').checked};
  try{await api('/api/admin/epub-insights/draft',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data)});
-  setStatus(action==='approve'?'Approved and saved privately for editorial use. No public changes were made.':'Saved as an unapproved private draft. No public changes were made.');
+  $('apply').disabled=action!=='approve';
+  setStatus(action==='approve'?'Approved and saved privately. Click Apply to update the private catalogue; the public catalogue will not change.':'Saved as an unapproved private draft. No public changes were made.');
  }catch(e){setStatus(e.message,true)}
 }
 $('save').addEventListener('click',()=>save('draft'));$('approve').addEventListener('click',()=>save('approve'));
+$('apply').addEventListener('click',async()=>{
+ if(!selected||$('apply').disabled)return;
+ if(!confirm('Apply the approved synopsis and tags to the PRIVATE entry for novel #'+selected.novelId+'? This overwrites existing private values for those fields but does not publish anything.'))return;
+ const button=$('apply');button.disabled=true;
+ try{
+  const value=await api('/api/admin/epub-insights/apply',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({novelId:selected.novelId,confirmApply:true})});
+  setStatus(value.message||'Approved metadata applied privately. No public changes.');
+ }catch(e){setStatus(e.message,true)}
+ finally{button.disabled=false}
+});
+
 $('search-btn').addEventListener('click',()=>{offset=0;load()});$('search').addEventListener('keydown',e=>{if(e.key==='Enter'){offset=0;load()}});
 $('previous').addEventListener('click',()=>{offset=Math.max(0,offset-30);load()});
 $('next').addEventListener('click',()=>{offset+=30;load()});
