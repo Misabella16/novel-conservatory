@@ -86,6 +86,11 @@ async function choose(item){
    $('apply').disabled=!d.approved;
   }
   setStatus(item.editionId==='none'?'No linked EPUB. Use captured Novel Updates metadata to fill missing fields.':'Inspect the linked EPUB first. Novel Updates can fill any fields it lacks.');
+  // Most EPUBs are small. Inspect these immediately after selection so the
+  // primary source is populated before editors use the Novel Updates fallback.
+  // Large files still require an explicit click to avoid surprise downloads.
+  if(item.editionId!=='none'&&Number(item.size)>0&&Number(item.size)<=15*1048576)
+    $('inspect').click();
  }catch(e){setStatus(e.message,true)}
 }
 $('choose-without-epub').addEventListener('click',async()=>{
