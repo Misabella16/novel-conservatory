@@ -1515,6 +1515,15 @@ async function siteAdminRoute(request,env,email,role){
  if(role!=='owner')return siteOut({error:'Owner access required'},403);
  if(!env.COMMUNITY_DB)return siteOut({error:'Shared database unavailable'},503);
  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
+ if(path==='/api/admin/public-banner-preview'){
+  if(method!=='GET')return siteOut({error:'Method not allowed'},405);
+  if(!env.COMMUNITY_IMAGES)return siteOut({error:'Artwork storage unavailable'},503);
+  const key=String(url.searchParams.get('key')||'');
+  if(!/^[a-f0-9-]{36}\.(?:png|jpg|webp)$/.test(key))return siteOut({error:'Invalid image key'},400);
+  const image=await env.COMMUNITY_IMAGES.get('public-banners/'+key);
+  if(!image)return siteOut({error:'Image not found'},404);
+  return new Response(image.body,{headers:{'content-type':image.httpMetadata?.contentType||'application/octet-stream','cache-control':'private,no-store','x-content-type-options':'nosniff'}});
+ }
  if(path==='/api/admin/public-banner'){
   if(method!=='POST')return siteOut({error:'Method not allowed'},405);
   if(request.headers.get('Origin')!==url.origin)return siteOut({error:'Wrong origin'},403);
