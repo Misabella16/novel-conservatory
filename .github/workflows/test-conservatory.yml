@@ -33,6 +33,12 @@ jobs:
           node --check private/admin/add-novels.js
           node tests/check_personal_hidden_epub_enrichment.js
           node tests/check_all_stored_epub_enrichment.js
+      - name: Verify one-step EPUB cataloguing, permanent novel pages and Undo
+        run: |
+          node --check private/admin/epub-auto-match.js
+          node --check private/admin/editions.js
+          node --check private/novel/book.js
+          node tests/check_one_step_epub_catalogue.js
       - name: Verify private EPUB indicators and homepage scripts
         run: python tests/check_private_epub_indicators.py
       - name: Check Python syntax and parse source-only retrieval
