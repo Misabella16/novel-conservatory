@@ -3897,6 +3897,122 @@ async function privateEpubCoverLibraryRoute(request,env,email,role){
  }catch(e){return epubCoverJson({error:'Cover library: '+String(e.message||e).slice(0,180)},400)}
 }
 
+// Public cover publication is a deliberate action. The private EPUB is never
+// fetched here. Only one verified, isolated JPEG candidate is copied after
+// the owner checks permissions and supplies a meaningful credit.
+async function epubCoverPublicAction(request,env,email,path,body){
+ if(!env.COMMUNITY_DB||!env.COMMUNITY_IMAGES)
+  return epubCoverJson({error:'Shared catalogue and public artwork storage are required'},503);
+ await env.COMMUNITY_DB.prepare("CREATE TABLE IF NOT EXISTS epub_public_cover_sync_events(id TEXT PRIMARY KEY,novel_id INTEGER NOT NULL,kind TEXT NOT NULL,before_json TEXT,after_json TEXT,before_key TEXT NOT NULL DEFAULT '',after_key TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,undone_at TEXT)").run();
+ if(path==='/api/admin/epub-cover-library/undo-public'){
+  const id=String(body.eventId||'');
+  if(!epubCoverUUID(id))return epubCoverJson({error:'Invalid publication event'},400);
+  const event=await env.COMMUNITY_DB.prepare('SELECT * FROM epub_public_cover_sync_events WHERE id=? AND undone_at IS NULL').bind(id).first();
+  if(!event)return epubCoverJson({error:'Public cover event missing or already undone'},404);
+  let restored;
+  if(event.kind==='seed'){
+   const current=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(event.novel_id).first();
+   if(current?.patch_json!==event.after_json)
+    return epubCoverJson({error:'Another editor changed this public book. Undo newer edits first.'},409);
+   restored=event.before_json===null?
+    await env.COMMUNITY_DB.prepare('DELETE FROM published_catalogue_overrides WHERE novel_id=? AND patch_json=?').bind(event.novel_id,event.after_json).run():
+    await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND patch_json=?').bind(event.before_json,event.novel_id,event.after_json).run();
+  }else if(event.kind==='additional'){
+   const row=await env.COMMUNITY_DB.prepare('SELECT cover_key,payload_json FROM additional_catalogue_novels WHERE id=?').bind(event.novel_id).first();
+   if(row?.cover_key!==event.after_key||row.payload_json!==event.after_json)
+    return epubCoverJson({error:'This public book changed after the cover sync. Undo newer edits first.'},409);
+   restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET cover_key=?,payload_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND cover_key=? AND payload_json=?')
+    .bind(event.before_key,event.before_json,event.novel_id,event.after_key,event.after_json).run();
+  }else return epubCoverJson({error:'Unknown cover event type'},409);
+  if((restored.meta?.changes||0)!==1)
+   return epubCoverJson({error:'A concurrent public edit prevented safe Undo'},409);
+  await env.COMMUNITY_DB.prepare('UPDATE epub_public_cover_sync_events SET undone_at=CURRENT_TIMESTAMP WHERE id=? AND undone_at IS NULL').bind(id).run();
+  // The private JPEG is never deleted by public Undo.
+  let publicImageRetired=true;
+  try{
+   await env.COMMUNITY_DB.prepare("DELETE FROM community_entries WHERE id=? AND image_key=? AND kind='image'").bind(id,event.after_key).run();
+   await env.COMMUNITY_IMAGES.delete(event.after_key);
+  }catch(e){publicImageRetired=false}
+  return epubCoverJson({ok:true,undone:true,publicImageRetired,novelId:event.novel_id,
+   privateCandidatesUntouched:true,privateEpubsUntouched:true});
+ }
+ if(path!=='/api/admin/epub-cover-library/publish')
+  return epubCoverJson({error:'Unknown cover publication action'},404);
+ if(body.rightsConfirmed!==true||String(body.artistCredit||'').trim().length<3)
+  return epubCoverJson({error:'Confirm public-display rights and provide an artist/source credit'},400);
+ const id=String(body.candidateId||'');
+ const candidate=epubCoverUUID(id)?await env.DB.prepare('SELECT * FROM epub_cover_candidates WHERE id=?').bind(id).first():null;
+ if(!candidate)return epubCoverJson({error:'Private cover candidate not found'},404);
+ const novelId=Number(candidate.novel_id);
+ const source=await env.IMAGES.get(candidate.object_key);
+ if(!source||source.size>2800000||source.size<80)
+  return epubCoverJson({error:'Private image missing or outside size limits'},404);
+ let kind='seed',current=null;
+ if(novelId>962){
+  kind='additional';
+  current=await env.COMMUNITY_DB.prepare('SELECT cover_key,payload_json,visibility FROM additional_catalogue_novels WHERE id=?').bind(novelId).first();
+  if(!current||current.visibility!=='published')
+   return epubCoverJson({error:'This novel is private. Publish a public-safe catalogue entry before sharing its cover.'},409);
+ }else{
+  current=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(novelId).first();
+ }
+ const bytes=await source.arrayBuffer(),v=new Uint8Array(bytes);
+ if(v[0]!==255||v[1]!==216||v[2]!==255)
+  return epubCoverJson({error:'Stored private image failed JPEG validation'},415);
+ const eventId=crypto.randomUUID(),imageKey='community-submissions/'+eventId+'.jpg';
+ const credit=textField(body.artistCredit,150);
+ let before=null,after='',beforeKey='',published=false;
+ await env.COMMUNITY_IMAGES.put(imageKey,bytes,{httpMetadata:{contentType:'image/jpeg'}});
+ try{
+  if(kind==='seed'){
+   before=current?.patch_json??null;
+   let fields={};try{fields=JSON.parse(before||'{}')}catch{throw Error('Public metadata was unreadable')}
+   after=JSON.stringify({...fields,cover:'/api/community/image?id='+eventId,coverCredit:credit,coverRights:true});
+  }else{
+   before=current.payload_json;beforeKey=current.cover_key||'';
+   let fields={};try{fields=JSON.parse(before||'{}')}catch{throw Error('Public metadata was unreadable')}
+   after=JSON.stringify({...fields,coverCredit:credit,coverRights:true});
+  }
+  await env.COMMUNITY_DB.prepare('INSERT INTO community_entries(id,scope,novel_id,kind,display_name,author_identity,body,rating,spoiler,tags_json,external_url,image_key,image_credit,parent_id,status,moderated_by,moderated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)')
+   .bind(eventId,'public',novelId,'image','Owner-selected EPUB cover',email,'Owner confirms public display permission; no EPUB content copied',null,0,'["__epub_owner_cover_sync__"]','',imageKey,credit,'','approved',email).run();
+  const result=kind==='seed'?
+    before===null?
+     await env.COMMUNITY_DB.prepare('INSERT INTO published_catalogue_overrides(novel_id,patch_json,source_entry_id,published_by) VALUES(?,?,?,?) ON CONFLICT DO NOTHING')
+      .bind(novelId,after,eventId,email).run():
+     await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND patch_json=?')
+      .bind(after,novelId,before).run():
+    await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET cover_key=?,payload_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND COALESCE(cover_key,'')=? AND payload_json=? AND visibility='published'")
+     .bind(imageKey,after,novelId,beforeKey,before).run();
+  if((result.meta?.changes||0)!==1)throw Error('Another editor changed the public record. Refresh.');
+  published=true;
+  await env.COMMUNITY_DB.prepare('INSERT INTO epub_public_cover_sync_events(id,novel_id,kind,before_json,after_json,before_key,after_key) VALUES(?,?,?,?,?,?,?)')
+   .bind(eventId,novelId,kind,before,after,beforeKey,imageKey).run();
+  try{await audit(env,email,'epub.private_cover.public_sync',novelId,eventId)}catch{}
+  return epubCoverJson({ok:true,novelId,eventId,publicPublished:true,sourceCredit:credit,
+   cover:kind==='seed'?'/api/community/image?id='+eventId:'/api/additional/cover?id='+novelId,
+   privateEpubsUntouched:true,privateCandidatesUntouched:true});
+ }catch(error){
+  let rolledBack=!published;
+  if(published){
+   try{
+    const restore=kind==='seed'?
+     before===null?
+      await env.COMMUNITY_DB.prepare('DELETE FROM published_catalogue_overrides WHERE novel_id=? AND patch_json=?').bind(novelId,after).run():
+      await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=? WHERE novel_id=? AND patch_json=?').bind(before,novelId,after).run():
+     await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET cover_key=?,payload_json=? WHERE id=? AND cover_key=? AND payload_json=?')
+      .bind(beforeKey,before,novelId,imageKey,after).run();
+    rolledBack=(restore.meta?.changes||0)===1;
+   }catch{}
+  }
+  if(rolledBack){
+   await env.COMMUNITY_DB.prepare('DELETE FROM community_entries WHERE id=? AND image_key=?').bind(eventId,imageKey).run().catch(()=>{});
+   await env.COMMUNITY_IMAGES.delete(imageKey).catch(()=>{});
+  }
+  return epubCoverJson({error:'Public cover was not fully saved: '+String(error.message||error).slice(0,145),
+   rollbackComplete:rolledBack},409);
+ }
+}
+
 async function privateEpubAutoCoverRoute(request,env,email,role){
  if(role!=='owner')return respond({error:'Only the owner can import EPUB artwork privately'},403);
  if(request.method!=='POST'||!strictOrigin(request))return respond({error:'Cross-origin or invalid request'},403);
