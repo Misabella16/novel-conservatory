@@ -2252,6 +2252,57 @@ async function nuHasPrivateEpub(env,sourceId){
  const b=await env.DB.prepare('SELECT id FROM epub_editions WHERE novel_id=? LIMIT 1').bind(sourceId).first();
  return !!(a||b);
 }
+// Metadata-only D1 movement. R2 EPUB bytes are never copied, deleted, exposed,
+// or rewritten. One private DB batch is atomic across the two edition tables.
+const nuAssetColumns='id,novel_id,label,translator,language,filename,object_key,bytes,uploaded_by,created_at';
+const nuAssetSignature=row=>JSON.stringify(Object.fromEntries(
+ ['id','label','translator','language','filename','object_key','bytes','uploaded_by','created_at'].map(k=>[k,row[k]])));
+async function nuAssetPlan(env,sourceId,targetId,sourceRow){
+ if(!sourceId||sourceId<100000||!editionBook(targetId))throw Error('Invalid asset merge IDs');
+ const active=await env.DB.prepare('SELECT id FROM additional_epub_upload_sessions WHERE novel_id=? LIMIT 1').bind(sourceId).first();
+ if(active)throw Error('An EPUB upload is still in progress for this duplicate. Finish or cancel it before merging.');
+ const legacy=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+sourceId).first();
+ if(legacy)throw Error('This duplicate has a legacy EPUB attachment that needs a separate transfer.');
+ const misplaced=await env.DB.prepare('SELECT id FROM epub_editions WHERE novel_id=? LIMIT 1').bind(sourceId).first();
+ if(misplaced)throw Error('An older EPUB record needs reconciliation before merging.');
+ const rows=await env.DB.prepare('SELECT '+nuAssetColumns+' FROM additional_epub_editions WHERE novel_id=? ORDER BY id').bind(sourceId).all();
+ const editions=rows.results||[];
+ if(editions.length>250)throw Error('More than 250 editions. Transfer these in smaller audited batches.');
+ return {sourceId,targetId,editions:editions.map(x=>({id:x.id,object_key:x.object_key,signature:nuAssetSignature(x)})),
+  coverKey:sourceRow?.cover_key||'',targetTable:targetId<=962?'epub_editions':'additional_epub_editions'};
+}
+async function nuVerifyAssetPlan(env,plan,undo=false){
+ if(!plan?.editions?.length)return;
+ const table=undo?plan.targetTable:'additional_epub_editions';
+ const id=undo?plan.targetId:plan.sourceId;
+ for(const item of plan.editions){
+  const row=await env.DB.prepare('SELECT '+nuAssetColumns+' FROM '+table+' WHERE novel_id=? AND id=?').bind(id,item.id).first();
+  if(!row||row.object_key!==item.object_key||nuAssetSignature(row)!==item.signature)
+   throw Error('A transferred EPUB was changed or removed. Undo the newer change or reconcile this edition first.');
+ }
+}
+async function nuMoveAssetReferences(env,plan,undo=false){
+ if(!plan?.editions?.length)return;
+ await nuVerifyAssetPlan(env,plan,undo);
+ const commands=[];
+ for(const item of plan.editions){
+  if(plan.targetTable==='epub_editions'){
+   const from=undo?'epub_editions':'additional_epub_editions',to=undo?'additional_epub_editions':'epub_editions';
+   const origin=undo?plan.targetId:plan.sourceId,dest=undo?plan.sourceId:plan.targetId;
+   commands.push(env.DB.prepare('INSERT INTO '+to+' ('+nuAssetColumns+') SELECT id,?,label,translator,language,filename,object_key,bytes,uploaded_by,created_at FROM '+from+' WHERE novel_id=? AND id=? AND object_key=?').bind(dest,origin,item.id,item.object_key));
+   commands.push(env.DB.prepare('DELETE FROM '+from+' WHERE novel_id=? AND id=? AND object_key=?').bind(origin,item.id,item.object_key));
+  }else{
+   const origin=undo?plan.targetId:plan.sourceId,dest=undo?plan.sourceId:plan.targetId;
+   commands.push(env.DB.prepare('UPDATE additional_epub_editions SET novel_id=? WHERE novel_id=? AND id=? AND object_key=?').bind(dest,origin,item.id,item.object_key));
+  }
+ }
+ // Cloudflare D1 batch statements execute transactionally, so an insert
+ // conflict cannot strand half the editions in the wrong table.
+ const results=await env.DB.batch(commands);
+ if(results.some((x)=>x.meta&&x.meta.changes!==1))
+  throw Error('An edition reference changed during the transfer. Inspect and reconcile before continuing.');
+}
+
 async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  if(!env.COMMUNITY_DB||!env.DB)throw Error('Private and shared databases are required');
  await nuEnsureJournal(env);
