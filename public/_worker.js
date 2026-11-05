@@ -661,14 +661,28 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
    if(!env.TURNSTILE_SECRET||!env.TURNSTILE_SITE_KEY)return extraJson({error:'Submissions are not enabled until Turnstile is configured'},503);
    const fd=await request.formData();
    if(!await communityVerifyTurnstile(request,env,extraTxt(fd.get('cf-turnstile-response'),1800)))return extraJson({error:'Complete the anti-spam verification'},403);
+   // Honeypot, same-origin and Turnstile protect this publish-first endpoint.
+   if(String(fd.get('website')||'').trim())return extraJson({error:'Invalid submission'},400);
    const p=extraPayload(JSON.parse(extraTxt(fd.get('payload'),18000)||'{}'));
-   if(!p.title||!p.author||!p.synopsis||(!p.sourceUrl&&!p.nuUrl&&!p.originalUrl))return extraJson({error:'Provide the title, author, synopsis, and a source URL'},400);
-   let coverKey='';if(fd.get('cover') instanceof File&&fd.get('cover').size){if(!p.coverCredit||!p.coverRights)return extraJson({error:'Cover requires source credit and confirmation you can display it'},400);coverKey=await extraPhoto(fd.get('cover'),env);}
-   const id=crypto.randomUUID();
-   try{await env.COMMUNITY_DB.prepare('INSERT INTO additional_novel_submissions(id,payload_json,cover_key,display_name,contact_email) VALUES (?,?,?,?,?)')
-    .bind(id,JSON.stringify(p),coverKey,extraTxt(fd.get('displayName'),80)||'Anonymous',extraTxt(fd.get('contactEmail'),140)).run();}
-   catch(e){if(coverKey)await env.COMMUNITY_IMAGES.delete(coverKey);throw e;}
-   return extraJson({ok:true,message:'Novel suggested. An editor will review it before publication.'});
+   if(!p.title||!p.author||!p.synopsis||(!p.sourceUrl&&!p.nuUrl&&!p.originalUrl))
+    return extraJson({error:'Provide the title, author, synopsis, and a source URL'},400);
+   const visitor=extraTxt(fd.get('displayName'),80)||'Anonymous';
+   let coverKey='';
+   if(fd.get('cover') instanceof File&&fd.get('cover').size){
+    if(!p.coverCredit||!p.coverRights)return extraJson({error:'Cover requires credit and permission to display it'},400);
+    coverKey=await extraPhoto(fd.get('cover'),env);
+   }
+   try{
+    const result=await guestApply(env,request,p,coverKey,visitor);
+    if(coverKey&&!result.usedCover)await env.COMMUNITY_IMAGES.delete(coverKey).catch(()=>{});
+    return extraJson({...result,message:result.unchanged?'Already in the library; no changes needed.':
+     result.created?'Novel published!':'Existing novel updated!'},200);
+   }catch(e){
+    // A failed write must never leave an unused uploaded image behind.
+    // If the log write failed after the SQL write, the event is rolled back.
+    if(coverKey)await env.COMMUNITY_IMAGES.delete(coverKey).catch(()=>{});
+    throw e;
+   }
   }
   if(path==='/api/admin/additional/submissions'&&method==='GET'){
    if(!editor)return extraJson({error:'Editor access required'},403);
