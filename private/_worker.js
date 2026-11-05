@@ -2546,6 +2546,26 @@ async function nuUndoEdit(env,email,eventId){
  if(!event)throw Error('Change history entry not found');
  if(event.undone_at)throw Error('This change has already been undone');
  const snap=JSON.parse(event.before_json),targetId=Number(event.target_id);
+ if(snap.targetKind==='public_projection'){
+  // Public contributors can add metadata to an existing private canonical ID,
+  // but Undo must never change the private source record.
+  await canonicalEnsurePrivate(env);
+  const current=await env.COMMUNITY_DB.prepare('SELECT payload_json,cover_key FROM public_novel_projections WHERE novel_id=?').bind(targetId).first();
+  if(current?.payload_json!==snap.afterTarget||(current?.cover_key||'')!==snap.afterCoverKey)
+   throw Error('The public projection changed since this contribution. Undo newer edits first.');
+  if(snap.beforeTarget===null){
+   const deleted=await env.COMMUNITY_DB.prepare('DELETE FROM public_novel_projections WHERE novel_id=? AND payload_json=? AND cover_key=?')
+    .bind(targetId,snap.afterTarget,snap.afterCoverKey).run();
+   if((deleted.meta?.changes||0)!==1)throw Error('Public metadata changed during Undo.');
+  }else{
+   const restored=await env.COMMUNITY_DB.prepare('UPDATE public_novel_projections SET payload_json=?,cover_key=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND payload_json=? AND cover_key=?')
+    .bind(snap.beforeTarget,snap.beforeCoverKey,targetId,snap.afterTarget,snap.afterCoverKey).run();
+   if((restored.meta?.changes||0)!==1)throw Error('Public metadata changed during Undo.');
+  }
+  await env.COMMUNITY_DB.prepare("UPDATE catalogue_edit_events SET undone_at=CURRENT_TIMESTAMP,undone_by=? WHERE id=? AND undone_at IS NULL")
+   .bind(email,id).run();
+  return {ok:true,undone:true,eventId:id,targetId,publicProjection:true,privateSourceUnchanged:true};
+ }
  if(snap.targetKind==='created'){
   const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,source_submission_id,visibility,cover_key FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
   if(row?.payload_json!==snap.afterTarget||row.source_submission_id!==''||
@@ -2585,6 +2605,19 @@ async function nuUndoEdit(env,email,eventId){
   const extra=await env.COMMUNITY_DB.prepare('SELECT source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(snap.sourceId).first();
   if(extra?.source_submission_id!==snap.afterSourceMarker)throw Error('The duplicate changed since merging. Undo the newer change first.');
  }
+ if(snap.aliasCreated){
+  await canonicalEnsurePrivate(env);
+  const alias=await env.COMMUNITY_DB.prepare('SELECT target_id,event_id FROM canonical_novel_aliases WHERE source_id=?').bind(snap.sourceId).first();
+  if(!alias||Number(alias.target_id)!==targetId||alias.event_id!==id)
+   throw Error('The canonical redirect was updated since this merge. Reconcile it before Undo.');
+ }
+ if(snap.assetPlan?.editions?.length)await nuVerifyAssetPlan(env,snap.assetPlan,true);
+ let restoredAssets=false;
+ try{
+  if(snap.assetPlan?.editions?.length){
+   await nuMoveAssetReferences(env,snap.assetPlan,true);
+   restoredAssets=true;
+  }
  if(snap.targetKind==='seed'){
   if(!snap.privateSourceOnly){
    if(snap.beforeTarget===null)await env.COMMUNITY_DB.prepare('DELETE FROM published_catalogue_overrides WHERE novel_id=? AND patch_json=?').bind(targetId,snap.afterTarget).run();
@@ -2619,6 +2652,8 @@ async function nuUndoEdit(env,email,eventId){
   for(const stage of snap.stageLinks||[])await env.COMMUNITY_DB.prepare(
    'UPDATE nu_staged_series SET published_id=?,updated_at=CURRENT_TIMESTAMP WHERE slug=? AND published_id=?'
   ).bind(stage.published_id,stage.slug,targetId).run();
+  if(snap.aliasCreated)await env.COMMUNITY_DB.prepare('DELETE FROM canonical_novel_aliases WHERE source_id=? AND target_id=? AND event_id=?')
+   .bind(snap.sourceId,targetId,id).run();
  }
  await env.COMMUNITY_DB.prepare("UPDATE catalogue_edit_events SET undone_at=CURRENT_TIMESTAMP,undone_by=? WHERE id=? AND undone_at IS NULL").bind(email,id).run();
  // A public contribution may introduce an image reference. Undo revokes its
@@ -2646,7 +2681,12 @@ async function nuUndoEdit(env,email,eventId){
   }catch{privateSynced=false}
  }
  try{await audit(env,email,'nu.edit.undo',targetId,id)}catch{}
- return {ok:true,undone:true,eventId:id,targetId,restoredDuplicateId:snap.sourceId||null,privateSynced};
+ return {ok:true,undone:true,eventId:id,targetId,restoredDuplicateId:snap.sourceId||null,privateSynced,
+  restoredEditions:snap.assetPlan?.editions?.length||0};
+ }catch(err){
+  if(restoredAssets)await nuMoveAssetReferences(env,snap.assetPlan,false).catch(e=>console.error('Undo asset compensation needs recovery',e));
+  throw err;
+ }
 }
 
 // Novel Updates master staging: always private. No staging routes are registered on public Worker.
