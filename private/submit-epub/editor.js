@@ -6,7 +6,7 @@
 const $=id=>document.getElementById(id);
 const tabSubmit=$('tab-submit-epub'),tabEntry=$('tab-add-entry');
 const sections={submit:$('submit-panel'),entry:$('editor-panel')};
-let role='reader',catalogue=new Map(),catalogueLoaded=false,busy=false;
+let role='reader',catalogue=new Map(),catalogueLoaded=false,busy=false,latestSavedEvent=null;
 const show=(message,error=false)=>{
  const node=$('entry-status');node.textContent=message;
  node.classList.toggle('error',!!error);
@@ -138,6 +138,7 @@ $('editor-form').addEventListener('submit',async e=>{
   // moderation is required. Saved changes appear immediately, with Undo in
   // catalogue history. EPUB submissions retain their separate file permissions.
   busy=true;$('entry-submit').disabled=true;
+  latestSavedEvent=null;$('entry-undo').hidden=true;
   let id, title;
   if(create){
    show('Creating the catalogue entry…');
@@ -146,6 +147,7 @@ $('editor-form').addEventListener('submit',async e=>{
     body:JSON.stringify({...payload(),publish:$('entry-publish').checked})
    });
    id=result.id;title=trim('entry-title');
+   latestSavedEvent=result.eventId||null;
    catalogue.set(id,{id,title});
    show((result.reused?'Found existing novel #':'Created novel #')+id+'. '+
     (result.notUpdated?'Its current metadata and publication state were kept. Edit the existing entry if needed. ':
@@ -175,6 +177,10 @@ $('editor-form').addEventListener('submit',async e=>{
   if(files.length)output.push(role==='owner'?successes+' EPUB(s) stored privately.':successes+' EPUB(s) sent for owner review.');
   if(issues.length)output.push('Issues:\n'+issues.join('\n'));
   if(role==='owner'&&successes)output.push('Newly uploaded EPUB editions start unverified.');
+  if(latestSavedEvent&&files.length){
+   output.push('The new entry has Undo history, but linked EPUB files must be safely moved or removed before undoing creation.');
+  }
+  $('entry-undo').hidden=!latestSavedEvent||files.length>0;
   show(output.join('\n'),issues.length>0);
   if(!issues.length){$('entry-files').value='';$('entry-action').value='existing';$('entry-existing').value='#'+id+' · '+title;mode();}
  }catch(err){
@@ -183,6 +189,22 @@ $('editor-form').addEventListener('submit',async e=>{
   show((err.message||'Could not save your entry.')+links,true)
  }
  finally{busy=false;$('entry-submit').disabled=false}
+});
+$('entry-undo').addEventListener('click',async()=>{
+ if(!latestSavedEvent)return;
+ const button=$('entry-undo');button.disabled=true;
+ try{
+  const result=await req('/api/admin/nu/undo',{
+   method:'POST',headers:{'content-type':'application/json'},
+   body:JSON.stringify({eventId:latestSavedEvent})
+  });
+  latestSavedEvent=null;button.hidden=true;
+  catalogueLoaded=false;await loadCatalogue();
+  show((result.hiddenCreated?'The newly created entry was hidden; no EPUB files were deleted.':'The last metadata update was reversed.')+
+   ' The previous catalogue state is restored.');
+  if(result.hiddenCreated){$('entry-action').value='new';mode()}
+ }catch(e){show('Undo was stopped to protect newer work: '+e.message,true)}
+ finally{button.disabled=false}
 });
 async function init(){
  try{
