@@ -16,7 +16,8 @@ assert all(a['id']==b['id'] and a['title']==b['title'] for a,b in zip(index,sour
 assert len({x['id'] for x in index})==962
 assert all(set(x)=={'id','title'} for x in index)
 assert '/submit-novel-updates/?book=' in home
-assert "nu?'Correct Novel Updates link':'Add missing Novel Updates link'" in home
+assert "nu?'Refresh details from Novel Updates':'Add Novel Updates link &amp; source details'" in home
+assert "&url=${encodeURIComponent(nu||'')}" in home
 assert 'id="linked-novel" ' in page and 'id="linked-novel-title"' in page
 assert 'selectedBook' in form and 'novelId:selectedBook' in form
 assert 'const params=new URLSearchParams(location.search)' in form
