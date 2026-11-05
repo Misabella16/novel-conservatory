@@ -12,6 +12,8 @@ function variants(value){
  if(withoutTail!==title)choices.push(withoutTail);
  const beforeEdition=title.replace(/\s+[-–—|]\s+(?:(?:translated by|translation|fan translation|edition|complete|completed|vol(?:ume)?\s*\d+|v\d+)\b.*)$/i,'').trim();
  if(beforeEdition!==title)choices.push(beforeEdition);
+ const withoutVolume=title.replace(/\s*(?:[-–—:|]?\s*)\b(?:vol(?:ume)?|book|part)\s*\.?\s*(?:\d+|[ivxlcdm]+)\s*$/i,'').trim();
+ if(withoutVolume&&withoutVolume!==title)choices.push(withoutVolume);
  const afterBracket=title.replace(/^\s*\[(?:translation|fan translation|epub|team [^\]]+|group [^\]]+)\]\s*/i,'');
  if(afterBracket!==title)choices.push(afterBracket);
  return [...new Set(choices.map(norm).filter(Boolean))];
@@ -35,11 +37,14 @@ async function inspect(file){
  }catch{return fallback}
 }
 function resolve(file,metadata,books){
- const sourceTitle=trim(metadata?.title),fileTitle=filenameTitle(file?.name);
+ const fileTitle=filenameTitle(file?.name);
+ const embeddedTitle=trim(metadata?.title);
+ const meaningless=value=>/^(?:epub|ebook|book|untitled|unknown|volume|chapter|novel)(?:\s*\d+)?$/i.test(value);
+ const sourceTitle=meaningless(embeddedTitle)?'':embeddedTitle;
  const parts=[...variants(sourceTitle),...variants(fileTitle)];
  const index=new Map();
  for(const b of books){
-  for(const name of [b.title,b.originalTitle,...(Array.isArray(b.titleCues)?b.titleCues:[])]){
+  for(const name of [b.title,b.originalTitle]){
    for(const key of variants(name)){
     const members=index.get(key)||new Set();members.add(Number(b.id));index.set(key,members);
    }
@@ -51,7 +56,14 @@ function resolve(file,metadata,books){
  }
  if(matches.size){
   const found=[...matches.keys()];
-  if(found.length===1)return {kind:'matched',bookId:found[0],title:sourceTitle||fileTitle,reason:'Matched catalogue title'};
+  if(found.length===1){
+   const candidate=books.find(b=>Number(b.id)===found[0]);
+   const author=norm(metadata?.author),current=norm(candidate?.author);
+   if(author&&current&&author!==current)return {kind:'ambiguous',bookId:null,
+    title:sourceTitle||fileTitle,candidates:found,
+    reason:'Title matches, but EPUB author conflicts with the catalogue'};
+   return {kind:'matched',bookId:found[0],title:sourceTitle||fileTitle,reason:'Matched catalogue title'};
+  }
   // Same name can refer to different works. The EPUB author can
   // disambiguate, but otherwise the editor must choose.
   const author=norm(metadata?.author);
