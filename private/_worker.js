@@ -1995,8 +1995,9 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  }
  const eventId=crypto.randomUUID(),oldSourceMarker=sourceRow?.source_submission_id??null;
  const afterSourceMarker=sourceRow?'merged-into:'+target.id:null;
+ const stageLinks=sourceId?(await env.COMMUNITY_DB.prepare('SELECT slug,published_id FROM nu_staged_series WHERE published_id=?').bind(sourceId).all()).results||[]:[];
  const snapshot={targetKind:target.kind,beforeTarget:target.beforeRaw,afterTarget:resultRaw,
-  sourceId:sourceId||null,beforeSourceMarker:oldSourceMarker,afterSourceMarker,
+  sourceId:sourceId||null,beforeSourceMarker:oldSourceMarker,afterSourceMarker,stageLinks,
   beforePrivate:previousPrivate,afterPrivate:nextPrivate};
  if(resultRaw===target.beforeRaw&&!sourceRow)return {ok:true,alreadyUpToDate:true,id:target.id,conflicts:computed.conflicts,changed:[]};
  // Optimistic write rejects subsequent updates since preview was loaded.
@@ -2027,15 +2028,21 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
    ).bind(afterSourceMarker,sourceId,oldSourceMarker).run();
    if((arch.meta?.changes||0)!==1)throw Error('Duplicate was changed by another editor. Retry after refresh.');
    archiveDone=true;
+   if(stageLinks.length)await env.COMMUNITY_DB.prepare('UPDATE nu_staged_series SET published_id=?,updated_at=CURRENT_TIMESTAMP WHERE published_id=?')
+    .bind(target.id,sourceId).run();
   }
   await env.COMMUNITY_DB.prepare(
    'INSERT INTO catalogue_edit_events(id,operation,target_id,duplicate_id,before_json,after_json,source_url,actor_email) VALUES(?,?,?,?,?,?,?,?)'
   ).bind(eventId,sourceId?'merge':'metadata_sync',target.id,sourceId||null,JSON.stringify(snapshot),JSON.stringify({target:resultRaw,sourceMarker:afterSourceMarker}),nuCanon(source.nuUrl),email).run();
  }catch(err){
   // No edit should be left invisible if the audit journal cannot be written.
-  if(archiveDone)await env.COMMUNITY_DB.prepare(
-   'UPDATE additional_catalogue_novels SET source_submission_id=? WHERE id=? AND source_submission_id=?'
-  ).bind(oldSourceMarker,sourceId,afterSourceMarker).run().catch(()=>{});
+  if(archiveDone){
+   await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET source_submission_id=? WHERE id=? AND source_submission_id=?')
+    .bind(oldSourceMarker,sourceId,afterSourceMarker).run().catch(()=>{});
+   for(const stage of stageLinks)await env.COMMUNITY_DB.prepare(
+    'UPDATE nu_staged_series SET published_id=? WHERE slug=? AND published_id=?'
+   ).bind(stage.published_id,stage.slug,target.id).run().catch(()=>{});
+  }
   if(target.kind==='seed'){
    if(target.beforeRaw===null)await env.COMMUNITY_DB.prepare('DELETE FROM published_catalogue_overrides WHERE novel_id=? AND patch_json=?').bind(target.id,resultRaw).run().catch(()=>{});
    else await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=? WHERE novel_id=? AND patch_json=?').bind(target.beforeRaw,target.id,resultRaw).run().catch(()=>{});
@@ -2134,6 +2141,9 @@ async function nuUndoEdit(env,email,eventId){
  if(snap.sourceId){
   await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND source_submission_id=?')
    .bind(snap.beforeSourceMarker,snap.sourceId,snap.afterSourceMarker).run();
+  for(const stage of snap.stageLinks||[])await env.COMMUNITY_DB.prepare(
+   'UPDATE nu_staged_series SET published_id=?,updated_at=CURRENT_TIMESTAMP WHERE slug=? AND published_id=?'
+  ).bind(stage.published_id,stage.slug,targetId).run();
  }
  await env.COMMUNITY_DB.prepare("UPDATE catalogue_edit_events SET undone_at=CURRENT_TIMESTAMP,undone_by=? WHERE id=? AND undone_at IS NULL").bind(email,id).run();
  let privateSynced=true;
