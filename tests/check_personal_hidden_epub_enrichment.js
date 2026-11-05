@@ -76,7 +76,10 @@ async function test(){
  assert(!helper.includes("if(tags.length&&!source.metadataReview)"),
   'Explicit EPUB subjects may enrich reviewed books without replacing manual fields');
  assert(worker.includes("env.DB.prepare(\"SELECT key,value FROM site_settings WHERE key LIKE 'private-epub-metadata:%'"));
- assert(worker.includes("if(!item.metadataReview&&imported.tags?.length)"));
+ assert(worker.includes("if(imported.tags?.length)item.tags=mergeEpubTags"));
+ assert(worker.includes("if(imported.genres?.length)item.genres=mergeEpubTags"));
+ assert(!worker.includes("if(!item.metadataReview&&imported.tags?.length)"),
+  'Private source labels must remain additive even on reviewed books');
  assert(!helper.includes('env.COMMUNITY_IMAGES.put'),'Private cover must not write to public image storage');
  assert(bulk.includes("'/api/admin/epub/ingest-metadata'"));
  assert(bulk.includes("'/api/admin/epub-artwork/private-auto'"));
