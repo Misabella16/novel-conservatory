@@ -130,7 +130,10 @@ async function init(){
     $('team-tab').classList.toggle('hidden',me.role!=='owner');$('readers-tab').classList.toggle('hidden',me.role!=='owner');$('bulk-tab').classList.add('hidden');$('bulk-tab').hidden=true;$('private-epub').classList.toggle('hidden',me.role!=='owner');
     if(!me.configured)feedback('connection','D1 database not connected. Configure DB before saving changes.',false);
     else feedback('connection','Connected. Your changes publish when you save.');
-    books=await (await fetch('/admin/catalogue.json',{cache:'no-store'})).json();renderSidebar();selectBook(books[0]?.id);
+    const requestedId=Number(new URLSearchParams(location.search).get('book'));
+    books=await (await fetch('/admin/catalogue.json',{cache:'no-store'})).json();renderSidebar();
+    // Respect deep links from a book's details instead of always picking #1.
+    selectBook(books.some(x=>x.id===requestedId)?requestedId:books[0]?.id);
     const r=await fetch('/api/content',{cache:'no-store'});if(r.ok){const j=await r.json();for(const item of(j.edits||[]))edits[item.id]=item.patch;
       // Keep newly created and reader-submitted novels searchable in the
       // same sidebar as the original catalogue. All records retain their ID.
@@ -138,7 +141,7 @@ async function init(){
         if(extra&&Number.isSafeInteger(Number(extra.id))&&!books.some(b=>Number(b.id)===Number(extra.id)))
           books.push(extra);
       }
-      home=j.homepage||{}; if(!j.configured)feedback('connection','Database not connected yet. Create D1 and bind DB before saving.',false);renderSidebar();if(selected)selectBook(selected);fillHome();}
+      home=j.homepage||{}; if(!j.configured)feedback('connection','Database not connected yet. Create D1 and bind DB before saving.',false);renderSidebar();if(Number.isSafeInteger(requestedId)&&requestedId>0&&books.some(x=>Number(x.id)===requestedId))selectBook(requestedId);else if(selected)selectBook(selected);fillHome();}
   }catch(e){feedback('connection',e.message||'Could not load the dashboard.',false)}
 }
 function renderSidebar(){const q=$('find').value.trim().toLowerCase();const items=books.filter(b=>{const view={...b,...(edits[b.id]||{})};const editions=legacyEditionRows(view);return [view.title,view.originalTitle,view.author,view.translator,...editions.map(x=>x.name)].join(' ').toLowerCase().includes(q)});$('count').textContent=items.length+' novels';$('titles').innerHTML=items.slice(0,200).map(b=>`<button type="button" class="bookrow ${b.id===selected?'active':''}" data-id="${b.id}"><span class="pill">#${b.id}</span><span>${esc((edits[b.id]?.title)||b.title)}<small>${esc((edits[b.id]?.author)||b.author||b.language)}</small></span></button>`).join('');$('titles').querySelectorAll('[data-id]').forEach(btn=>btn.addEventListener('click',()=>selectBook(Number(btn.dataset.id))));}

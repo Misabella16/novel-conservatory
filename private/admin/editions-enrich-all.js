@@ -8,7 +8,7 @@ const button=$('backfill'),pause=$('backfill-stop'),progress=$('backfill-progres
 if(!button||!pause||!progress)return;
 const checkpointKey='conservatory:stored-epub-enrichment:v2';
 let running=false,stopRequested=false;
-const blankStats=()=>({metadataImproved:0,tagUpdates:0,synopsisUpdates:0,coversStored:0,
+const blankStats=()=>({metadataImproved:0,tagUpdates:0,genreUpdates:0,synopsisUpdates:0,coversStored:0,
  noSubjectTags:0,noCoverFound:0,metadataMissing:0,tooLarge:0});
 const fileKey=row=>[row.id,row.editionId,row.bytes||0].join('|');
 function status(message,error=false){
@@ -29,7 +29,7 @@ function saveCheckpoint(state){
 function updateProgress(done,total,stats,failed,filename=''){
  progress.value=total?Math.min(100,Math.round(done/total*100)):100;
  $('backfill-counts').textContent=done+' / '+total+' EPUBs attempted · '+
-  stats.tagUpdates+' tag updates · '+stats.coversStored+' private covers · '+
+  stats.tagUpdates+' tag updates · '+stats.genreUpdates+' genre updates · '+stats.coversStored+' private covers · '+
   failed+' needing retry'+(filename?' · '+filename:'');
 }
 function renderErrors(errors){
@@ -126,6 +126,7 @@ button.addEventListener('click',async()=>{
      if(saved.changed?.length){
       stats.metadataImproved++;
       if(saved.changed.includes('tags'))stats.tagUpdates++;
+      if(saved.changed.includes('genres'))stats.genreUpdates++;
       if(saved.changed.includes('synopsis'))stats.synopsisUpdates++;
      }
      const cover=await tools.cover({file:epub,bookId:id});
@@ -153,7 +154,7 @@ button.addEventListener('click',async()=>{
   renderErrors(errors);
   status(
    'Processed '+attempted.size+' / '+total+' stored EPUB editions. '+
-   stats.tagUpdates+' novels received additional subject tags, '+
+   stats.tagUpdates+' novels received additional subject tags, '+stats.genreUpdates+' received genres, '+
    stats.synopsisUpdates+' received missing synopses, '+
    stats.coversStored+' private covers were saved. '+
    stats.noSubjectTags+' EPUBs have no embedded subject tags, '+

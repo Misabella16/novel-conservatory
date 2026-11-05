@@ -617,21 +617,65 @@ async function routes(request,env,ctx,email,role){
          const patch=entry.patch;
          if(!patch.synopsis&&imported.synopsis)patch.synopsis=imported.synopsis;
          if(!patch.author&&imported.author)patch.author=imported.author;
-         if(!patch.metadataReview&&imported.tags?.length){
+         // Add explicit source labels to reviewed books without removing
+         // manually curated tags, genres, summaries or warnings.
+         if(imported.tags?.length){
           patch.tags=mergeEpubTags(patch.tags,imported.tags);
+          patch.tagsCombinedFromEpub=true;
+         }
+         if(imported.genres?.length){
+          patch.genres=mergeEpubTags(patch.genres,imported.genres);
+          patch.genresCombinedFromEpub=true;
+         }
+         if(!patch.metadataReview&&(imported.tags?.length||imported.genres?.length||imported.synopsis)){
           patch.metadataOrigin='epub';patch.metadataSource=imported.metadataSource;
          }
-         if(!patch.metadataReview&&patch.synopsis&&imported.synopsis)patch.metadataOrigin='epub';
         }else{
          const item=extras.get(id);if(!item)continue;
          if(!item.synopsis&&imported.synopsis)item.synopsis=imported.synopsis;
          if(!item.author&&imported.author)item.author=imported.author;
-         if(!item.metadataReview&&imported.tags?.length){
-          item.tags=mergeEpubTags(item.tags,imported.tags);
+         if(imported.tags?.length)item.tags=mergeEpubTags(item.tags,imported.tags);
+         if(imported.genres?.length)item.genres=mergeEpubTags(item.genres,imported.genres);
+         if(!item.metadataReview&&(imported.tags?.length||imported.genres?.length||imported.synopsis)){
           item.metadataOrigin='epub';item.metadataSource=imported.metadataSource;
          }
-         if(!item.metadataReview&&item.synopsis&&imported.synopsis)item.metadataOrigin='epub';
         }
+       }
+      }
+      // Private NU imports are never copied into public catalogue metadata.
+      // Combine separately sourced tags and genres without replacing edits.
+      const nuRows=await env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-nu-page:%' LIMIT 5000").all();
+      const editMap=new Map(edits.map(x=>[Number(x.id),x]));
+      const extraMap=new Map(additional.map(x=>[Number(x.id),x]));
+      for(const row of nuRows.results||[]){
+       const match=/^private-nu-page:([1-9][0-9]*)$/.exec(row.key);
+       if(!match)continue;
+       const id=Number(match[1]);let imported;
+       try{imported=JSON.parse(row.value)}catch{continue}
+       const target=id<=962?(editMap.get(id)||{id,patch:{}}):extraMap.get(id);
+       if(!target)continue;
+       if(id<=962&&!editMap.has(id)){edits.push(target);editMap.set(id,target)}
+       const fields=id<=962?target.patch:target;
+       if(!fields.nuUrl&&imported.nuUrl)fields.nuUrl=imported.nuUrl;
+       for(const key of ['synopsis','author','originalTitle']){
+        if(!fields[key]&&imported[key])fields[key]=imported[key];
+       }
+       if(imported.tags?.length){
+        fields.tags=mergeEpubTags(fields.tags,imported.tags);
+        if(id<=962)fields.tagsCombinedFromNu=true;
+       }
+       if(imported.genres?.length){
+        fields.genres=mergeEpubTags(fields.genres,imported.genres);
+        if(id<=962)fields.genresCombinedFromNu=true;
+       }
+       if(!fields.cover&&imported.cover&&privateNuImageUrl(imported.cover)){
+        fields.cover=imported.cover;fields.privateCover=true;
+        fields.coverCredit=imported.coverCredit||'Novel Updates source cover, private reference';
+       }
+       if(imported.nuCoverUrl)fields.nuCoverUrl=imported.nuCoverUrl;
+       if(!fields.metadataReview&&imported.metadataOrigin==='nu'){
+        fields.metadataOrigin='nu';
+        fields.metadataSource=imported.metadataSource||'Novel Updates (private)';
        }
       }
       return respond({edits,additional,homepage:setting?JSON.parse(setting.value):{},configured:true});
@@ -1818,7 +1862,7 @@ const extraTxt=(x,n=200)=>String(x??'').normalize('NFKC').trim().slice(0,n);
 const extraId=x=>Number.isSafeInteger(Number(x))&&Number(x)>=100000?Number(x):null;
 const extraOrigin=r=>r.headers.get('Origin')===new URL(r.url).origin;
 const extraUrl=x=>{try{const u=new URL(extraTxt(x,700));return u.protocol==='https:'&&!u.username&&!u.password?u.href.slice(0,700):'';}catch{return '';}};
-const extraTags=x=>[...new Set((Array.isArray(x)?x:String(x||'').split(/[,;\n]/)).map(t=>extraTxt(t,65)).filter(Boolean))].slice(0,35);
+const extraTags=x=>[...new Set((Array.isArray(x)?x:String(x||'').split(/[,;\n]/)).map(t=>extraTxt(t,65)).filter(Boolean))].slice(0,100);
 function extraPayload(input){
  const x=input&&typeof input==='object'?input:{};
  return {
@@ -2174,7 +2218,7 @@ function nuMergeData(before,source,prefer=[]){
   if(nuBlank(incoming))continue;
   if(NU_LIST_FIELDS.has(key)){
    const a=extraTags(old),b=extraTags(incoming);
-   const combined=[...a,...b.filter(y=>!a.some(x=>nuIdentity(x)===nuIdentity(y)))].slice(0,35);
+   const combined=[...a,...b.filter(y=>!a.some(x=>nuIdentity(x)===nuIdentity(y)))].slice(0,100);
    if(JSON.stringify(a)!==JSON.stringify(combined)){after[key]=combined;changed.push(key)}
    continue;
   }
@@ -2840,11 +2884,156 @@ function nuStageItem(row){
    coverUrl:row.cover_url,state:row.state,publishedId:row.published_id,
    customLocked:!!row.custom_locked,lastSeenAt:row.last_seen_at,metadata:p};
 }
+// A private-page NU link import must never write into public catalogue D1.
+// Use only matching cached/captured NU data. Preserve manual fields and
+// journal changes so an owner/editor can Undo without touching EPUB bytes.
+const privateNuPageKey=id=>'private-nu-page:'+id;
+function privateNuImageUrl(raw){
+ try{
+  const u=new URL(String(raw||'').trim());
+  const host=u.hostname.toLowerCase();
+  if(u.protocol!=='https:'||u.username||u.password||u.port||
+     !host.includes('.')||host==='localhost'||host.endsWith('.local')||
+     host.endsWith('.internal')||/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)||
+     host.includes(':'))return '';
+  return u.href.slice(0,850);
+ }catch{return ''}
+}
+async function privateNuBookImport(request,env,email,role){
+ if(!isEditor(role)||!sameOrigin(request)||request.method!=='POST')
+  return respond({error:'An authorized editor must apply source metadata'},403);
+ if(!env.COMMUNITY_DB||!env.DB)return respond({error:'Catalogue storage is unavailable'},503);
+ try{
+  const body=await getJson(request),id=editionBook(body.id),nuUrl=nuCanon(body.nuUrl);
+  if(!id||!nuUrl)return respond({error:'Choose an existing novel and its complete Novel Updates series link'},400);
+  const target=await nuGetExisting(env,new URL(request.url),id);
+  const current={...target.data};
+  if(id<=962){
+   const edit=await env.DB.prepare('SELECT patch FROM novel_edits WHERE id=?').bind(id).first();
+   if(edit?.patch)try{Object.assign(current,JSON.parse(edit.patch))}catch{}
+  }
+  const canonicalExisting=nuCanon(current.nuUrl);
+  if(canonicalExisting&&canonicalExisting!==nuUrl)
+   return respond({error:'This novel already has a different Novel Updates series link. Compare identities before changing it.'},409);
+  const candidates=await nuFindCandidates(env,new URL(request.url),{nuUrl,title:''},null);
+  const conflict=candidates.find(x=>x.id!==id&&x.matchedBy==='Novel Updates URL');
+  if(conflict)return respond({error:'That Novel Updates series is already linked to novel #'+conflict.id+'. Resolve the duplicate instead.'},409);
+  const slug=nuUrl.split('/')[4];
+  let raw=null,sourceName='',imageUrl='';
+  const capture=body.capture;
+  if(capture!==undefined){
+   if(capture?.source!=='novelupdates-browser-v1'||!capture.novel||
+      typeof capture.novel!=='object'||Array.isArray(capture.novel)||
+      nuCanon(capture.novel.nuUrl)!==nuUrl)
+    return respond({error:'Captured data must come from the same exact Novel Updates series page.'},400);
+   raw=capture.novel;sourceName='Novel Updates (browser capture)';
+   imageUrl=privateNuImageUrl(raw.coverUrl);
+  }else{
+   const row=await env.COMMUNITY_DB.prepare('SELECT title,author,nu_url,payload_json,cover_url FROM nu_staged_series WHERE slug=? LIMIT 1').bind(slug).first();
+   if(row&&nuCanon(row.nu_url)===nuUrl){
+    let fields={};try{fields=JSON.parse(row.payload_json||'{}')}catch{}
+    raw={...fields,title:row.title,author:row.author,nuUrl};
+    imageUrl=privateNuImageUrl(row.cover_url||fields.coverUrl);
+    sourceName='Novel Updates (captured staging)';
+   }
+  }
+  if(raw){
+   const titleMatch=!!nuIdentity(raw.title)&&(nuIdentity(raw.title)===nuIdentity(current.title)||
+      nuIdentity(raw.title)===nuIdentity(current.originalTitle));
+   const authorMatch=!!nuIdentity(raw.author)&&!!nuIdentity(current.author)&&
+      nuIdentity(raw.author)===nuIdentity(current.author);
+   if(!canonicalExisting&&!(titleMatch&&authorMatch))
+    return respond({error:'The source title and author do not both match this novel. Link only after resolving its identity.',
+     needsIdentityReview:true},409);
+  }
+  const key=privateNuPageKey(id);
+  const row=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(key).first();
+  let old={};try{old=JSON.parse(row?.value||'{}')}catch{return respond({error:'Existing private metadata is unreadable; nothing changed'},409)}
+  const next={...old,nuUrl},changed=[];
+  if(old.nuUrl!==nuUrl)changed.push('nuUrl');
+  if(raw){
+   const synopsis=textField(raw.synopsis,6000),author=textField(raw.author,140),
+    originalTitle=textField(raw.originalTitle,210);
+   if(synopsis&&!current.synopsis&&!old.synopsis){next.synopsis=synopsis;changed.push('synopsis')}
+   if(author&&!current.author&&!old.author){next.author=author;changed.push('author')}
+   if(originalTitle&&!current.originalTitle&&!old.originalTitle){next.originalTitle=originalTitle;changed.push('originalTitle')}
+   for(const field of ['tags','genres']){
+    const oldList=mergeEpubTags(current[field],old[field]);
+    const updated=mergeEpubTags(oldList,epubSubjects(raw[field]));
+    if(updated.length>oldList.length){
+     next[field]=updated;changed.push(field);
+    }
+   }
+   if(imageUrl){
+    next.nuCoverUrl=imageUrl;
+    if(!current.cover&&!old.cover){
+     const privateCover=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?')
+      .bind('private-epub-cover:'+id).first();
+     if(!privateCover){
+      next.cover=imageUrl;next.privateCover=true;
+      next.coverCredit='Novel Updates source image, private reference; rights not verified';
+      changed.push('cover');
+     }
+    }
+   }
+   next.metadataSource=sourceName+' · private unreviewed import';
+   // Existing curator-reviewed fields remain curator-reviewed; imported
+   // fields are separately sourced, never represented as editor-approved.
+   next.metadataOrigin='nu';
+  }
+  const changedSource=raw?sourceName:'Novel Updates link only';
+  if(JSON.stringify(old)===JSON.stringify(next))return respond({
+   ok:true,id,changed:[],nuUrl,source:changedSource,sourceFound:!!raw,
+   needsCapture:!raw,privateOnly:true,published:false,message:'No new private details found.'});
+  const after=JSON.stringify(next),eventId=crypto.randomUUID();
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS epub_metadata_import_events (id TEXT PRIMARY KEY,novel_id INTEGER NOT NULL,setting_key TEXT NOT NULL,before_value TEXT,after_value TEXT NOT NULL,actor_email TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,undone_at TEXT)').run();
+  const write=row?await env.DB.prepare('UPDATE site_settings SET value=?,updated_at=CURRENT_TIMESTAMP WHERE key=? AND value=?')
+    .bind(after,key,row.value).run():
+    await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING')
+    .bind(key,after).run();
+  if((write.meta?.changes||0)!==1)return respond({error:'Metadata changed in another tab. Refresh and try again.'},409);
+  try{
+   await env.DB.prepare('INSERT INTO epub_metadata_import_events(id,novel_id,setting_key,before_value,after_value,actor_email) VALUES(?,?,?,?,?,?)')
+    .bind(eventId,id,key,row?.value??null,after,email).run();
+  }catch(e){
+   if(row)await env.DB.prepare('UPDATE site_settings SET value=? WHERE key=? AND value=?').bind(row.value,key,after).run().catch(()=>{});
+   else await env.DB.prepare('DELETE FROM site_settings WHERE key=? AND value=?').bind(key,after).run().catch(()=>{});
+   return respond({error:'Could not save an Undo record. The metadata import was rolled back.'},503);
+  }
+  return respond({ok:true,id,changed,nuUrl,eventId,source:changedSource,
+   sourceFound:!!raw,needsCapture:!raw,coverUrl:imageUrl||'',privateOnly:true,published:false});
+ }catch(e){return respond({error:textField(e?.message||'Could not import Novel Updates metadata',200)},400)}
+}
+async function privateNuBookUndo(request,env,email,role){
+ if(!isEditor(role)||!sameOrigin(request)||request.method!=='POST')
+  return respond({error:'An authorized editor must undo this import'},403);
+ if(!env.DB)return respond({error:'Private database unavailable'},503);
+ try{
+  const body=await getJson(request),eventId=String(body.eventId||'');
+  if(!/^[a-f0-9-]{36}$/.test(eventId))return respond({error:'Invalid import event'},400);
+  const event=await env.DB.prepare('SELECT * FROM epub_metadata_import_events WHERE id=? AND undone_at IS NULL').bind(eventId).first();
+  if(!event||!String(event.setting_key).startsWith('private-nu-page:'))
+   return respond({error:'This NU import was not found or already undone'},404);
+  if(role!=='owner'&&event.actor_email!==email)
+   return respond({error:'Only the original contributor or owner can undo this import'},403);
+  const now=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(event.setting_key).first();
+  if(now?.value!==event.after_value)return respond({error:'The book changed since that import. Undo newer changes first.'},409);
+  const result=event.before_value===null?
+   await env.DB.prepare('DELETE FROM site_settings WHERE key=? AND value=?').bind(event.setting_key,event.after_value).run():
+   await env.DB.prepare('UPDATE site_settings SET value=?,updated_at=CURRENT_TIMESTAMP WHERE key=? AND value=?')
+    .bind(event.before_value,event.setting_key,event.after_value).run();
+  if((result.meta?.changes||0)!==1)return respond({error:'A concurrent edit prevented Undo'},409);
+  await env.DB.prepare('UPDATE epub_metadata_import_events SET undone_at=CURRENT_TIMESTAMP WHERE id=? AND undone_at IS NULL').bind(eventId).run();
+  return respond({ok:true,id:event.novel_id,undone:true,privateOnly:true});
+ }catch(e){return respond({error:textField(e?.message||'Undo failed',190)},400)}
+}
 async function nuAdminRoutes(request,env,email,role){
  if(!isEditor(role))return respond({error:'Editor permission required'},403);
  if(!env.COMMUNITY_DB)return respond({error:'Shared catalogue database is unavailable'},503);
  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
  try{
+  if(path==='/api/admin/nu/book-import')return privateNuBookImport(request,env,email,role);
+  if(path==='/api/admin/nu/book-undo')return privateNuBookUndo(request,env,email,role);
 
 
   // Inline Novel Updates link editor for the selected book. Reuse the
@@ -3501,12 +3690,12 @@ async function privateEpubLinked(env,id,uuid){
  const row=await env.DB.prepare('SELECT id FROM '+editionTable(bookId)+' WHERE novel_id=? AND id=?').bind(bookId,edition).first();
  return !!row;
 }
-const epubSubjects=value=>Array.isArray(value)?[...new Set(value.filter(x=>typeof x==='string').map(x=>textField(x,70)).filter(Boolean))].slice(0,35):[];
+const epubSubjects=value=>Array.isArray(value)?[...new Set(value.filter(x=>typeof x==='string').map(x=>textField(x,70)).filter(Boolean))].slice(0,100):[];
 const mergeEpubTags=(a,b)=>{const result=epubSubjects(a),known=new Set(result.map(x=>x.normalize('NFKD').toLowerCase()));
  for(const tag of epubSubjects(b)){
   const key=tag.normalize('NFKD').toLowerCase();
   if(!known.has(key)){result.push(tag);known.add(key)}
-  if(result.length>=35)break;
+  if(result.length>=100)break;
  }
  return result;
 };
@@ -3574,13 +3763,13 @@ async function privateEpubIngestRoute(request,env,email,role){
   const full={...source,...saved},delta={...saved},changed=[];
   if(synopsis&&!full.synopsis){delta.synopsis=synopsis;changed.push('synopsis')}
   if(author&&!full.author){delta.author=author;changed.push('author')}
-  if(tags.length&&!source.metadataReview){
+  if(tags.length){
    const combined=mergeEpubTags(full.tags,tags);
    if(combined.length>mergeEpubTags([],full.tags).length){
     delta.tags=combined;changed.push('tags');
    }
   }
-  if(genres.length&&!source.metadataReview){
+  if(genres.length){
    const combined=mergeEpubTags(full.genres,genres);
    if(combined.length>mergeEpubTags([],full.genres).length){
     delta.genres=combined;changed.push('genres');
