@@ -69,9 +69,8 @@ async function listBooks({append=false}={}){
   state.total=result.total ?? result.books?.length ?? 0;
   state.books=append?[...state.books,...(result.books||[])]:result.books||[];
   renderGrid();
-  if(!append && state.selectedId && !state.books.some(b=>b.id===state.selectedId)){
-    state.selectedId=null;state.detail=null;renderDetail();
-  }
+  // Keep an open book's detail page visible even when a search or pagination
+  // moves its card out of the current result window.
 }
 async function selectBook(id){
   if(!safeId(id)) return;
