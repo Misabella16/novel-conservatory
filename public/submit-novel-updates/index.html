@@ -28,25 +28,35 @@ button:disabled{opacity:.52;cursor:wait}
 .modal-foot input{width:auto;margin:0;accent-color:#426b51}
 footer{font-size:12px;color:#697869;margin-top:21px;text-align:center}
 @media(max-width:550px){main{margin:17px auto 40px}.card{padding:17px}.modal-inner{padding:21px}.modal-foot button{flex:1}}
-</style>
+.refresh-fields{padding:14px;border:1px solid #c6d5c5;border-radius:9px;margin:17px 0;background:#f7faf3}.refresh-fields legend{font-weight:750;color:#2d533d;padding:0 6px}.refresh-fields label{display:flex;align-items:center;gap:9px;margin:8px 0;font-size:13px;cursor:pointer}.refresh-fields input[type=checkbox]{width:17px;height:17px;flex:none;accent-color:#315c43}.refresh-fields .note{margin:8px 0;font-size:12px;line-height:1.5}.refresh-fields a{color:#315c43}.card code{font-size:12px;overflow-wrap:anywhere}</style>
 </head><body>
-<header><a href="/">← Back to Discover</a><strong>Help grow the Conservatory</strong><p>Found a web novel on Novel Updates that belongs on our shelves? Send us the link. No synopsis or tags to type. If you opened this from a novel, we will keep that novel selected.</p></header>
+<header><a href="/">← Back to Discover</a><strong>Help grow the Conservatory</strong><p>Already see a Novel Updates link on a novel but its cover, synopsis or tags are missing? <strong>Copy the same series link and send it to request a source refresh.</strong> You can also suggest a missing or corrected link.</p></header>
 <main>
 <section class="card">
-<div class="head"><h2>Submit a Novel Updates link</h2><button id="explain" type="button" class="text-button" aria-haspopup="dialog">ⓘ How does this work?</button></div>
-<p class="note">The editor retrieves existing source information such as title, author, synopsis, genres and tags when Novel Updates makes it available. Nothing is AI-generated or published without review.</p>
+<div class="head"><h2 id="submission-heading">Submit or refresh Novel Updates information</h2><button id="explain" type="button" class="text-button" aria-haspopup="dialog">ⓘ How does this work?</button></div>
+<p class="note"><strong>How to help:</strong> Open the novel’s <a href="https://www.novelupdates.com/" target="_blank" rel="noopener noreferrer">Novel Updates</a> listing, copy the exact <code>novelupdates.com/series/…</code> URL, and paste it here. An editor will try to pull its original synopsis, genres, tags and author. If a cover is available, it can be checked as a reference for a separately approved image contribution. No metadata is guessed or published automatically.</p>
 <div id="linked-novel" class="note" hidden style="background:#eef6e9;border:1px solid #cdddca;padding:13px 15px;border-radius:9px;margin:10px 0 18px">
 <strong>Updating an existing novel</strong>
 <p id="linked-novel-title" style="margin:5px 0 0;color:#315b43"></p>
-<p style="margin:5px 0 0">Your proposed link will be reviewed and attached to this novel, not added as another book.</p>
+<p style="margin:5px 0 0">You can submit the <strong>existing link again</strong> to request missing or updated metadata. The exact novel is already selected; this does not create a duplicate entry.</p>
 <a href="/submit-novel-updates/" style="font-size:12px">Suggest a completely new Novel Updates series instead ↗</a>
 </div>
 <form id="nu-form">
-<label for="nu-url">Novel Updates series URL *</label>
+<label for="nu-url">Novel Updates series URL (existing link may be filled in) *</label>
 <input required type="url" id="nu-url" name="nu_url" inputmode="url" autocomplete="url" spellcheck="false" placeholder="https://www.novelupdates.com/series/example-title/" aria-describedby="url-hint">
-<p class="note" id="url-hint">Paste an individual series page, not the Novel Updates homepage, a search result or a chapter link.</p>
+<p class="note" id="url-hint">Paste an individual series page, not the homepage, a search result or a chapter link. If the link above was prefilled from this novel, leave it as-is to request an information refresh, or replace it if the URL is incorrect.</p>
 <label for="visitor">Your name (optional)</label><input id="visitor" maxlength="70" placeholder="Reader">
 <label for="reply">Email for clarification (optional)</label><input id="reply" type="email" maxlength="160" autocomplete="email" placeholder="Only the editor sees this">
+<fieldset class="refresh-fields">
+<legend>What would you like refreshed? (optional)</legend>
+<p class="note">Select what looks missing or outdated. The editor will compare real source information with the current entry before making changes.</p>
+<label><input type="checkbox" name="nu-target" value="Synopsis"> Synopsis / description</label>
+<label><input type="checkbox" name="nu-target" value="Genres and story tags"> Genres and story tags</label>
+<label><input type="checkbox" name="nu-target" value="Cover artwork reference"> Cover artwork reference</label>
+<label><input type="checkbox" name="nu-target" value="Author and original title"> Author / original title</label>
+<label><input type="checkbox" name="nu-target" value="Novel Updates URL correction"> Incorrect Novel Updates URL</label>
+<p class="note"><strong>About covers:</strong> The NU cover can help editors identify the edition, but it is not copied to this site without a separate image-rights and credit review. You can also use “Submit cover image” on the novel’s profile when you have permission.</p>
+</fieldset>
 <label for="notes">Note for the editor (optional)</label><textarea id="notes" maxlength="1200" placeholder="Translation group, alternate title, or why this should be added"></textarea>
 <label class="honeypot" aria-hidden="true">Website<input id="website" tabindex="-1" autocomplete="off"></label>
 <div id="challenge" aria-label="Spam protection"></div>
@@ -54,7 +64,7 @@ footer{font-size:12px;color:#697869;margin-top:21px;text-align:center}
 <button id="send" type="submit" disabled>Submit link for review</button>
 <p id="status" role="status" aria-live="polite">Checking submission service…</p>
 </form></section>
-<footer>Already in the catalogue? You can still send a link for review. Duplicate pending links are detected automatically.</footer>
+<footer>Even if the novel already has a working Novel Updates link, you can submit it again to request missing or updated fields. Requests are reviewed; identical pending submissions are detected automatically.</footer>
 </main>
 <dialog id="info-dialog" aria-labelledby="dialog-title">
 <div class="modal-inner">
@@ -62,10 +72,10 @@ footer{font-size:12px;color:#697869;margin-top:21px;text-align:center}
 <h2 id="dialog-title">One link, fewer blank fields.</h2>
 <p>Paste the Novel Updates page for the novel. The link joins the Conservatory's <strong>private editorial review queue</strong>.</p>
 <ol>
-<li>You submit the series URL. No synopsis or tags are required.</li>
-<li>The editor attempts to retrieve the original Novel Updates title, description, genres and tags.</li>
+<li>Copy the exact series URL, even if your novel already has it linked. Select the missing or outdated fields you want the editor to check.</li>
+<li>The editor attempts to retrieve the original Novel Updates synopsis, genres, tags, author and available cover reference.</li>
 <li>If automated retrieval is blocked, the editor can use the existing authorized browser-assisted capture workflow.</li>
-<li>Only source metadata that was actually retrieved and reviewed can be published to the public catalogue.</li>
+<li>After checking the existing novel, an editor can approve real source metadata. Cover artwork requires separate permission and attribution review.</li>
 </ol>
 <p><strong>Nothing is made up, and submissions aren't automatically published.</strong> You do not need an account to suggest a link.</p>
 <div class="modal-foot">
