@@ -1,10 +1,10 @@
 # The Book Conservatory
 
-A **separate sister site** to Novel Conservatory, not another view of the existing private/public catalogue. This isolated site root is \`book-conservatory/\`; do not deploy it into the existing Novel Conservatory Pages projects.
+A **separate sister site** to Novel Conservatory, not another view of the existing private/public catalogue. This isolated site root is `book-conservatory/`; do not deploy it into the existing Novel Conservatory Pages projects.
 
 ## Phase 1 status
 
-- ✅ Standalone responsive **development preview** (\`index.html\`) using the familiar forest/cream/gold visual style.
+- ✅ Standalone responsive **development preview** (`index.html`) using the familiar forest/cream/gold visual style.
 - ✅ Book profiles with synopsis and both genres and personal tags.
 - ✅ Collapsible **My Editions & Copies**, individual edition details, and nested physical locations in preview.
 - ✅ Independent D1 schema for works, title aliases, tags, Goodreads shelves, editions, owned copies, edition-specific covers, EPUB hashes, import batches and change history.
@@ -33,28 +33,28 @@ A **separate sister site** to Novel Conservatory, not another view of the existi
 - If user chooses **Replace existing data**, show proposed field changes first (when the operation is destructive or ambiguous), record before/after snapshots, and allow Undo. Reviews, notes, signed status, edition-specific cover, existing EPUBs and stored locations remain intact unless individually changed.
 - For a clear duplicate from multiple import sources, consolidate canonical references, do not delete original EPUB data, and record a revertible import batch.
 - Shelf photo crops and original images remain in private storage. No guest-facing links or sharing without a separate sanitized preview, explicit consent, and verification that private home details are not exposed.
-- No \`language\` field in the standard schema, UI or filters.
+- No `language` field in the standard schema, UI or filters.
 
 ## Running Phase 1 tests
 
 From the repository root:
 
-\`\`\`sh
+```sh
 node --check book-conservatory/shelf-photo-matcher.mjs
 node book-conservatory/tests/test-shelf-match.mjs
 python3 -m unittest discover -s book-conservatory/tests -p 'test_*.py' -v
-\`\`\`
+```
 
 These checks cover structural guarantees and match safety. They **do not validate the as-yet-unimplemented image recognition provider**.
 
 ## Later Cloudflare setup
 
-Create a **new** D1 database and a **new private** R2 bucket, for example \`book-conservatory-data\` and \`book-conservatory-private\`, plus a separate Cloudflare Pages project \`book-conservatory\`. Names are examples, not resources already created.
+Create a **new** D1 database and a **new private** R2 bucket, for example `book-conservatory-data` and `book-conservatory-private`, plus a separate Cloudflare Pages project `book-conservatory`. Names are examples, not resources already created.
 
 Only after backups, owner auth, access-control checks, and the Worker are implemented:
 
-1. Run \`database/001_initial_schema.sql\` on the *new* D1.
-2. Run \`database/002_shelf_photo_scanning.sql\` on the *new* D1.
+1. Run `database/001_initial_schema.sql` on the *new* D1.
+2. Run `database/002_shelf_photo_scanning.sql` on the *new* D1.
 3. Bind the new D1/R2 only to the Book Conservatory Worker, not to the existing Novel Conservatory public site.
 4. Keep original EPUBs, shelf photos, collection location, private notes and credentials out of GitHub.
 5. Test in a private preview environment before any manually initiated production publish.
