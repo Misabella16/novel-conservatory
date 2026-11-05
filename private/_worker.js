@@ -1859,8 +1859,13 @@ async function extraNovelExists(env,id){
  const r=await env.COMMUNITY_DB.prepare('SELECT id FROM additional_catalogue_novels WHERE id=?').bind(id).first();return !!r;
 }
 async function extraInsert(env,payload,coverKey,visibility,who,submissionId=''){
- // Every additional entry is an owner-created or editor-approved catalogue record.
- payload={...payload,metadataReview:true};
+ // Automatically catalogued private EPUBs have source-derived metadata, not
+ // editor-reviewed metadata. Preserve that provenance so tags become
+ // discoverable without falsely claiming a person verified them.
+ const fromPrivateEpub=visibility==='private'&&
+  /^EPUB (?:embedded metadata|filename)$/i.test(String(payload.metadataSource||''));
+ payload={...payload,metadataReview:fromPrivateEpub?false:true,
+  ...(fromPrivateEpub?{metadataOrigin:'epub'}:{})};
  const key=payload.title.toLocaleLowerCase().replace(/\s+/g,' ').trim();
  if(!payload.title||payload.title.length<2)throw Error('Enter a novel title');
  const duplicate=await env.COMMUNITY_DB.prepare("SELECT id,title FROM additional_catalogue_novels WHERE normalized_title=? AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' LIMIT 1").bind(key).first();
