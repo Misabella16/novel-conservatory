@@ -1780,9 +1780,12 @@ async function extraCreateOrReuse(env,url,email,p,visibility){
   error:'Several existing entries match this novel. Use Merge duplicates so no EPUBs or edits are lost.'};
  if(safe.length===1){
   const matched=safe[0];
-  if(matched.kind==='original'||matched.visibility!==visibility){
-   return {ok:false,needsChoice:true,existingId:matched.id,candidates:safe,
-    error:'An existing novel already matches. Open that entry to update it; its current publication status will not be changed automatically.'};
+  // Reuse the canonical ID even if the user came through the wrong add form.
+  // A private submission cannot silently change an already-published record,
+  // and a publish request cannot silently promote an existing private entry.
+  if(matched.visibility!==visibility){
+   return {ok:true,id:matched.id,reused:true,changed:[],notUpdated:true,
+    note:'Existing novel reused. Its '+matched.visibility+' visibility and current metadata were preserved. Edit that existing entry to make changes.'};
   }
   const result=await nuSaveEdit(env,url,email,matched.id,p);
   return {ok:true,id:matched.id,reused:true,eventId:result.eventId,changed:result.changed||[],
@@ -1905,6 +1908,12 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
 
 // Reversible editor reconciliation. Only attached to the authenticated private
 // API. Never delete an EPUB-bearing book or publish an extracted EPUB.
+async function nuEnsureJournal(env){
+ if(!env.COMMUNITY_DB)throw Error('Shared community database unavailable');
+ await env.COMMUNITY_DB.prepare("CREATE TABLE IF NOT EXISTS catalogue_edit_events (id TEXT PRIMARY KEY,operation TEXT NOT NULL CHECK(operation IN ('merge','metadata_sync','create')),target_id INTEGER NOT NULL,duplicate_id INTEGER,before_json TEXT NOT NULL,after_json TEXT NOT NULL,source_url TEXT NOT NULL DEFAULT '',actor_email TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,undone_at TEXT,undone_by TEXT NOT NULL DEFAULT '',CHECK(target_id >= 1))").run();
+ await env.COMMUNITY_DB.prepare('CREATE INDEX IF NOT EXISTS idx_catalogue_edit_events_recent ON catalogue_edit_events(created_at DESC)').run();
+ await env.COMMUNITY_DB.prepare('CREATE INDEX IF NOT EXISTS idx_catalogue_edit_events_target ON catalogue_edit_events(target_id,created_at DESC)').run();
+}
 const NU_EDITABLE=['title','author','originalTitle','synopsis','genres','tags','contentWarnings','nuUrl','translator','translatorUrl','originalLanguage','translation'];
 const NU_LIST_FIELDS=new Set(['genres','tags','contentWarnings']);
 const nuIdentity=x=>String(x||'').normalize('NFKD').toLocaleLowerCase()
@@ -1994,6 +2003,7 @@ async function nuHasPrivateEpub(env,sourceId){
 }
 async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  if(!env.COMMUNITY_DB||!env.DB)throw Error('Private and shared databases are required');
+ await nuEnsureJournal(env);
  const target=await nuGetExisting(env,url,targetId),sourceId=extraId(opts.sourceId);
  if(sourceId===target.id)throw Error('A novel cannot be merged into itself');
  let sourceRow=null;
@@ -2125,6 +2135,7 @@ async function nuSyncSource(env,url,email,source,options={}){
  return {...created,matchedExisting:false,candidates:[]};
 }
 async function nuCreateEdited(env,email,source){
+ await nuEnsureJournal(env);
  const data=extraPayload({...source,metadataReview:true,metadataSource:source.metadataSource||'Novel Updates source'});
  if(data.title.length<2)throw Error('A title is required');
  if(!data.nuUrl)throw Error('Use a canonical Novel Updates series URL');
@@ -2144,6 +2155,7 @@ async function nuCreateEdited(env,email,source){
  return {ok:true,id,eventId,created:true,changed:NU_EDITABLE.filter(k=>!nuBlank(data[k])),privateSynced:true};
 }
 async function nuUndoEdit(env,email,eventId){
+ await nuEnsureJournal(env);
  const id=String(eventId||'');
  if(!/^[a-f0-9-]{36}$/.test(id))throw Error('Choose a valid change to undo');
  const event=await env.COMMUNITY_DB.prepare('SELECT * FROM catalogue_edit_events WHERE id=?').bind(id).first();
@@ -2230,6 +2242,7 @@ async function nuAdminRoutes(request,env,email,role){
    return respond({items:matches});
   }
   if(path==='/api/admin/nu/merge-history'&&method==='GET'){
+   await nuEnsureJournal(env);
    const rows=await env.COMMUNITY_DB.prepare(
     'SELECT id,operation,target_id,duplicate_id,source_url,actor_email,created_at,undone_at FROM catalogue_edit_events ORDER BY created_at DESC LIMIT 40'
    ).all();
