@@ -11,6 +11,10 @@ assert(page.includes('id="import-report"'));
 assert(worker.includes("new URL('/novel/index.html',request.url)"));
 assert(worker.includes("path==='/api/admin/epub/undo-metadata'"));
 assert(worker.includes('stagedSourceUsed:fromStaged'));
+assert(worker.includes("metadataReview:fromPrivateEpub?false:true"),
+ 'Auto-catalogued EPUB entries must not be labeled editor-reviewed');
+assert(worker.includes("metadataOrigin:'epub'"),
+ 'Private EPUB entries must be discoverable from real embedded metadata');
 const window={};vm.runInNewContext(matchCode,{window,URL});
 const match=window.ConservatoryEPUBMatch;
 const books=[{id:1,title:'Little Book',author:'Author',nuUrl:'https://www.novelupdates.com/series/little-book/'}];
