@@ -38,7 +38,10 @@ const stage={title:'Example Book',author:'Author',nu_url:url,
  genres:['Fantasy','Romance']}),
  cover_url:'https://www.novelupdates.com/images/example-cover.jpg'};
 const DB={prepare(sql){
- return {bind(...args){
+ return {async run(){
+  if(sql.startsWith('CREATE TABLE'))return {meta:{changes:0}};
+  throw Error('Unexpected unbound private write '+sql);
+ },bind(...args){
   return {async first(){
     if(sql==='SELECT value FROM site_settings WHERE key=?')
      return cache.has(args[0])?{value:cache.get(args[0])}:null;
