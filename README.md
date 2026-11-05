@@ -28,7 +28,7 @@ To revoke a visitor's access, remove their email from the applicable Cloudflare 
 8. Once the public project is confirmed to be a **Cloudflare Pages project with a backend**, set the Actions variable `PUBLIC_PAGES_PROJECT` to its exact existing Pages project name. Until then, only the private project will deploy.
 9. Ensure the private Pages project has bindings `DB`, `COMMUNITY_DB`, `IMAGES`, and `COMMUNITY_IMAGES`; the public project only needs `COMMUNITY_DB`, `COMMUNITY_IMAGES` (and applicable Turnstile configuration). **Never connect the private DB or EPUB R2 bucket to the public site.**
 
-After these steps, changes pushed to `main` automatically deploy through GitHub Actions. This automation is **not live yet** until the source and secrets are added. GitHub does not create Cloudflare bindings or perform database migrations.
+**Production deployments are manually gated.** Pushing or merging code to `main` runs validation but does **not** publish either website. To deploy, open **GitHub Actions → Conservatory — Safe Preview / Manual Production Deploy**, choose exactly one project, and enter its matching `DEPLOY PRIVATE` or `DEPLOY PUBLIC` confirmation. GitHub does not create Cloudflare bindings, perform database migrations, or back up R2 buckets.
 
 ## New novel workflows
 
@@ -43,3 +43,21 @@ After these steps, changes pushed to `main` automatically deploy through GitHub 
 Edit public headlines and contact links at `/admin/site-settings.html`, and catalogue corrections at `/admin/catalogue-editor.html`, with no deployment needed for each content edit.
 
 **Never commit EPUB books, private member information, authentication credentials, or Cloudflare tokens.**
+
+
+## Canonical identity, safe duplicate merging and Library Health
+
+The canonical identity index and public projections share **COMMUNITY_DB**. Public only receives explicitly published metadata; its Worker must never receive access to the private DB or EPUB R2 bucket.
+
+Before enabling these features in production:
+
+1. Export/backup the **community D1**, **private D1** and **private EPUB R2 bucket** independently.
+2. Apply `database/CANONICAL_CATALOGUE_MIGRATION.sql` to the shared community D1. The Workers also create missing identity tables on first use, but explicit migration and backup are safer.
+3. Confirm that the private app's COMMUNITY_DB and DB bindings point to the intended databases. Deploy the private site **manually** after all tests pass, then test the owner-only `/admin/library-health.html`.
+4. Use **Index existing novel IDs** to register known canonical keys without moving or changing any records. Check the conflict report and perform a small reversible merge first.
+5. Before deploying the public site, verify that `/api/additional/books` only exposes published catalogue entries and public metadata projections. A private novel must never expose its private EPUB metadata, private cover or private synopsis via a public endpoint.
+6. Retain a D1/R2 backup outside the website. Undo reverses catalogue records and edition references, but **does not substitute for disaster recovery**.
+
+The merge code transfers existing EPUB **database references** in a transactional private D1 batch. It does **not** delete, copy, or publish EPUB file bytes. It checks for concurrent changes and blocks active or legacy uploads that cannot be transferred safely. A private cover remains private; an authorized published cover may remain reachable through its historical source reference. Cross-database metadata reconciliation uses an audit record and compensating rollback, since separate D1 databases cannot participate in one global transaction.
+
+The health report is read-only except for the separate owner-initiated **Index existing novel IDs** action. Deploying code alone does not clean up existing duplicates.
