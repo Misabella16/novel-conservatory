@@ -327,6 +327,11 @@ async function routes(request,env,ctx,email,role){
   const method=request.method.toUpperCase();
   // Both the owner and explicitly approved friends may read EPUBs after the
   // owner enables sharing. All uploads, edits and bulk inventory remain owner-only.
+  if(path==='/api/novel/resolve'&&method==='GET'){
+   if(!env.COMMUNITY_DB)return respond({error:'Shared catalogue unavailable'},503);
+   const id=await canonicalPrivateResolve(env,url.searchParams.get('id'));
+   return id?respond({id,canonicalId:id}):respond({error:'Invalid novel identity'},404);
+  }
   if(path.startsWith('/api/epub-submissions/'))return privateEpubSubmissionRoutes(request,env,email,role);
   if(path.startsWith('/api/admin/nu/'))return nuAdminRoutes(request,env,email,role);
   if(path==='/api/admin/epub-insights/private-cover')return privateEpubCoverRoute(request,env,email,role);
