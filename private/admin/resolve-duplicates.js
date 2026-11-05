@@ -22,7 +22,9 @@ async function scanSafe(){
   for(const item of result.proposals.slice(0,45)){
    const row=document.createElement('div');row.className='result';
    row.append(text('span','✓ #'+item.sourceId+' '+item.sourceTitle+' → keep #'+item.targetId+' '+item.targetTitle+
-    ' ('+item.match+(item.privateOnly?' · PRIVATE-ONLY metadata, no publication':'')+')'));
+    ' ('+item.match+(item.privateOnly?' · PRIVATE-ONLY metadata, no publication':'')+
+    (item.assets?.editionCount?' · moves '+item.assets.editionCount+' EPUB(s)':'')+
+    (item.assets?.coverPreserved?' · preserves cover':'')+')'));
    host.append(row);
   }
   if(result.skipped.length){
@@ -142,7 +144,9 @@ async function compare(){
   latest=result;
   $('merge-head').textContent='Merge #'+sourceId+' into #'+targetId;
   $('merge-summary').textContent='Keep “'+result.target.title+'” and combine information from “'+result.source.title+'”. Original record #'+targetId+' survives.'+
-    (result.privateOnly?' PRIVATE-ONLY MERGE: the public catalogue and its metadata will not change. Only the private book receives missing details and unique tags.':'');
+    (result.privateOnly?' PRIVATE-ONLY MERGE: the public catalogue and its metadata will not change. Only the private book receives missing details and unique tags.':'')+
+    ' Linked EPUB editions to transfer: '+(result.assets?.editionCount||0)+
+    '. Original EPUB bytes and covers remain stored; Undo restores the old references.';
   const wrap=$('merge-conflicts');wrap.replaceChildren();
   for(const c of result.conflicts||[]){
    const block=document.createElement('div');block.className='conflict';
@@ -157,20 +161,20 @@ async function compare(){
    wrap.append(block);
   }
   if(!(result.conflicts||[]).length)wrap.append(text('p','No conflicting scalar fields. The missing fields and unique story tags will be combined automatically.'));
-  const blocked=!!result.blockedByEpub||!!result.alreadyMerged||!!result.visibilityConflict;
+  const blocked=!!result.blockedByAssets||!!result.alreadyMerged||!!result.visibilityConflict;
   $('merge-go').disabled=blocked;
   $('merge-preview').hidden=false;
   show($('merge-status'),blocked?(result.alreadyMerged?
    'That duplicate has already been merged. Check the Undo history.':
    result.visibilityConflict?'These books have incompatible privacy states. No merge was applied.':
-   'This duplicate has EPUB editions attached. The merge is blocked to avoid breaking EPUB links. Transfer the editions first.'):
+   result.blockedByAssets||'An asset protection rule blocked this merge.'):
    result.privateOnly?'Ready for a PRIVATE-ONLY merge. Public information stays unchanged; Undo restores the duplicate.':
    'Ready. Merging will preserve the source record for Undo, without requiring a separate approval.',blocked);
  }catch(e){show($('merge-status'),e.message,true)}
 }
 $('preview-merge').addEventListener('click',compare);
 $('merge-go').addEventListener('click',async()=>{
- if(!latest||latest.blockedByEpub||latest.alreadyMerged||latest.visibilityConflict)return;
+ if(!latest||latest.blockedByAssets||latest.alreadyMerged||latest.visibilityConflict)return;
  const btn=$('merge-go');btn.disabled=true;
  const fields=[...$('merge-conflicts').querySelectorAll('input[data-field]:checked')].map(x=>x.dataset.field);
  try{
@@ -184,6 +188,7 @@ $('merge-go').addEventListener('click',async()=>{
   $('merge-preview').hidden=true;latest=null;
   show($('merge-status'),'✓ Merged duplicate #'+result.mergedFrom+' into #'+result.id+'. The original ID is preserved; browse should show one record after refreshing.'+
    (result.privateOnly?' Only private metadata was merged. Public information was not changed.':'')+
+   (result.movedEditions?' '+result.movedEditions+' EPUB edition references transferred without moving R2 files.':'')+
    ' Undo is available in the history below.'+
    (result.privateSynced===false?'\nPrivate catalogue synchronization needs attention.':''));
   await history();await find();
