@@ -2732,6 +2732,31 @@ async function nuAdminRoutes(request,env,email,role){
    return respond({...result,displayTitle:target.title,note:'Novel Updates link saved with Undo history.'});
   }
 
+  if(path==='/api/admin/nu/canonical/backfill'&&method==='POST'){
+   if(role!=='owner')return respond({error:'Owner permission required'},403);
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   await canonicalEnsurePrivate(env);
+   const base=await nuBaseCatalogue(env,url),rows=await nuAdditionalRows(env);
+   const all=[...base,...rows.map(nuAdditionalData)];
+   let created=0,already=0,unidentified=0;
+   const conflicts=[];
+   // Original catalogue IDs win over additional rows when identity keys
+   // collide. Never rewrite or merge records during indexing.
+   for(const item of all){
+    const keys=canonicalPrivateKeys(item);
+    if(!keys.length){unidentified++;continue}
+    for(const key of keys){
+     const result=await env.COMMUNITY_DB.prepare('INSERT INTO canonical_novel_keys(identity_key,novel_id) VALUES(?,?) ON CONFLICT DO NOTHING')
+      .bind(key,item.id).run();
+     if(result.meta?.changes===1){created++;continue}
+     const existing=await env.COMMUNITY_DB.prepare('SELECT novel_id FROM canonical_novel_keys WHERE identity_key=?').bind(key).first();
+     if(Number(existing?.novel_id)===Number(item.id)||(await canonicalPrivateResolve(env,existing?.novel_id))===Number(item.id))already++;
+     else if(conflicts.length<100)conflicts.push({novelId:item.id,canonicalId:Number(existing?.novel_id),title:item.title||'',reason:'Identity key is already claimed. Compare duplicates before merging.'});
+    }
+   }
+   return respond({ok:true,created,already,unidentified,conflicts,
+    note:'Indexed existing canonical identities. No catalogue records, EPUB files, covers or publication settings changed.'});
+  }
   if(path==='/api/admin/nu/health'&&method==='GET'){
    if(role!=='owner')return respond({error:'Owner permission required'},403);
    await canonicalEnsurePrivate(env);
