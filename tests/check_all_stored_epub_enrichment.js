@@ -10,7 +10,7 @@ for(const id of ['backfill-stop','backfill-progress','backfill-counts','backfill
  assert(page.includes('id="'+id+'"'),'Missing scan UI: '+id);
 }
 assert(page.includes('/admin/editions-enrich-all.js'));
-assert(catalogue.includes("'EPUB discoveries'"));
+assert(catalogue.includes("'Imported discoveries'"));
 assert(catalogue.includes("!['epub','nu'].includes(book.metadataOrigin)"),
  'Only explicit imported EPUB or source-verified NU tags should be dynamically discoverable');
 assert(scanner.includes("'/api/admin/epub/ingest-metadata'")===false,
