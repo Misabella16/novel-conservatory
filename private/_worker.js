@@ -490,7 +490,7 @@ async function routes(request,env,ctx,email,role){
    const response=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',url.origin)));
    if(!response.ok)return respond({error:'Catalogue unavailable'},503);
    const original=await response.json(),base=Array.isArray(original)?original:(original.books||[]);
-   if(env.COMMUNITY_DB){try{const additions=await env.COMMUNITY_DB.prepare('SELECT * FROM additional_catalogue_novels ORDER BY created_at DESC LIMIT 5000').all();base.push(...(additions.results||[]).map(r=>extraDecorate(r,'private')));}catch{}}
+   if(env.COMMUNITY_DB){try{const additions=await env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' ORDER BY created_at DESC LIMIT 5000").all();base.push(...(additions.results||[]).map(r=>extraDecorate(r,'private')));}catch{}}
    return respond(base);
   }
   if(path.startsWith('/api/shelves'))return shelfRoutes(request,env,email);
@@ -504,7 +504,7 @@ async function routes(request,env,ctx,email,role){
         env.DB.prepare('SELECT id,patch FROM novel_edits').all(),
         env.DB.prepare("SELECT value FROM site_settings WHERE key='homepage'").first()
       ]);
-      let additional=[];if(env.COMMUNITY_DB){try{const r=await env.COMMUNITY_DB.prepare('SELECT * FROM additional_catalogue_novels ORDER BY created_at DESC LIMIT 5000').all();additional=(r.results||[]).map(x=>extraDecorate(x,'private'));}catch{}}
+      let additional=[];if(env.COMMUNITY_DB){try{const r=await env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' ORDER BY created_at DESC LIMIT 5000").all();additional=(r.results||[]).map(x=>extraDecorate(x,'private'));}catch{}}
       // Private-only, explicitly approved embedded EPUB covers. The public
       // project has no route to this private R2 bucket or site_settings table.
       const edits=(novels.results||[]).map(x=>({id:x.id,patch:JSON.parse(x.patch)}));
@@ -1762,7 +1762,7 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
  const editor=scope==='private'&&['owner','editor'].includes(role),owner=scope==='private'&&role==='owner';
  try{
   if(path==='/api/additional/books'&&method==='GET'){
-   const sql=scope==='public'?"SELECT * FROM additional_catalogue_novels WHERE visibility='published' ORDER BY created_at DESC LIMIT 5000":"SELECT * FROM additional_catalogue_novels ORDER BY created_at DESC LIMIT 5000";
+   const sql=scope==='public'?"SELECT * FROM additional_catalogue_novels WHERE visibility='published' AND source_submission_id NOT LIKE 'merged-into:%' ORDER BY created_at DESC LIMIT 5000":"SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' ORDER BY created_at DESC LIMIT 5000";
    const rows=await env.COMMUNITY_DB.prepare(sql).all();
    return extraJson({novels:(rows.results||[]).map(row=>extraDecorate(row,scope)),configured:true});
   }
