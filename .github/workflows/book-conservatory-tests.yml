@@ -1,0 +1,45 @@
+name: Book Conservatory - Isolated Foundation Tests
+on:
+  pull_request:
+    paths:
+      - "book-conservatory/**"
+      - ".github/workflows/book-conservatory-tests.yml"
+  push:
+    branches:
+      - "feature/book-conservatory-sister-site"
+    paths:
+      - "book-conservatory/**"
+      - ".github/workflows/book-conservatory-tests.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  foundation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check JavaScript match module
+        run: |
+          node --check book-conservatory/shelf-photo-matcher.mjs
+          node book-conservatory/tests/test-shelf-match.mjs
+      - name: Validate standalone schema and privacy constraints
+        run: python3 -m unittest discover -s book-conservatory/tests -p 'test_*.py' -v
+      - name: Verify independent site root
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("book-conservatory")
+          html=(root/"index.html").read_text()
+          assert '<title>The Book Conservatory' in html
+          assert 'My Editions & Copies' in html
+          assert 'Shelf Photos' in html
+          assert 'No personal book data included' in html
+          assert 'Nothing is uploaded, analyzed' in html
+          print("Isolated prototype verified; no deployment performed")
+          PY
