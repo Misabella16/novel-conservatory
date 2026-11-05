@@ -28,6 +28,14 @@ label{display:block;font-weight:650;font-size:13px;margin:10px 0 4px}
 <div class="row"><input id="find-q" style="flex:1;min-width:180px" type="search" placeholder="Search a novel title or ID"><button id="find-books" type="button">Find</button></div>
 <div id="find-results" aria-live="polite"></div>
 </section>
+<section class="panel" id="safe-merges">
+<h2>Automatically combine safe duplicates</h2>
+<p class="note">Finds books with the same Novel Updates series URL or matching normalized title <strong>and author</strong>. Each safe pair keeps the best catalogue record, joins unique tags/genres, fills missing synopsis fields, and hides the duplicate without deleting its record. No separate approval for each entry; Undo is available below.</p>
+<p class="note"><strong>Protective rules:</strong> Entries with attached EPUBs, existing cover files, conflicting private/public visibility, or multiple possible matches are skipped rather than changed.</p>
+<div class="row"><button id="safe-scan" type="button" class="secondary">Find safe duplicates</button><button id="safe-merge" type="button" disabled>Merge safe duplicates · Undo available</button></div>
+<p id="safe-status" class="status" role="status" aria-live="polite">Scan to see which duplicates can be merged safely.</p>
+<div id="safe-results" aria-live="polite"></div>
+</section>
 <section class="panel"><h2>Merge two existing entries</h2>
 <div class="grid">
 <div><label for="source-id">Duplicate to merge (added novel ID, 100000+)</label><input id="source-id" inputmode="numeric" placeholder="e.g. 100123456"></div>

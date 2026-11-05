@@ -1998,6 +1998,69 @@ async function nuFindCandidates(env,url,source,excludedId){
  }
  return matches;
 }
+
+// Analyze all existing records without changing anything. Only unequivocal
+// matches are candidates; files and cover objects must never be orphaned.
+async function nuSafeDuplicateScan(env,url){
+ const base=await nuBaseCatalogue(env,url),added=await nuAdditionalRows(env);
+ const current=(await env.COMMUNITY_DB.prepare('SELECT novel_id,patch_json FROM published_catalogue_overrides LIMIT 5000').all()).results||[];
+ const edited=new Map();for(const row of current){try{edited.set(Number(row.novel_id),JSON.parse(row.patch_json||'{}'))}catch{}}
+ const items=[
+  ...base.map(x=>({...x,...(edited.get(x.id)||{}),kind:'original',visibility:'published'})),
+  ...added.map(x=>({...nuAdditionalData(x),kind:'added',visibility:x.visibility,coverKey:x.cover_key||''}))
+ ];
+ // Only metadata, never EPUB bytes, is inspected here.
+ const [extraFiles,originalFiles]=await Promise.all([
+  env.DB.prepare('SELECT novel_id AS id FROM additional_epub_editions GROUP BY novel_id').all(),
+  env.DB.prepare('SELECT novel_id AS id FROM epub_editions GROUP BY novel_id').all()
+ ]);
+ const fileIds=new Set([...(extraFiles.results||[]),...(originalFiles.results||[])].map(x=>Number(x.id)));
+ const byUrl=new Map(),byTitleAuthor=new Map();
+ const group=(map,key,item)=>{if(!key)return;let a=map.get(key);if(!a){a=[];map.set(key,a)}a.push(item)};
+ for(const item of items){
+  item.nuKey=nuCanon(item.nuUrl);
+  item.titleKey=nuIdentity(item.title);
+  item.authorKey=nuIdentity(item.author);
+  item.hasEpub=fileIds.has(Number(item.id));
+  group(byUrl,item.nuKey,item);
+  if(item.titleKey&&item.authorKey)group(byTitleAuthor,item.titleKey+'|'+item.authorKey,item);
+ }
+ const proposals=[],skipped=[],seen=new Set();
+ const quality=x=>(x.synopsis?8:0)+(extraTags(x.tags).length*2)+extraTags(x.genres).length+
+  (x.author?2:0)+(x.nuUrl?3:0);
+ const best=(a,b)=>{
+  if(a.kind!==b.kind)return a.kind==='original'?a:b;
+  if(a.visibility!==b.visibility)return a.visibility==='published'?a:b;
+  if(a.hasEpub!==b.hasEpub)return a.hasEpub?a:b;
+  return quality(a)!==quality(b)?quality(a)>quality(b)?a:b:Number(a.id)<Number(b.id)?a:b;
+ };
+ for(const x of items.filter(item=>item.kind==='added')){
+  const set=new Map();
+  for(const item of [...(byUrl.get(x.nuKey)||[]),...(byTitleAuthor.get(x.titleKey+'|'+x.authorKey)||[])]){
+   if(item.id===x.id)continue;
+   const equalUrl=!!x.nuKey&&x.nuKey===item.nuKey;
+   const equalName=!!x.titleKey&&!!x.authorKey&&x.titleKey===item.titleKey&&x.authorKey===item.authorKey;
+   if(!equalUrl&&!equalName)continue;
+   if(x.nuKey&&item.nuKey&&x.nuKey!==item.nuKey)continue;
+   set.set(item.id,item);
+  }
+  if(!set.size)continue;
+  if(set.size>1){skipped.push({id:x.id,title:x.title,reason:'More than one possible match; no automatic merge'});continue}
+  const y=[...set.values()][0],pair=[x.id,y.id].sort((a,b)=>a-b).join(':');
+  if(seen.has(pair))continue;seen.add(pair);
+  const target=best(x,y),source=target.id===x.id?y:x;
+  if(source.kind!=='added')continue;
+  let reason='';
+  if(source.visibility!==target.visibility)reason='Private/public visibility differs';
+  else if(source.hasEpub)reason='Duplicate has EPUBs that must stay linked to their original ID';
+  else if(source.coverKey)reason='Duplicate has a cover image that must not be hidden';
+  if(reason){skipped.push({id:source.id,title:source.title,targetId:target.id,reason});continue}
+  proposals.push({sourceId:source.id,targetId:target.id,sourceTitle:source.title,
+   targetTitle:target.title,match:x.nuKey&&x.nuKey===y.nuKey?'Exact Novel Updates URL':'Same normalized title and author'});
+ }
+ return {proposals,skipped};
+}
+
 async function nuHasPrivateEpub(env,sourceId){
  if(!env.DB)return true; // Do not hide a duplicate when we cannot inspect files.
  const a=await env.DB.prepare('SELECT id FROM additional_epub_editions WHERE novel_id=? LIMIT 1').bind(sourceId).first();
@@ -2233,6 +2296,40 @@ async function nuAdminRoutes(request,env,email,role){
  try{
 
 
+  if(path==='/api/admin/nu/duplicates/scan'&&method==='GET'){
+   const scan=await nuSafeDuplicateScan(env,url);
+   return respond({ok:true,...scan,count:scan.proposals.length});
+  }
+  if(path==='/api/admin/nu/duplicates/merge-safe'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   // One editor action merges a bounded batch of safe duplicates without
+   // individual approval clicks. Recheck matches and all safety rules on save.
+   const scan=await nuSafeDuplicateScan(env,url),results=[];
+   for(const candidate of scan.proposals.slice(0,12)){
+    try{
+     const source=await nuGetExisting(env,url,candidate.sourceId);
+     const target=await nuGetExisting(env,url,candidate.targetId);
+     if(await nuHasPrivateEpub(env,source.id)||source.row?.cover_key||
+       source.row?.visibility!==(target.kind==='seed'?'published':target.row.visibility))
+      throw Error('An EPUB, cover, or visibility change requires separate handling');
+     const check=await nuFindCandidates(env,url,source.data,source.id);
+     if(check.length!==1||check[0].id!==target.id)
+      throw Error('Match changed or is ambiguous; nothing was merged');
+     const srcUrl=nuCanon(source.data.nuUrl),dstUrl=nuCanon(target.data.nuUrl);
+     const sameURL=!!srcUrl&&srcUrl===dstUrl;
+     const sameIdentity=nuIdentity(source.data.title)===nuIdentity(target.data.title)&&
+      !!nuIdentity(source.data.author)&&nuIdentity(source.data.author)===nuIdentity(target.data.author);
+     if(srcUrl&&dstUrl&&srcUrl!==dstUrl||!sameURL&&!sameIdentity)
+      throw Error('Source identity no longer matches the destination');
+     const merged=await nuSaveEdit(env,url,email,target.id,source.data,{sourceId:source.id,expectedBefore:target.beforeRaw});
+     results.push({ok:true,sourceId:source.id,targetId:target.id,eventId:merged.eventId});
+    }catch(e){results.push({ok:false,sourceId:candidate.sourceId,targetId:candidate.targetId,
+      error:String(e.message||e).slice(0,190)})}
+   }
+   return respond({ok:true,processed:results.length,merged:results.filter(x=>x.ok).length,
+    results,skipped:scan.skipped,remainingMayExist:scan.proposals.length>12,
+    note:'All successful merges have independent Undo history records.'});
+  }
   if(path==='/api/admin/nu/search-books'&&method==='GET'){
    const q=String(url.searchParams.get('q')||'').trim().slice(0,120);
    if(q.length<2&&!/^[1-9]\d*$/.test(q))return respond({items:[],note:'Enter at least two characters or an ID'});

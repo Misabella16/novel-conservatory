@@ -65,6 +65,8 @@ jobs:
         run: python tests/check_direct_novel_reuse.py
       - name: Prevent duplicate Add Novel records and preserve Undo
         run: python tests/check_duplicate_safe_create.py
+      - name: Verify safe one-click duplicate batch merge and Undo
+        run: python tests/check_safe_duplicate_batch.py
       - name: Check migration SQL offline
         run: |
           python - <<'PY'

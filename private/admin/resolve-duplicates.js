@@ -9,6 +9,54 @@ const api=async(url,init={})=>{
 };
 const show=(node,msg,error=false)=>{node.textContent=msg;node.classList.toggle('error',!!error)};
 let latest=null;
+let safeScan=null;
+async function scanSafe(){
+ const status=$('safe-status'),host=$('safe-results'),button=$('safe-scan');
+ button.disabled=true;$('safe-merge').disabled=true;
+ host.replaceChildren();show(status,'Scanning the current catalogue for exact source and author/title matches…');
+ try{
+  const result=await api('/api/admin/nu/duplicates/scan');
+  safeScan=result;
+  show(status,result.proposals.length+' safe merge'+(result.proposals.length===1?'':'s')+' found. '+
+   result.skipped.length+' skipped for safety. No records have been changed.');
+  for(const item of result.proposals.slice(0,45)){
+   const row=document.createElement('div');row.className='result';
+   row.append(text('span','✓ #'+item.sourceId+' '+item.sourceTitle+' → keep #'+item.targetId+' '+item.targetTitle+' ('+item.match+')'));
+   host.append(row);
+  }
+  if(result.skipped.length){
+   const heading=text('h3','Skipped entries that need attention');host.append(heading);
+   for(const item of result.skipped.slice(0,40)){
+    const row=document.createElement('div');row.className='result';
+    row.append(text('span','#'+item.id+' · '+item.title+' · '+item.reason));host.append(row);
+   }
+  }
+  $('safe-merge').disabled=!result.proposals.length;
+ }catch(error){safeScan=null;show(status,'Scan failed: '+error.message,true)}
+ finally{button.disabled=false}
+}
+$('safe-scan').addEventListener('click',scanSafe);
+$('safe-merge').addEventListener('click',async()=>{
+ if(!safeScan?.proposals?.length)return;
+ const button=$('safe-merge');button.disabled=true;
+ show($('safe-status'),'Merging at most 12 safe duplicate pairs. Every change gets an Undo entry…');
+ try{
+  const result=await api('/api/admin/nu/duplicates/merge-safe',{method:'POST',
+   headers:{'content-type':'application/json'},body:JSON.stringify({})});
+  const errors=(result.results||[]).filter(x=>!x.ok);
+  show($('safe-status'),'✓ '+result.merged+' duplicate'+(result.merged===1?'':'s')+
+   ' combined with no per-book approval. '+errors.length+' skipped at save time. '+
+   (result.remainingMayExist?'Another batch may be available; scan again. ':'')+
+   'Open Undo history below to reverse a merge.'+
+   (errors.length?'\nSkipped: '+errors.slice(0,5).map(x=>'#'+x.sourceId+': '+x.error).join('; '):''));
+  await history();
+  await scanSafe();
+  show($('safe-status'),'✓ '+result.merged+' safe duplicate'+(result.merged===1?'':'s')+' merged; '+
+   errors.length+' skipped while saving. All merges can be reversed below.'+
+   (result.remainingMayExist?' More pairs may remain; run the next batch.':''));
+ }catch(error){show($('safe-status'),'Nothing else was merged: '+error.message,true);button.disabled=false}
+});
+
 const idOf=x=>{
  const match=/^#?([1-9][0-9]*)/.exec(String(x||'').trim());
  return match?Number(match[1]):null;
