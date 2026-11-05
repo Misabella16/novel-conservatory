@@ -74,7 +74,7 @@ for(const id of ['title','originalTitle','author','nuUrl','sourceUrl']){
 function chooseTab(t){if(role!=='owner'&&role!=='editor')return;if(role==='editor'&&['bulk','epubs'].includes(t))return;for(const n of ['single','bulk','epubs','manage','review']){$(n).hidden=n!==t;const b=$('tab-'+n);b.setAttribute('aria-selected',String(n===t))}if(t==='review')loadPending();if(t==='epubs'||t==='manage')loadNovels()}
 for(const t of ['single','bulk','epubs','manage','review'])$('tab-'+t).addEventListener('click',()=>chooseTab(t));
 async function loadNovels(){try{const j=await call('/api/additional/books');novels=j.novels||[];const dl=$('additional-novel-list');dl.replaceChildren();for(const novel of novels){const op=document.createElement('option');op.value=`#${novel.id} · ${novel.title}`;dl.append(op);}}catch(e){show('epub-status',e.message,true)}}
-function selectedNovel(){const x=$('epub-novel').value.trim();const found=/^#(\d+)\b/.exec(x);if(found)return novels.find(b=>b.id===Number(found[1]))||null;return novels.find(b=>b.title.toLocaleLowerCase()===x.toLocaleLowerCase())||null;}
+function selectedNovel(){const x=$('epub-novel').value.trim();const found=/^#(\d+)\b/.exec(x);if(found){const id=Number(found[1]);return Number.isSafeInteger(id)&&id>0?novels.find(b=>b.id===id)||{id}:null;}return novels.find(b=>b.title.toLocaleLowerCase()===x.toLocaleLowerCase())||null;}
 $('create-form').addEventListener('submit',async(e)=>{e.preventDefault();const btn=$('create');btn.disabled=true;show('created','Creating novel…');try{const targetId=selectedMergeId;
  const j=await post('/api/admin/additional/create',{...payload(),publish:$('publish').checked,
   ...(targetId?{targetId,confirmIdentity:true}:{})});resetMergeSelection();lastCreated=j.id>=100000?j.id:null;
@@ -96,8 +96,74 @@ function parseCSV(t){const rows=[];let row=[],cell='',quote=false;const txt=Stri
 $('preview-entries').addEventListener('click',async()=>{const file=$('entries-file').files[0];if(!file)return show('bulk-status','Choose a CSV or JSON first.',true);if(file.size>5*1048576)return show('bulk-status','Files must be under 5 MiB.',true);try{const s=await file.text();const v=file.name.toLowerCase().endsWith('.csv')?parseCSV(s):JSON.parse(s);if(!Array.isArray(v))throw Error('JSON must contain an array of novel objects.');if(v.length>5000)throw Error('Please import up to 5000 novel entries per file.');parsed=v.map(x=>({title:String(x.title||'').trim(),...x}));if(parsed.some(x=>!x.title))throw Error('Every row must have a novel title.');$('bulk-preview').replaceChildren();for(const v of parsed.slice(0,50)){const tr=document.createElement('tr');for(const key of ['title','author','translator','sourceUrl']){const td=document.createElement('td');td.textContent=String(v[key]||'').slice(0,200);tr.append(td)}$('bulk-preview').append(tr)}show('bulk-status',`Previewing ${parsed.length} entries${parsed.length>50?' (first 50 shown)':''}. Ready to import.`);$('import-entries').disabled=!parsed.length}catch(e){parsed=[];$('import-entries').disabled=true;show('bulk-status',e.message,true)}});
 $('import-entries').addEventListener('click',async()=>{if(!parsed.length)return;const count=parsed.length;const btn=$('import-entries');btn.disabled=true;let ok=0,fail=0,err=[];try{for(let i=0;i<parsed.length;i+=100){try{const j=await post('/api/admin/additional/bulk',{novels:parsed.slice(i,i+100),publish:$('bulk-publish').checked});for(const row of j.results||[]){if(row.ok)ok++;else{fail++;if(err.length<12)err.push(`${row.title}: ${row.error}`)}}}catch(e){fail+=Math.min(100,parsed.length-i);if(err.length<12)err.push(e.message)}show('bulk-status',`${Math.min(i+100,parsed.length)}/${parsed.length} processed · ${ok} added · ${fail} skipped/failed.`)}show('bulk-status',`Completed. ${ok} added, ${fail} skipped/failed.\n${err.join('\n')}`);await loadNovels();}finally{btn.disabled=false}});
 async function uploadOne(file,id,label,translator,onProgress){if(!/\.epub$/i.test(file.name)||file.size<100||file.size>2147483648)throw Error(`“${file.name}” must be an EPUB under 2 GiB.`);const begin=await post('/api/private/edition/start',{novelId:id,size:file.size,filename:file.name,label,translator,language:'English'});const total=Math.ceil(file.size/begin.partSize);let finished=false;try{for(let n=1;n<=total;n++){const chunk=file.slice((n-1)*begin.partSize,Math.min(n*begin.partSize,file.size));await call(`/api/private/edition/part?session=${encodeURIComponent(begin.sessionId)}&part=${n}`,{method:'POST',headers:{'content-type':'application/octet-stream'},body:chunk});onProgress(n/total)}const j=await call('/api/private/edition/finish?session='+encodeURIComponent(begin.sessionId),{method:'POST'});finished=true;return j.edition}finally{if(!finished)await call('/api/private/edition/abort?session='+encodeURIComponent(begin.sessionId),{method:'POST'}).catch(()=>{})}}
-async function coverFromEPUB(file,id){if(!$('extract-cover').checked||!window.CoverExtractor||file.size>250*1048576)return null;try{const x=await window.CoverExtractor.detectCover(file);if(!x.image)return null;const fd=new FormData();fd.set('novel_id',String(id));fd.set('image',new File([x.image],'cover.jpg',{type:'image/jpeg'}));fd.set('source',file.name.slice(0,130));const j=await call('/api/admin/additional/auto-cover',{method:'POST',body:fd});return j.published?'Cover extracted and shared':'Existing cover kept'}catch(e){return 'Cover could not be extracted: '+e.message}}
-$('upload-epubs').addEventListener('click',async()=>{const novel=selectedNovel();const files=[...$('epub-files').files];if(!novel)return show('epub-status','Choose a novel from the list, or create it first.',true);if(!files.length)return show('epub-status','Choose at least one EPUB file.',true);const b=$('upload-epubs');b.disabled=true;let successes=0,failures=0;let errors=[];try{for(let i=0;i<files.length;i++){const file=files[i];show('epub-status',`Uploading ${i+1}/${files.length}: ${file.name}`);try{await uploadOne(file,novel.id,$('epub-label').value||'Translation edition',$('epub-translator').value,(fraction)=>{$('epub-progress').value=100*(i+fraction)/files.length});successes++;const c=await coverFromEPUB(file,novel.id);if(c)errors.push(c)}catch(e){failures++;errors.push(file.name+': '+e.message)}}show('epub-status',`Finished: ${successes} uploaded, ${failures} failed.\n${errors.join('\n')}`,!!failures)}finally{b.disabled=false}});
+async function coverFromEPUB(file,id){
+ if(!$('extract-cover').checked||!window.CoverExtractor||file.size>250*1048576)return null;
+ try{
+  const x=await window.CoverExtractor.detectCover(file);if(!x.image)return null;
+  const fd=new FormData();fd.set('novel_id',String(id));
+  fd.set('image',new File([x.image],'cover.jpg',{type:'image/jpeg'}));
+  fd.set('source',file.name.slice(0,130));
+  // Keep newly created and other additional-novel covers private until the
+  // entry is explicitly published. Original catalogue covers use its route.
+  const path=id>=100000?'/api/admin/additional/auto-cover':'/api/admin/epub-artwork/auto';
+  const j=await call(path,{method:'POST',body:fd});
+  return j.published?(id>=100000?'Cover stored with novel':'Cover processed'):'Existing cover kept';
+ }catch(e){return 'Cover could not be extracted: '+e.message}
+}
+async function completeCatalogue(){
+ const [cat,content]=await Promise.all([
+  call('/api/catalogue'),call('/api/content')
+ ]);
+ const edits=new Map((content.edits||[]).map(x=>[Number(x.id),x.patch]));
+ return (Array.isArray(cat)?cat:cat.books||[]).map(x=>({...x,...(edits.get(Number(x.id))||{})}));
+}
+$('upload-epubs').addEventListener('click',async()=>{
+ const files=[...$('epub-files').files].filter(f=>/\.epub$/i.test(f.name));
+ if(!files.length)return show('epub-status','Choose at least one EPUB first.',true);
+ const button=$('upload-epubs');button.disabled=true;
+ let successes=0,failures=0,created=0,skipped=0,errors=[];
+ const userMatch=selectedNovel();
+ try{
+  const catalogue=await completeCatalogue();
+  for(let i=0;i<files.length;i++){
+   const file=files[i];
+   show('epub-status','Matching and uploading '+(i+1)+'/'+files.length+': '+file.name);
+   try{
+    const meta=await window.ConservatoryEPUBMatch.inspect(file);
+    const match=window.ConservatoryEPUBMatch.resolve(file,meta,catalogue);
+    let id=match.bookId;
+    if(!id&&match.kind==='new'){
+     const payload=window.ConservatoryEPUBMatch.createPayload(match,meta);
+     const result=await post('/api/admin/additional/create',{...payload,publish:false});
+     if(!result.ok&&!result.id)throw Error(result.error||'Could not create a private novel');
+     id=Number(result.id);
+     if(!result.reused)created++;
+     const book={id,title:payload.title,author:payload.author,originalTitle:payload.originalTitle||''};
+     if(!catalogue.some(x=>Number(x.id)===id))catalogue.push(book);
+    }
+    // The optional selection is only needed when a file cannot be matched
+    // reliably. It never overrides a confident EPUB title match.
+    if(!id&&match.kind==='ambiguous')id=userMatch?.id||null;
+    if(!id){
+     skipped++;
+     errors.push(file.name+': '+(match.reason||'Ambiguous title')+'. Choose a novel manually or rename the EPUB.');
+     continue;
+    }
+    await uploadOne(file,id,$('epub-label').value||'Translation edition',
+     $('epub-translator').value||meta.author||'',fraction=>{
+      $('epub-progress').value=100*(i+fraction)/files.length;
+     });
+    successes++;
+    const c=await coverFromEPUB(file,id);if(c&&c.startsWith('Cover could'))errors.push(file.name+': '+c);
+   }catch(e){failures++;errors.push(file.name+': '+e.message)}
+  }
+  await loadNovels();
+  show('epub-status','Finished: '+successes+' EPUBs uploaded to private storage, '+
+   created+' private novel entries created, '+skipped+' needing manual match, '+
+   failures+' failed.\n'+errors.slice(0,25).join('\n'),failures>0);
+ }catch(e){show('epub-status','Upload stopped: '+e.message,true)}
+ finally{button.disabled=false}
+});
 let managed=null,lastManageEvent=null;
 $('load-manage').addEventListener('click',()=>{lastManageEvent=null;$('undo-manage').hidden=true;const value=$('manage-novel').value.trim();const m=/^#(\d+)\b/.exec(value);managed=m?novels.find(n=>n.id===Number(m[1])):novels.find(n=>n.title.toLocaleLowerCase()===value.toLocaleLowerCase());if(!managed)return show('manage-status','Novel not found. Choose from the list.',true);for(const f of ['title','originalTitle','author','originalLanguage','language','novelOrigin','originalUrl','nuUrl','translatorUrl','sourceUrl','translator','synopsis','metadataSource'])$('manage-'+f).value=managed[f]||'';for(const f of ['tags','genres','contentWarnings'])$('manage-'+f).value=Array.isArray(managed[f])?managed[f].join(', '):managed[f]||'';for(const f of ['totalChapters','chaptersTranslated'])$('manage-'+f).value=managed[f]??'';$('manage-translation').value=managed.translation||'unconfirmed';$('manage-publish').checked=managed.visibility==='published';$('manage-fields').hidden=false;show('manage-status','Loaded novel #'+managed.id)});
 $('save-manage').addEventListener('click',async()=>{if(!managed)return;const patch={};for(const f of ['title','originalTitle','author','originalLanguage','language','novelOrigin','originalUrl','nuUrl','translatorUrl','sourceUrl','translator','synopsis','metadataSource','tags','genres','contentWarnings','translation'])patch[f]=$('manage-'+f).value.trim();for(const f of ['totalChapters','chaptersTranslated'])patch[f]=$('manage-'+f).value.trim()?Number($('manage-'+f).value):null;const publish=$('manage-publish').checked;const button=$('save-manage');button.disabled=true;try{
