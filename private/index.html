@@ -679,7 +679,7 @@ function detailCuteTag(value,kind){
 }
 
 const safeUrl=u=>{try{let x=new URL(u);return ['https:','http:'].includes(x.protocol)&&!/(^|\.)((drive|docs)\.google\.com|mega\.nz|dropbox\.com|onedrive\.live\.com|1drv\.ms)$/.test(x.hostname)?x.href:''}catch(e){return ''}};
-const coverSrc=d=>{if(!d.coverRights||!d.cover)return '';if(/^\/media\/[a-f0-9-]{36}\.(png|jpe?g|webp|gif)$/.test(d.cover)||/^\/api\/additional\/cover\?id=[0-9]+$/.test(d.cover))return d.cover;if(/^covers\/[0-9]+\.(png|jpe?g|webp)$/.test(d.cover))return d.cover;return safeUrl(d.cover)};
+const coverSrc=d=>{if((!d.coverRights&&!d.privateCover)||!d.cover)return '';if(/^\/media\/[a-f0-9-]{36}\.(png|jpe?g|webp|gif)$/.test(d.cover)||/^\/api\/additional\/cover\?id=[0-9]+$/.test(d.cover))return d.cover;if(/^covers\/[0-9]+\.(png|jpe?g|webp)$/.test(d.cover))return d.cover;return safeUrl(d.cover)};
 const isReviewed=d=>!!(d.metadataReview && ((d.genres||[]).length || (d.tags||[]).length));
 const hasImportedMetadata=d=>d.metadataOrigin==='epub' && (!!d.synopsis || !!(d.tags||[]).length);
 const isDiscoverable=d=>isReviewed(d)||hasImportedMetadata(d);
@@ -870,7 +870,7 @@ function hoverBlurb(d){
 
 function seriesListExtras(d){
  const reviewed=isReviewed(d);
- const tags=reviewed?[...(d.genres||[]).map(x=>({value:x,kind:'genre'})),...(d.tags||[]).map(x=>({value:x,kind:'trope'}))]:[];
+ const tags=(reviewed||hasImportedMetadata(d))?[...(d.genres||[]).map(x=>({value:x,kind:'genre'})),...(d.tags||[]).map(x=>({value:x,kind:'trope'}))]:[];
  const distinct=[...new Map(tags.map(x=>[x.value.toLocaleLowerCase(),x])).values()].slice(0,9);
  const chips=distinct.length?distinct.map(x=>`<span class="series-tag ${esc(x.kind)}">${esc(x.value)}</span>`).join(''):'<span class="series-tag meta-pending">Tags awaiting review</span>';
  const translated=String(d.translator||'').trim();
@@ -879,8 +879,8 @@ function seriesListExtras(d){
   `<span>Translation: ${esc(labelFor(d))}</span>`,
   translated?`<span>Translator: ${esc(translated)}</span>`:''
  ].filter(Boolean).join('');
- const synopsis=reviewed&&d.synopsis?esc(d.synopsis):'Synopsis not yet reviewed. Open the series profile for available source links.';
- return `<div class="list-specific"><div class="series-facts">${factItems}</div><div class="series-tag-row">${chips}</div><p class="series-blurb ${reviewed&&d.synopsis?'':'missing'}">${synopsis}</p><span class="series-more">View series details →</span></div>`;
+ const synopsis=(reviewed||hasImportedMetadata(d))&&d.synopsis?esc(d.synopsis):'Synopsis not yet reviewed. Open the series profile for available source links.';
+ return `<div class="list-specific"><div class="series-facts">${factItems}</div><div class="series-tag-row">${chips}</div><p class="series-blurb ${(reviewed||hasImportedMetadata(d))&&d.synopsis?'':'missing'}">${synopsis}</p><span class="series-more">View series details →</span></div>`;
 }
 
 function cardHTML(d){
@@ -1050,8 +1050,17 @@ async function loadLiveEditorChanges(){
     for(const item of (content.edits||[])){
       const book=data.find(x=>x.id===Number(item.id));
       if(!book||!item.patch)continue;
-      for(const key of ['title','originalTitle','author','translator','synopsis','genres','tags','contentWarnings','cover','coverRights','metadataReview','metadataSource','metadataOrigin','translation','nuUrl','translatorUrl','translations']){
-        if(Object.prototype.hasOwnProperty.call(item.patch,key))book[key]=item.patch[key];
+      for(const key of ['title','originalTitle','author','translator','synopsis','genres','tags','contentWarnings','cover','coverRights','privateCover','metadataReview','metadataSource','metadataOrigin','translation','nuUrl','translatorUrl','translations']){
+        if(!Object.prototype.hasOwnProperty.call(item.patch,key))continue;
+        // Imported EPUB subjects supplement manually curated tags. A
+        // private extracted cover must not override a chosen published one.
+        if(key==='tags'&&item.patch.metadataOrigin==='epub'){
+         const found=Array.isArray(book.tags)?[...book.tags]:[];
+         for(const tag of item.patch.tags||[])if(!found.some(t=>t.toLowerCase()===String(tag).toLowerCase()))found.push(tag);
+         book.tags=found.slice(0,35);
+        }else if(key==='cover'&&item.patch.privateCover&&coverSrc(book)){
+         continue;
+        }else book[key]=item.patch[key];
       }
     }
     // Separate, owner-managed non-CG entries. The original 962 catalogue is never replaced.
