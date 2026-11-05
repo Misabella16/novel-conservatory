@@ -44,10 +44,8 @@ async function checkDuplicateBeforeSubmit(){
    choose.type='button';choose.textContent='Merge new details into this novel';
    choose.style.cssText='display:block;margin:6px 0;background:#49644e;font-size:12px;padding:7px 9px';
    choose.addEventListener('click',()=>{
-    const same=window.confirm('Confirm this is exactly the same work as “'+item.title+
-     '” (#'+item.id+'). Existing metadata wins conflicts unless you resolve them separately. '+
-     'Its current '+item.visibility+' visibility is preserved, and the change will have an Undo record.');
-    if(!same)return;
+    // Selection itself is enough. No additional confirmation popup.
+    // All saved changes are recorded in the reversible history.
     selectedMergeId=item.id;
     $('create').textContent='Merge into novel #'+item.id;
     const note=document.createElement('p');note.style.fontWeight='650';
