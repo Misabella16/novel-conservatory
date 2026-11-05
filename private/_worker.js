@@ -2087,11 +2087,12 @@ async function nuSafeDuplicateScan(env,url){
   env.DB.prepare('SELECT novel_id AS id FROM epub_editions GROUP BY novel_id').all()
  ]);
  const fileIds=new Set([...(extraFiles.results||[]),...(originalFiles.results||[])].map(x=>Number(x.id)));
- const byUrl=new Map(),byTitleAuthor=new Map();
+ const byUrl=new Map(),byTitleAuthor=new Map(),byTitle=new Map();
  const group=(map,key,item)=>{if(!key)return;let a=map.get(key);if(!a){a=[];map.set(key,a)}a.push(item)};
  for(const item of items){
-  item.nuKey=nuCanon(item.nuUrl);
+  item.nuKey=nuCanon(item.nuUrl)||nuCanon(item.sourceUrl);
   item.titleKey=nuIdentity(item.title);
+  group(byTitle,item.titleKey,item);
   item.authorKey=nuIdentity(item.author);
   item.hasEpub=fileIds.has(Number(item.id));
   group(byUrl,item.nuKey,item);
@@ -2116,7 +2117,13 @@ async function nuSafeDuplicateScan(env,url){
    if(x.nuKey&&item.nuKey&&x.nuKey!==item.nuKey)continue;
    set.set(item.id,item);
   }
-  if(!set.size)continue;
+  if(!set.size){
+   const tentative=(byTitle.get(x.titleKey)||[]).filter(item=>item.id!==x.id);
+   if(tentative.length)skipped.push({id:x.id,title:x.title,
+    targetId:tentative.length===1?tentative[0].id:null,
+    reason:'Possible title match but author or series URL is missing or conflicts; compare manually'});
+   continue;
+  }
   if(set.size>1){skipped.push({id:x.id,title:x.title,reason:'More than one possible match; no automatic merge'});continue}
   const y=[...set.values()][0],pair=[x.id,y.id].sort((a,b)=>a-b).join(':');
   if(seen.has(pair))continue;seen.add(pair);
@@ -2264,6 +2271,18 @@ async function nuSyncSource(env,url,email,source,options={}){
    message:'Several catalogue entries match this source. Choose the correct novel instead of making another copy.'};
  const targetId=chosen||(candidates.length===1?candidates[0].id:null);
  if(targetId){
+  // A shared title is not proof of a shared work. Different series URLs
+  // or conflicting/unknown authors must be checked by an editor.
+  const existing=await nuGetExisting(env,url,targetId);
+  const a=nuCanon(safe.nuUrl),b=nuCanon(existing.data.nuUrl)||nuCanon(existing.data.sourceUrl);
+  const sameSeries=!!a&&a===b;
+  const differentSeries=!!a&&!!b&&a!==b;
+  const titleMatches=nuIdentity(safe.title)===nuIdentity(existing.data.title)
+   ||!!nuIdentity(safe.originalTitle)&&nuIdentity(safe.originalTitle)===nuIdentity(existing.data.originalTitle);
+  const authorMatches=!!nuIdentity(safe.author)&&nuIdentity(safe.author)===nuIdentity(existing.data.author);
+  if((differentSeries||!sameSeries&&!(titleMatches&&authorMatches))&&options.confirmDifferent!==true)
+   return {ok:false,needsIdentityConfirmation:true,selected:targetId,candidates,
+    message:'A matching title does not confirm this is the same novel. Check both authors and Novel Updates URLs before combining their metadata.'};
   const result=await nuSaveEdit(env,url,email,targetId,safe,{
    preferSourceFields:options.preferSourceFields||[],expectedBefore:options.expectedBefore
   });
