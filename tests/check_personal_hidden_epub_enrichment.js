@@ -3,6 +3,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const worker=fs.readFileSync('private/_worker.js','utf8');
 const page=fs.readFileSync('private/index.html','utf8');
 const bulk=fs.readFileSync('private/admin/editions.js','utf8');
+const fullScan=fs.readFileSync('private/admin/editions-enrich-all.js','utf8');
 const screen=fs.readFileSync('private/admin/editions.html','utf8');
 const add=fs.readFileSync('private/admin/add-novels.js','utf8');
 function between(a,b){
@@ -76,8 +77,8 @@ async function test(){
  assert(!helper.includes('env.COMMUNITY_IMAGES.put'),'Private cover must not write to public image storage');
  assert(bulk.includes("'/api/admin/epub/ingest-metadata'"));
  assert(bulk.includes("'/api/admin/epub-artwork/private-auto'"));
- assert(bulk.includes("'/api/private/epub/bulk-status'"));
- assert(bulk.includes("'/api/private/epub/file?id='"));
+ assert(fullScan.includes("'/api/private/epub/bulk-status'"));
+ assert(fullScan.includes("'/api/private/epub/file?id='"));
  assert(add.includes("'/api/admin/epub/ingest-metadata'"));
  assert(add.includes("'/api/admin/epub-artwork/private-auto'"));
  assert(screen.includes('id="backfill"'));

@@ -7,11 +7,15 @@
 <div class="controls" style="margin:15px 0"><button id="start" disabled>Upload matched editions</button><button id="stop" class="secondary" disabled>Stop after current file</button><label><input id="skip" type="checkbox" checked> Skip exact same filename and size already attached to a novel</label></div>
 <progress id="progress" max="100" value="0"></progress><p class="topmsg" role="status" id="status">Checking permissions…</p><p class="hint" id="counts"></p>
 <datalist id="novel-choices"></datalist><div class="scroll"><table class="books"><thead><tr><th>EPUB file</th><th>Catalogue novel</th><th>Edition / translator</th><th>Status</th></tr></thead><tbody id="rows"><tr><td colspan="4">No files selected</td></tr></tbody></table></div></section>
-<section class="panel"><h2>Fill missing details from EPUBs already uploaded</h2>
-<p class="hint">This scans up to 12 existing EPUBs at a time, only inside your signed-in browser. It pulls embedded summaries, subject tags, and declared cover images when your private catalogue lacks them. It never sends EPUB text to the public site or overwrites hand-edited metadata. Large EPUBs and unusual cover formats may need manual help.</p>
-<button type="button" id="backfill" class="secondary">↻ Fill missing EPUB tags &amp; covers</button>
+<section class="panel"><h2>Enrich every EPUB already uploaded</h2>
+<p class="hint">One click scans your <strong>entire stored private EPUB library</strong>, not just 12 at a time. The scan checks every edition sequentially to avoid exhausting browser memory, filling missing private synopses, embedded subject tags and cover images without overwriting hand-edited metadata or publishing private files. Keep this browser tab open while it runs; you can pause and resume without starting over. EPUBs with no embedded subjects cannot supply tags on their own.</p>
+<div class="controls"><button type="button" id="backfill" class="secondary">↻ Enrich ALL stored EPUBs</button><button type="button" id="backfill-stop" class="secondary" disabled>Pause after this EPUB</button></div>
+<progress id="backfill-progress" max="100" value="0" aria-label="Stored EPUB enrichment progress"></progress>
+<p id="backfill-counts" class="hint" aria-live="polite">No scan started.</p>
+<p id="backfill-status" class="topmsg" role="status" aria-live="polite">Ready to scan the entire stored library.</p>
+<div id="backfill-errors" class="hint" style="overflow-wrap:anywhere;max-height:340px;overflow:auto"></div>
 </section>
 <p class="hint">Extracted covers are only displayed in your private library. They are not a license to distribute artwork publicly. For changes to already selected artwork, use <a href="/admin/epub-artwork.html">Cover management</a>.</p>
 <section class="panel"><h2>See all editions for a novel</h2><div class="controls"><input id="lookup" list="novel-choices" placeholder="Search a novel title or type #123" style="min-width:min(390px,95%)"><button id="lookup-btn">Show editions</button></div><div id="editions" style="margin-top:15px" aria-live="polite"></div></section>
 <p class="hint"><strong>Backup:</strong> save your existing D1 database and R2 EPUB bucket before deploying. The new EPUB edition tables require a one-time migration. Uploaded EPUBs remain private and do not appear on the public website.</p></main>
-<script src="/vendor/jszip.min.js"></script><script src="/admin/cover-extractor.js" defer></script><script src="/admin/epub-auto-match.js"></script><script src="/admin/editions.js" defer></script></body></html>
+<script src="/vendor/jszip.min.js"></script><script src="/admin/cover-extractor.js" defer></script><script src="/admin/epub-auto-match.js"></script><script src="/admin/editions.js" defer></script><script src="/admin/editions-enrich-all.js" defer></script></body></html>
