@@ -14,7 +14,7 @@ assert 'await nuSaveEdit(env,url,email,matched.id,p)' in part
 assert 'await extraInsert(env,p,' in part
 assert 'if(matched.visibility!==visibility)' in part
 assert "notUpdated:true" in part
-assert 'const result=await extraCreateOrReuse(env,new URL(request.url),email,p,visibility)' in worker
+assert 'else result=await extraCreateOrReuse(env,new URL(request.url),email,p,visibility)' in worker
 assert "const result=await extraCreateOrReuse(env,new URL(request.url),email,p,body.publish===true?'published':'private')" in worker
 assert "result.notUpdated?'Its current metadata and publication state were kept." in editor
 assert "result.reused?'Found existing novel #" in editor
