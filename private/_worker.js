@@ -332,6 +332,32 @@ async function routes(request,env,ctx,email,role){
    const id=await canonicalPrivateResolve(env,url.searchParams.get('id'));
    return id?respond({id,canonicalId:id}):respond({error:'Invalid novel identity'},404);
   }
+  // Individual account archive. It only changes the current signed-in user's
+  // display preferences, never shared novel metadata, EPUB files or shelves.
+  if(path==='/api/me/hidden'&&(method==='GET'||method==='POST')){
+   if(!env.DB)return respond({error:'Private account storage unavailable'},503);
+   const settingKey='conservatory-hidden-v1:'+email;
+   try{
+    const row=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(settingKey).first();
+    let current=[];try{
+     const parsed=JSON.parse(row?.value||'[]');
+     if(Array.isArray(parsed))current=[...new Set(parsed.filter(bookIdValid).map(Number))].slice(0,20000);
+    }catch{throw Error('Your personal archive is unreadable. No changes were made.')}
+    if(method==='GET')return respond({ids:current,private:true,ownerOnly:true});
+    if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+    const body=await getJson(request),id=Number(body.id),action=String(body.action||'');
+    if(!bookIdValid(id)||!['hide','restore'].includes(action))return respond({error:'Choose a valid novel and Hide or Restore'},400);
+    const next=action==='hide'?[...new Set([...current,id])]:current.filter(x=>x!==id);
+    if(next.length>20000)return respond({error:'Personal archive limit reached'},413);
+    const value=JSON.stringify(next);
+    if(value.length>200000)return respond({error:'Personal archive is too large'},413);
+    const written=row?await env.DB.prepare('UPDATE site_settings SET value=?,updated_at=CURRENT_TIMESTAMP WHERE key=? AND value=?')
+      .bind(value,settingKey,row.value).run():
+      await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING').bind(settingKey,value).run();
+    if((written.meta?.changes||0)!==1)return respond({error:'Your archive changed in another tab. Refresh and try again.'},409);
+    return respond({ok:true,ids:next,private:true,affectedOtherAccounts:false});
+   }catch(err){return respond({error:textField(err?.message||'Could not update your archive',180)},400)}
+  }
   if(path.startsWith('/api/epub-submissions/'))return privateEpubSubmissionRoutes(request,env,email,role);
   if(path.startsWith('/api/admin/nu/'))return nuAdminRoutes(request,env,email,role);
   if(path==='/api/admin/epub-insights/private-cover')return privateEpubCoverRoute(request,env,email,role);
