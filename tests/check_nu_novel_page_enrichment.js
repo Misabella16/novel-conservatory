@@ -100,7 +100,7 @@ const env={DB,COMMUNITY_DB};
 (async()=>{
  const req={method:'POST',payload:{id:novelId,nuUrl:url},url:'https://private.example/api/admin/nu/book-import'};
  const result=await privateNuBookImport(req,env,'owner@example.com','owner');
- assert.equal(result.status,200);
+ assert.equal(result.status,200,'Private NU import failed: '+JSON.stringify(result.body));
  assert.equal(result.body.privateOnly,true);
  assert.equal(result.body.published,false);
  assert.equal(result.body.sourceFound,true);
