@@ -43,7 +43,7 @@ assert(!upload.includes('env.COMMUNITY_IMAGES.put'),
  'Cover extraction must never write to the public R2 bucket');
 assert(!upload.includes('published_catalogue_overrides'),
  'Cover extraction must never update the public catalogue');
-const action=snippet(backend,'async function epubCoverPublicAction(','async function privateEpubAutoCoverRoute(');
+const action=snippet(worker,'async function epubCoverPublicAction(','async function privateEpubAutoCoverRoute(');
 assert(action.includes('env.IMAGES.get(candidate.object_key)'));
 assert(!action.includes('private-epub-editions/'),'Public sync must not read EPUB object keys');
 assert(action.includes('env.COMMUNITY_IMAGES.put(imageKey,bytes'));
