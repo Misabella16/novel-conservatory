@@ -3835,6 +3835,14 @@ async function privateEpubCoverLibraryRoute(request,env,email,role){
    return epubCoverJson({novelId:id,privateOnly:true,selectedCover:current.cover||'',
     selectedCandidateId:current.candidateId||null,candidates:(rows.results||[]).map(epubCoverSafe)});
   }
+  if(path==='/api/admin/epub-cover-library/public-history'&&method==='GET'){
+   if(!env.COMMUNITY_DB)return epubCoverJson({error:'Shared catalogue unavailable'},503);
+   const id=editionBook(u.searchParams.get('id'));
+   if(!id)return epubCoverJson({error:'Select a novel'},400);
+   await env.COMMUNITY_DB.prepare("CREATE TABLE IF NOT EXISTS epub_public_cover_sync_events(id TEXT PRIMARY KEY,novel_id INTEGER NOT NULL,kind TEXT NOT NULL,before_json TEXT,after_json TEXT,before_key TEXT NOT NULL DEFAULT '',after_key TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,undone_at TEXT)").run();
+   const rows=await env.COMMUNITY_DB.prepare('SELECT id,created_at,undone_at FROM epub_public_cover_sync_events WHERE novel_id=? ORDER BY created_at DESC,id DESC LIMIT 30').bind(id).all();
+   return epubCoverJson({novelId:id,history:(rows.results||[]).map(x=>({id:x.id,createdAt:x.created_at,undoneAt:x.undone_at||null}))});
+  }
   if(path==='/api/admin/epub-cover-library/upload'&&method==='POST'){
    if(!strictOrigin(request))return epubCoverJson({error:'Invalid request origin'},403);
    const fd=await request.formData(),id=editionBook(fd.get('novelId')),
