@@ -38,9 +38,13 @@ const raw=fs.readFileSync(process.argv[2],'utf8');
 const code=raw.slice(raw.indexOf('async function nuSafeDuplicateScan('),raw.indexOf('async function nuHasPrivateEpub('));
 const canon=s=>String(s||'');
 const normalize=s=>String(s||'').normalize('NFKD').toLowerCase().replace(/[^a-z0-9]/g,'');
-const base=[{id:7,title:'Comet House',author:'A. Lin',nuUrl:'https://www.novelupdates.com/series/comet-house/',synopsis:'Base synopsis',tags:['Mystery']}];
+const base=[
+ {id:7,title:'Comet House',author:'A. Lin',nuUrl:'https://www.novelupdates.com/series/comet-house/',synopsis:'Base synopsis',tags:['Mystery']},
+ {id:8,title:'Moon Ice',author:'H. Park',nuUrl:'https://www.novelupdates.com/series/moon-ice/',tags:['Fantasy']}
+];
 const added=[
  {id:100111,visibility:'published',cover_key:'',title:'Comet House',author:'A. Lin',nuUrl:base[0].nuUrl,tags:['Mystery','School Life']},
+ {id:100142,visibility:'private',cover_key:'',title:'Moon Ice',author:'H. Park',nuUrl:base[1].nuUrl,tags:['Found Family']},
  {id:100118,visibility:'private',cover_key:'',title:'Ghost Book',author:'Z. Chen',nuUrl:'',tags:['Fantasy']},
  {id:100119,visibility:'private',cover_key:'',title:'Ghost Book',author:'Z. Chen',nuUrl:'',tags:[]},
  {id:100130,visibility:'published',cover_key:'',title:'Wrong book',author:'Different',nuUrl:'https://www.novelupdates.com/series/other/'},
@@ -66,12 +70,14 @@ vm.runInContext(code+';this.scan=nuSafeDuplicateScan;',ctx);
 ctx.scan(env,{origin:'https://novel-conservatory.pages.dev'}).then(d=>{
  const pairs=d.proposals.map(x=>x.sourceId+':'+x.targetId);
  assert(pairs.includes('100111:7'),JSON.stringify(pairs));
+ assert(pairs.includes('100142:8'),JSON.stringify(pairs));
+ assert(d.proposals.some(x=>x.sourceId===100142&&x.targetId===8&&x.privateOnly),JSON.stringify(d.proposals));
  assert(pairs.includes('100119:100118'),JSON.stringify(pairs));
  assert(pairs.includes('100161:100160'),JSON.stringify(pairs));
  assert(!pairs.includes('100141:100140'));
- assert(d.skipped.some(x=>x.reason==='Private/public visibility differs'));
+ assert(d.skipped.some(x=>x.reason.startsWith('Private/public visibility differs')));
  assert(d.skipped.some(x=>x.reason.includes('cover image')));
- assert(pairs.length===3,JSON.stringify(pairs));
+ assert(pairs.length===4,JSON.stringify(pairs));
  console.log('Safe duplicate discovery, metadata preference, EPUB and cover safeguards: OK');
 }).catch(e=>{console.error(e);process.exitCode=1});
 """

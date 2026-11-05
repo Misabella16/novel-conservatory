@@ -21,14 +21,24 @@ async function scanSafe(){
    result.skipped.length+' skipped for safety. No records have been changed.');
   for(const item of result.proposals.slice(0,45)){
    const row=document.createElement('div');row.className='result';
-   row.append(text('span','✓ #'+item.sourceId+' '+item.sourceTitle+' → keep #'+item.targetId+' '+item.targetTitle+' ('+item.match+')'));
+   row.append(text('span','✓ #'+item.sourceId+' '+item.sourceTitle+' → keep #'+item.targetId+' '+item.targetTitle+
+    ' ('+item.match+(item.privateOnly?' · PRIVATE-ONLY metadata, no publication':'')+')'));
    host.append(row);
   }
   if(result.skipped.length){
    const heading=text('h3','Skipped entries that need attention');host.append(heading);
    for(const item of result.skipped.slice(0,40)){
     const row=document.createElement('div');row.className='result';
-    row.append(text('span','#'+item.id+' · '+item.title+' · '+item.reason));host.append(row);
+    row.append(text('span','#'+item.id+' · '+item.title+' · '+item.reason));
+    if(item.targetId){
+     const action=text('button','Inspect pair');action.type='button';action.className='secondary';
+     action.addEventListener('click',()=>{
+      $('source-id').value=item.id;$('target-id').value=item.targetId;
+      $('merge-preview').hidden=true;latest=null;
+      show($('merge-status'),'Selected #'+item.id+' → #'+item.targetId+'. Compare the two entries below.');
+      $('source-id').scrollIntoView({behavior:'smooth',block:'center'});
+     });row.append(action);
+    }host.append(row);
    }
   }
   $('safe-merge').disabled=!result.proposals.length;
@@ -131,7 +141,8 @@ async function compare(){
   const result=await api('/api/admin/nu/merge-preview?sourceId='+sourceId+'&targetId='+targetId);
   latest=result;
   $('merge-head').textContent='Merge #'+sourceId+' into #'+targetId;
-  $('merge-summary').textContent='Keep “'+result.target.title+'” and combine information from “'+result.source.title+'”. Original record #'+targetId+' survives.';
+  $('merge-summary').textContent='Keep “'+result.target.title+'” and combine information from “'+result.source.title+'”. Original record #'+targetId+' survives.'+
+    (result.privateOnly?' PRIVATE-ONLY MERGE: the public catalogue and its metadata will not change. Only the private book receives missing details and unique tags.':'');
   const wrap=$('merge-conflicts');wrap.replaceChildren();
   for(const c of result.conflicts||[]){
    const block=document.createElement('div');block.className='conflict';
@@ -146,18 +157,20 @@ async function compare(){
    wrap.append(block);
   }
   if(!(result.conflicts||[]).length)wrap.append(text('p','No conflicting scalar fields. The missing fields and unique story tags will be combined automatically.'));
-  const blocked=!!result.blockedByEpub||!!result.alreadyMerged;
+  const blocked=!!result.blockedByEpub||!!result.alreadyMerged||!!result.visibilityConflict;
   $('merge-go').disabled=blocked;
   $('merge-preview').hidden=false;
   show($('merge-status'),blocked?(result.alreadyMerged?
    'That duplicate has already been merged. Check the Undo history.':
-   'This duplicate has EPUB editions attached. The merge is blocked to avoid breaking EPUB links. Ask the Owner to transfer the editions first.'):
+   result.visibilityConflict?'These books have incompatible privacy states. No merge was applied.':
+   'This duplicate has EPUB editions attached. The merge is blocked to avoid breaking EPUB links. Transfer the editions first.'):
+   result.privateOnly?'Ready for a PRIVATE-ONLY merge. Public information stays unchanged; Undo restores the duplicate.':
    'Ready. Merging will preserve the source record for Undo, without requiring a separate approval.',blocked);
  }catch(e){show($('merge-status'),e.message,true)}
 }
 $('preview-merge').addEventListener('click',compare);
 $('merge-go').addEventListener('click',async()=>{
- if(!latest||latest.blockedByEpub||latest.alreadyMerged)return;
+ if(!latest||latest.blockedByEpub||latest.alreadyMerged||latest.visibilityConflict)return;
  const btn=$('merge-go');btn.disabled=true;
  const fields=[...$('merge-conflicts').querySelectorAll('input[data-field]:checked')].map(x=>x.dataset.field);
  try{
@@ -169,7 +182,9 @@ $('merge-go').addEventListener('click',async()=>{
    })
   });
   $('merge-preview').hidden=true;latest=null;
-  show($('merge-status'),'✓ Merged duplicate #'+result.mergedFrom+' into #'+result.id+'. The original ID is preserved; browse should show one record after refreshing. Undo is available in the history below.'+
+  show($('merge-status'),'✓ Merged duplicate #'+result.mergedFrom+' into #'+result.id+'. The original ID is preserved; browse should show one record after refreshing.'+
+   (result.privateOnly?' Only private metadata was merged. Public information was not changed.':'')+
+   ' Undo is available in the history below.'+
    (result.privateSynced===false?'\nPrivate catalogue synchronization needs attention.':''));
   await history();await find();
  }catch(error){show($('merge-status'),error.message,true);btn.disabled=false}

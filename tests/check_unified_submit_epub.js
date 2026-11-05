@@ -12,11 +12,12 @@ assert(page.includes('id="entry-book-list"')&&page.includes('id="entry-rights"')
 assert(page.includes('id="entry-nu-url"')&&page.includes('id="entry-translator-url"'));
 assert(page.includes('id="entry-tags"')&&page.includes('id="entry-synopsis"'));
 assert(page.includes('/submit-epub/editor.js'));
-assert(admin.includes('＋ Add Novel Entry &amp; EPUBs'));
+assert(admin.includes('/admin/add-novels.html'),'Consolidated dashboard must offer Add Novel');
+assert(admin.includes('/admin/editions.html'),'Consolidated dashboard must offer bulk EPUB upload');
 assert(!admin.includes('＋ Add non-CG novels &amp; EPUBs'));
 assert(!admin.includes('📦 Legacy single-file importer'));
 assert(admin.includes("$('bulk-tab').hidden=true"));
-assert(admin.includes('/submit-epub/?tab=entry'));
+assert(admin.includes('/admin/add-novels.html'),'Admin novel workflow must remain available');
 assert(code.includes("if(which==='entry'&&!['owner','editor'].includes(role))return"));
 assert(code.includes("if(role==='owner')"));
 assert(code.includes("await req('/api/private/edition/start'"));

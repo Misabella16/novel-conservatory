@@ -17,7 +17,7 @@ assert "matched.visibility!==visibility" in code
 assert "await nuSaveEdit(env,url,email,matched.id,p)" in code
 assert "await extraInsert(env,p,'',visibility,email)" in code
 assert "return {ok:true,id:matched.id,reused:true,eventId:result.eventId" in code
-assert "const result=await extraCreateOrReuse(env,new URL(request.url),email,p,visibility)" in worker
+assert "else result=await extraCreateOrReuse(env,new URL(request.url),email,p,visibility)" in worker
 assert "return extraJson(result,result.ok?200:409)" in worker
 assert "Duplicate" in legacy or "duplicate" in legacy
 assert "j.reused" in legacy and "result.reused" in form

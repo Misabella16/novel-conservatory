@@ -18,7 +18,7 @@ for required in (
  else:assert required in segment,required
 assert "if(result.ok&&!result.reused)result.eventId=await extraRecordCreationUndo(env,email,result.id)" in worker
 assert worker.count("if(result.ok&&!result.reused)result.eventId=await extraRecordCreationUndo(env,email,result.id)")>=2
-assert 'if(row.cover_key)throw Error' in worker
+assert "if(row.cover_key&&row.cover_key!==(snap.afterCoverKey||''))" in worker
 assert "if(await nuHasPrivateEpub(env,targetId))throw Error('This book now has EPUBs" in worker
 assert "snap.afterVisibility!==undefined&&row.visibility!==snap.afterVisibility" in worker
 assert 'id="entry-undo"' in page
