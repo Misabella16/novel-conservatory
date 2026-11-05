@@ -499,7 +499,11 @@ const guestMerge=(current,incoming)=>{
    result[field]=value;changed.push(field);
   }
  }
- if(changed.length){result.metadataReview=false;result.metadataSource='Community submission (unreviewed)';}
+ if(changed.length&&!current.metadataReview){
+  result.metadataReview=false;
+  result.metadataSource=current.metadataSource&&current.metadataSource!=='Reader submission'?
+   current.metadataSource:'Community submission (unreviewed)';
+ }
  return {result,changed};
 };
 let guestSeedCache=null;
@@ -613,7 +617,8 @@ async function guestApply(env,request,p,coverKey,visitor){
  const next={...old};
  for(const key of changed)if(key!=='cover')next[key]=result[key];
  if(newImageId){next.cover=result.cover;next.coverRights=true;next.coverCredit=p.coverCredit}
- next.metadataReview=false;next.metadataSource='Community submission (unreviewed)';
+ if(!old.metadataReview)next.metadataReview=false;
+ if(!old.metadataSource)next.metadataSource='Community submission (unreviewed)';
  const after=JSON.stringify(next);
  if(newImageId)await env.COMMUNITY_DB.prepare('INSERT INTO community_entries(id,scope,novel_id,kind,display_name,author_identity,body,rating,spoiler,tags_json,external_url,image_key,image_credit,parent_id,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
   .bind(newImageId,'public',base.id,'image',visitor||'Community contributor',who,'Community-submitted cover',null,0,'[]','',coverKey,p.coverCredit,'','approved').run();
