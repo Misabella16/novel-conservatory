@@ -2041,6 +2041,25 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  try{await audit(env,email,sourceId?'nu.duplicate.merge':'nu.metadata.sync',target.id,eventId)}catch{}
  return {ok:true,id:target.id,eventId,mergedFrom:sourceId||null,conflicts:computed.conflicts,changed:computed.changed,privateSynced};
 }
+async function nuCreateEdited(env,email,source){
+ const data=extraPayload({...source,metadataReview:true,metadataSource:source.metadataSource||'Novel Updates source'});
+ if(data.title.length<2)throw Error('A title is required');
+ if(!data.nuUrl)throw Error('Use a canonical Novel Updates series URL');
+ const id=await extraInsert(env,data,'','published',email);
+ const eventId=crypto.randomUUID(),row=await env.COMMUNITY_DB.prepare('SELECT payload_json FROM additional_catalogue_novels WHERE id=?').bind(id).first();
+ const snap={targetKind:'created',beforeTarget:null,afterTarget:row.payload_json,
+  sourceId:null,beforeSourceMarker:'',afterSourceMarker:'reverted-create:'+id,
+  beforePrivate:null,afterPrivate:null};
+ try{
+  await env.COMMUNITY_DB.prepare('INSERT INTO catalogue_edit_events(id,operation,target_id,duplicate_id,before_json,after_json,source_url,actor_email) VALUES(?,?,?,?,?,?,?,?)')
+   .bind(eventId,'create',id,null,JSON.stringify(snap),JSON.stringify({target:row.payload_json}),data.nuUrl,email).run();
+ }catch(e){
+  await env.COMMUNITY_DB.prepare("DELETE FROM additional_catalogue_novels WHERE id=? AND payload_json=? AND source_submission_id=''").bind(id,row.payload_json).run().catch(()=>{});
+  throw e;
+ }
+ try{await audit(env,email,'nu.direct.create',id,eventId)}catch{}
+ return {ok:true,id,eventId,created:true,changed:NU_EDITABLE.filter(k=>!nuBlank(data[k])),privateSynced:true};
+}
 async function nuUndoEdit(env,email,eventId){
  const id=String(eventId||'');
  if(!/^[a-f0-9-]{36}$/.test(id))throw Error('Choose a valid change to undo');
@@ -2048,6 +2067,18 @@ async function nuUndoEdit(env,email,eventId){
  if(!event)throw Error('Change history entry not found');
  if(event.undone_at)throw Error('This change has already been undone');
  const snap=JSON.parse(event.before_json),targetId=Number(event.target_id);
+ if(snap.targetKind==='created'){
+  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
+  if(row?.payload_json!==snap.afterTarget||row.source_submission_id!=='')
+   throw Error('The new book changed since creation. Undo any later edits first.');
+  if(await nuHasPrivateEpub(env,targetId))throw Error('This book now has EPUBs. Unlink or transfer them safely before undoing creation.');
+  const result=await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND source_submission_id=''")
+   .bind('reverted-create:'+targetId,targetId,snap.afterTarget).run();
+  if((result.meta?.changes||0)!==1)throw Error('Creation changed while undoing; refresh first.');
+  await env.COMMUNITY_DB.prepare("UPDATE catalogue_edit_events SET undone_at=CURRENT_TIMESTAMP,undone_by=? WHERE id=? AND undone_at IS NULL").bind(email,id).run();
+  try{await audit(env,email,'nu.create.undo',targetId,id)}catch{}
+  return {ok:true,undone:true,eventId:id,targetId,hiddenCreated:true,privateSynced:true};
+ }
  if(snap.targetKind==='seed'){
   const current=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(targetId).first();
   if(current?.patch_json!==snap.afterTarget)throw Error('The book was edited again. Resolve those newer changes before undoing this one.');
