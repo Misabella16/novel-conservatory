@@ -67,7 +67,13 @@ async function start(){
   $('synopsis').textContent=d.synopsis||'This novel does not have a synopsis yet. EPUB and Novel Updates metadata can fill missing information.';
   $('source-info').textContent=d.metadataSource?'Metadata source: '+d.metadataSource:'';
   chips($('genres'),d.genres);chips($('tags'),d.tags);
-  const src=cleanUrl(d.cover||'');
+  // Preserve original book-cover paths from the root catalogue. Relative
+  // "covers/123.png" must not resolve underneath /novel/123.
+  // Only display source artwork when rights or private EPUB scope are known.
+  const coverPath=String(d.cover||'');
+  const allowedCover=!!(d.coverRights||d.privateCover);
+  const src=allowedCover?cleanUrl(/^covers\/[0-9]+\.(?:png|jpe?g|webp)$/i.test(coverPath)?
+   '/'+coverPath:coverPath):'';
   if(src){
    $('cover').src=src;$('cover').alt='Cover of '+d.title;
    $('cover').classList.remove('hidden');$('placeholder').classList.add('hidden');
