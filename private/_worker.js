@@ -495,7 +495,7 @@ async function routes(request,env,ctx,email,role){
    const response=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',url.origin)));
    if(!response.ok)return respond({error:'Catalogue unavailable'},503);
    const original=await response.json(),base=Array.isArray(original)?original:(original.books||[]);
-   if(env.COMMUNITY_DB){try{const additions=await env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000").all();base.push(...(additions.results||[]).map(r=>extraDecorate(r,'private')));}catch{}}
+   if(env.COMMUNITY_DB){try{const additions=await env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000").all();base.push(...await canonicalPrivateDecorate(env,additions.results||[]));}catch{}}
    return respond(base);
   }
   if(path.startsWith('/api/shelves'))return shelfRoutes(request,env,email);
@@ -509,7 +509,7 @@ async function routes(request,env,ctx,email,role){
         env.DB.prepare('SELECT id,patch FROM novel_edits').all(),
         env.DB.prepare("SELECT value FROM site_settings WHERE key='homepage'").first()
       ]);
-      let additional=[];if(env.COMMUNITY_DB){try{const r=await env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000").all();additional=(r.results||[]).map(x=>extraDecorate(x,'private'));}catch{}}
+      let additional=[];if(env.COMMUNITY_DB){try{const r=await env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000").all();additional=await canonicalPrivateDecorate(env,r.results||[]);}catch{}}
       // Private-only, explicitly approved embedded EPUB covers. The public
       // project has no route to this private R2 bucket or site_settings table.
       const edits=(novels.results||[]).map(x=>({id:x.id,patch:JSON.parse(x.patch)}));
@@ -1910,6 +1910,16 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
    const rows=await env.COMMUNITY_DB.prepare(sql).all();
    return extraJson({novels:(rows.results||[]).map(row=>extraDecorate(row,scope)),configured:true});
   }
+  if(path==='/api/additional/projection-cover'&&method==='GET'&&scope==='private'){
+   const id=extraId(new URL(request.url).searchParams.get('id'));
+   if(!id||!env.COMMUNITY_IMAGES)return new Response('Not found',{status:404});
+   await canonicalEnsurePrivate(env);
+   const projection=await env.COMMUNITY_DB.prepare('SELECT cover_key FROM public_novel_projections WHERE novel_id=?').bind(id).first();
+   if(!projection?.cover_key)return new Response('Not found',{status:404});
+   const file=await env.COMMUNITY_IMAGES.get(projection.cover_key);
+   if(!file)return new Response('Not found',{status:404});
+   return new Response(file.body,{headers:{'content-type':file.httpMetadata?.contentType||'image/jpeg','cache-control':'private,no-store','x-content-type-options':'nosniff'}});
+  }
   if(path==='/api/additional/cover'&&method==='GET'){
    const id=extraId(new URL(request.url).searchParams.get('id'));if(!id||!env.COMMUNITY_IMAGES)return new Response('Not found',{status:404});
    const row=await env.COMMUNITY_DB.prepare('SELECT cover_key,visibility,source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(id).first();
@@ -2108,6 +2118,21 @@ async function canonicalPrivateResolve(env,raw){
   id=Number(alias.target_id);
  }
  return null;
+}
+async function canonicalPrivateDecorate(env,rows){
+ await canonicalEnsurePrivate(env);
+ const publicRows=await env.COMMUNITY_DB.prepare('SELECT novel_id,payload_json,cover_key FROM public_novel_projections LIMIT 5000').all();
+ const byId=new Map((publicRows.results||[]).map(x=>[Number(x.novel_id),x]));
+ return rows.map(row=>{
+  const privateBook=extraDecorate(row,'private');
+  const projection=byId.get(Number(row.id));
+  if(!projection||row.visibility==='published')return privateBook;
+  let publicFields={};try{publicFields=JSON.parse(projection.payload_json||'{}')}catch{return privateBook}
+  const combined=nuMergeData(privateBook,publicFields,[]).after;
+  return {...combined,id:row.id,visibility:'private',
+   cover:privateBook.cover||(projection.cover_key?'/api/additional/projection-cover?id='+row.id:''),
+   coverRights:!!privateBook.cover||(!!projection.cover_key)};
+ });
 }
 async function canonicalPrivateOwner(env,book){
  const keys=canonicalPrivateKeys(book);
