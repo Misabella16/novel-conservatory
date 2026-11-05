@@ -329,6 +329,7 @@ async function routes(request,env,ctx,email,role){
   // owner enables sharing. All uploads, edits and bulk inventory remain owner-only.
   if(path.startsWith('/api/epub-submissions/'))return privateEpubSubmissionRoutes(request,env,email,role);
   if(path.startsWith('/api/admin/nu/'))return nuAdminRoutes(request,env,email,role);
+  if(path==='/api/admin/epub-insights/private-cover')return privateEpubCoverRoute(request,env,email,role);
   if(path.startsWith('/api/admin/epub-insights/'))return epubInsightsRoutes(request,env,email,role);
   if(path.startsWith('/api/additional/')||path.startsWith('/api/admin/additional/'))return additionalRoutes(request,env,'private',email,role);
   if(path.startsWith('/api/private/edition/'))return editionRoutes(request,env,email,role);
@@ -504,7 +505,29 @@ async function routes(request,env,ctx,email,role){
         env.DB.prepare("SELECT value FROM site_settings WHERE key='homepage'").first()
       ]);
       let additional=[];if(env.COMMUNITY_DB){try{const r=await env.COMMUNITY_DB.prepare('SELECT * FROM additional_catalogue_novels ORDER BY created_at DESC LIMIT 5000').all();additional=(r.results||[]).map(x=>extraDecorate(x,'private'));}catch{}}
-      return respond({edits:(novels.results||[]).map(x=>({id:x.id,patch:JSON.parse(x.patch)})),additional,homepage:setting?JSON.parse(setting.value):{},configured:true});
+      // Private-only, explicitly approved embedded EPUB covers. The public
+      // project has no route to this private R2 bucket or site_settings table.
+      const edits=(novels.results||[]).map(x=>({id:x.id,patch:JSON.parse(x.patch)}));
+      if(await canReadEpubs(email,role,env)){
+       const covers=await env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-epub-cover:%' LIMIT 5000").all();
+       const byId=new Map(edits.map(x=>[Number(x.id),x]));
+       const extras=new Map(additional.map(x=>[Number(x.id),x]));
+       for(const entry of covers.results||[]){
+        const match=/^private-epub-cover:([1-9][0-9]*)$/.exec(entry.key);
+        if(!match)continue;
+        const id=Number(match[1]);let value;
+        try{value=JSON.parse(entry.value)}catch{continue}
+        const cover=String(value?.cover||'');
+        if(!/^\/media\/[a-f0-9-]{36}\.jpg$/.test(cover))continue;
+        if(id<=962){
+         let edit=byId.get(id);if(!edit){edit={id,patch:{}};edits.push(edit);byId.set(id,edit)}
+         edit.patch={...edit.patch,cover,coverRights:true,coverCredit:'Private EPUB cover · permission confirmed'};
+        }else{
+         const extra=extras.get(id);if(extra){extra.cover=cover;extra.coverRights=true;extra.coverCredit='Private EPUB cover · permission confirmed'}
+        }
+       }
+      }
+      return respond({edits,additional,homepage:setting?JSON.parse(setting.value):{},configured:true});
     }catch{return respond({error:'Database unavailable'},503);}
   }
   if(path.startsWith('/media/')&&method==='GET'){
@@ -2211,6 +2234,71 @@ async function nuAdminRoutes(request,env,email,role){
  }
 }
 
+const PRIVATE_EPUB_COVER_KEY='private-epub-cover:';
+async function privateEpubCoverRoute(request,env,email,role){
+ if(!isEditor(role)||!await canReadEpubs(email,role,env))
+  return editionJson({error:'Editor access and EPUB reading permission are required'},403);
+ if(request.method!=='POST'||!strictOrigin(request))
+  return editionJson({error:'Cross-origin or invalid request'},403);
+ if(!env.IMAGES||!env.DB)return editionJson({error:'Private image storage unavailable'},503);
+ if(!(request.headers.get('content-type')||'').startsWith('multipart/form-data'))
+  return editionJson({error:'Select a reviewed EPUB cover image'},415);
+ if(Number(request.headers.get('content-length')||0)>3300000)
+  return editionJson({error:'Cover is too large'},413);
+ let form;try{form=await request.formData()}catch{return editionJson({error:'Invalid cover form'},400)}
+ const id=editionBook(form.get('novelId')),edition=String(form.get('editionId')||'');
+ const file=form.get('image'),replace=form.get('replace')==='true';
+ if(!id||!(file instanceof File)||file.type!=='image/jpeg'||file.size<80||file.size>2800000)
+  return editionJson({error:'Choose an existing novel and JPEG under 2.8 MB'},400);
+ if(form.get('rightsConfirmed')!=='true'||form.get('confirm')!=='true')
+  return editionJson({error:'Confirm image rights and approval before showing an EPUB cover privately'},400);
+ if(id>962&&!await extraNovelExists(env,id))
+  return editionJson({error:'Novel entry missing'},404);
+ let valid=false;
+ if(edition==='legacy'&&id<=962){
+  const old=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+id).first();
+  valid=!!old;
+ }else{
+  const uuid=editionUuid(edition);
+  if(uuid)valid=!!await env.DB.prepare('SELECT id FROM '+editionTable(id)+' WHERE novel_id=? AND id=?').bind(id,uuid).first();
+ }
+ if(!valid)return editionJson({error:'The selected stored EPUB edition is not linked to this novel'},409);
+ const settingKey=PRIVATE_EPUB_COVER_KEY+id;
+ let already=!!await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(settingKey).first();
+ if(!already){
+  if(id<=962){
+   const old=await env.DB.prepare('SELECT patch FROM novel_edits WHERE id=?').bind(id).first();
+   let patch={};try{patch=JSON.parse(old?.patch||'{}')}catch{}
+   already=!!patch.cover;
+   if(!already){
+    const seed=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',request.url)));
+    if(seed.ok){const raw=await seed.json(),item=(Array.isArray(raw)?raw:raw.books||[]).find(x=>x.id===id);already=!!item?.cover}
+   }
+   if(!already&&env.COMMUNITY_DB){
+    const published=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(id).first();
+    if(published){try{already=!!JSON.parse(published.patch_json||'{}').cover}catch{}}
+   }
+  }else if(env.COMMUNITY_DB){
+   const novel=await env.COMMUNITY_DB.prepare('SELECT cover_key,payload_json FROM additional_catalogue_novels WHERE id=?').bind(id).first();
+   if(novel){let meta={};try{meta=JSON.parse(novel.payload_json||'{}')}catch{}already=!!novel.cover_key||!!meta.cover}
+  }
+ }
+ if(already&&!replace)return editionJson({error:'This novel already has a cover. Choose explicit replacement to change it.'},409);
+ const bytes=await file.arrayBuffer(),v=new Uint8Array(bytes);
+ if(v.length<3||v[0]!==255||v[1]!==216||v[2]!==255)return editionJson({error:'Invalid JPEG image bytes'},415);
+ const key=crypto.randomUUID()+'.jpg';
+ try{
+  await env.IMAGES.put(key,bytes,{httpMetadata:{contentType:'image/jpeg'}});
+  const value=JSON.stringify({cover:'/media/'+key,novelId:id,editionId:edition,approvedBy:email,approvedAt:new Date().toISOString(),scope:'private',rightsConfirmed:true});
+  await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP')
+   .bind(settingKey,value).run();
+  try{await audit(env,email,'epub.private_cover.approve',id,edition)}catch{}
+  return editionJson({ok:true,novelId:id,cover:'/media/'+key,scope:'private',publicPublished:false});
+ }catch(error){
+  try{await env.IMAGES.delete(key)}catch{}
+  return editionJson({error:'Could not save the private EPUB cover. The EPUB file was not changed.'},500);
+ }
+}
 const INSIGHT_KEY='epub-insights-v1:';
 const insightTrim=(v,max)=>String(v??'').trim().slice(0,max);
 const insightList=(v,max=24)=>Array.isArray(v)?[...new Set(v.filter(x=>typeof x==='string').map(x=>x.trim().slice(0,70)).filter(Boolean))].slice(0,max):[];
