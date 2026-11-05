@@ -80,7 +80,13 @@ async function test(){
  assert(worker.includes("if(imported.genres?.length)item.genres=mergeEpubTags"));
  assert(!worker.includes("if(!item.metadataReview&&imported.tags?.length)"),
   'Private source labels must remain additive even on reviewed books');
- assert(!helper.includes('env.COMMUNITY_IMAGES.put'),'Private cover must not write to public image storage');
+ const autoCover=between('async function privateEpubAutoCoverRoute(', 'async function privateEpubCoverRoute(');
+ assert(!autoCover.includes('env.COMMUNITY_IMAGES.put'),
+  'Automatic private cover extraction must not write to public image storage');
+ const candidateUpload=between("if(path==='/api/admin/epub-cover-library/upload'&&method==='POST')",
+  "if(method!=='POST'||!strictOrigin(request))");
+ assert(!candidateUpload.includes('env.COMMUNITY_IMAGES.put'),
+  'Saving separate private cover candidates must never write to the public bucket');
  assert(bulk.includes("'/api/admin/epub/ingest-metadata'"));
  assert(bulk.includes("'/api/admin/epub-artwork/private-auto'"));
  assert(fullScan.includes("'/api/private/epub/bulk-status'"));

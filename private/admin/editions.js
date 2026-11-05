@@ -44,10 +44,16 @@ async function init(){try{
  approved=true;
  const [cat,content,inventoryData]=await Promise.all([json(await fetch('/api/catalogue',{cache:'no-store'})),json(await fetch('/api/content',{cache:'no-store'})),json(await fetch('/api/private/edition/inventory',{cache:'no-store'}))]);
  const list=Array.isArray(cat)?cat:(cat.books||[]),edits=new Map((content.edits||[]).map(x=>[x.id,x.patch]));
- books=list.map(b=>({...b,...(edits.get(b.id)||{})}));
- for(const b of books){for(const name of [b.title,b.originalTitle]){const k=norm(name);if(!k)continue;const v=titleMap.get(k)||[];if(!v.includes(b.id))v.push(b.id);titleMap.set(k,v);}const o=document.createElement('option');o.value=bookLabel(b);$('novel-choices').append(o);}
+ books=[];
+ for(const b of list)addBook({...b,...(edits.get(b.id)||{})});
+ for(const b of content.additional||[])if(b?.id)addBook(b);
  for(const e of inventoryData.editions||[]){const x=inventory.get(e.id)||[];x.push(e);inventory.set(e.id,x);}
  text(`Ready. ${books.length} existing novels, ${inventoryData.editions?.length||0} newer EPUB editions on record.`);
+ const selectedId=Number(new URLSearchParams(location.search).get('novel'));
+ if(Number.isSafeInteger(selectedId)&&books.some(x=>x.id===selectedId)){
+  $('lookup').value='#'+selectedId;
+  $('lookup-btn').click();
+ }
 }catch(e){text(e.message,true)}}
 $('files').addEventListener('change',()=>{$('folder').value='';files=Array.from($('files').files);text(`${files.length} selected. Click Review & match files.`)});
 $('folder').addEventListener('change',()=>{$('files').value='';files=Array.from($('folder').files).filter(f=>/\.epub$/i.test(f.name));text(`${files.length} EPUBs selected from folder.`)});
@@ -116,14 +122,33 @@ async function ingestEmbeddedMetadata(id,editionId,metadata){
 async function tryAutoCover(r){
   if(!window.CoverExtractor)return {published:false,detail:'Cover extractor unavailable'};
   const result=await CoverExtractor.detectCover(r.file);
-  if(!result.image)return {published:false,detail:result.reason||'No cover found'};
-  const data=new FormData();data.set('novel_id',String(r.bookId));data.set('source',r.file.name.slice(0,125));data.set('image',new File([result.image],'epub-cover.jpg',{type:'image/jpeg'}));
-  // Never publish artwork from a private-only, automatically created novel.
-  const endpoint='/api/admin/epub-artwork/private-auto';
-  const response=await fetch(endpoint,{method:'POST',body:data,credentials:'same-origin'});
-  const j=await response.json().catch(()=>({}));if(!response.ok)return {published:false,detail:j.error||'Cover publishing failed'};
-  return {published:!!j.stored,eventId:j.eventId||null,
-   detail:j.stored?'Private cover extracted, never public':j.reason||'Existing cover retained'};
+  if(!result.image)return {published:false,detail:result.reason||'No embedded cover found'};
+  const editionId=r.editionId||'legacy';
+  const image=new File([result.image],'epub-cover.jpg',{type:'image/jpeg'});
+  // Every edition keeps its own private candidate, even when a novel already
+  // has an editorial/default cover. Deduplicated by edition and SHA-256.
+  const candidateForm=new FormData();
+  candidateForm.set('novelId',String(r.bookId));
+  candidateForm.set('editionId',String(editionId));
+  candidateForm.set('source',r.file.name.slice(0,125));
+  candidateForm.set('image',image);
+  const stored=await fetch('/api/admin/epub-cover-library/upload',{
+   method:'POST',body:candidateForm,credentials:'same-origin'});
+  const entry=await stored.json().catch(()=>({}));
+  if(!stored.ok)throw Error(entry.error||'Could not save extracted private cover candidate');
+  // Keep the existing first-cover default behavior, but NEVER send an
+  // automatically extracted cover to the public site.
+  const data=new FormData();data.set('novel_id',String(r.bookId));
+  data.set('source',r.file.name.slice(0,125));data.set('image',image);
+  const auto=await fetch('/api/admin/epub-artwork/private-auto',{
+   method:'POST',body:data,credentials:'same-origin'});
+  const defaults=await auto.json().catch(()=>({}));
+  return {published:!!(entry.saved||entry.existing),candidateSaved:!!entry.saved,
+   candidateId:entry.candidate?.id||null,eventId:defaults.eventId||null,
+   defaultSelected:!!defaults.stored,
+   detail:entry.saved?'Saved private cover separately for edition '+editionId:
+    'Private cover already extracted for this edition'+
+     (!auto.ok?' (default cover not changed)':'')};
 }
 async function uploadReady(){if(busy||!approved)return;const work=rows.filter(r=>['Ready','Ready · create private novel'].includes(rowState(r)));if(!work.length)return;
  
@@ -135,7 +160,7 @@ async function uploadReady(){if(busy||!approved)return;const work=rows.filter(r=
    try{const meta=await ingestEmbeddedMetadata(r.bookId,entry.id,r.meta);r.enrichment=meta;
     if(meta.changed?.length&&coverNotes.length<12)coverNotes.push(r.file.name+': private '+meta.changed.join(', ')+' imported');
    }catch(e){if(coverNotes.length<12)coverNotes.push(r.file.name+': metadata import failed ('+e.message+')')}
-   try{const art=await tryAutoCover(r);r.coverImport=art;if(art.published)covers++;else if(coverNotes.length<12)coverNotes.push(r.file.name+': '+art.detail) }catch(e){r.coverError='Cover extraction failed ('+e.message+')';if(coverNotes.length<12)coverNotes.push(r.file.name+': '+r.coverError)}
+   try{r.editionId=entry.id;const art=await tryAutoCover(r);r.coverImport=art;if(art.published)covers++;else if(coverNotes.length<12)coverNotes.push(r.file.name+': '+art.detail) }catch(e){r.coverError='Cover extraction failed ('+e.message+')';if(coverNotes.length<12)coverNotes.push(r.file.name+': '+r.coverError)}
   }catch(e){r.error=String(e.message||e).slice(0,180);failed++;}
   draw();
  }

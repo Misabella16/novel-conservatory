@@ -6,7 +6,7 @@
 const $=id=>document.getElementById(id);
 const button=$('backfill'),pause=$('backfill-stop'),progress=$('backfill-progress');
 if(!button||!pause||!progress)return;
-const checkpointKey='conservatory:stored-epub-enrichment:v2';
+const checkpointKey='conservatory:stored-epub-enrichment:v3';
 let running=false,stopRequested=false;
 const blankStats=()=>({metadataImproved:0,tagUpdates:0,genreUpdates:0,synopsisUpdates:0,coversStored:0,
  noSubjectTags:0,noCoverFound:0,metadataMissing:0,tooLarge:0});
@@ -18,7 +18,7 @@ function status(message,error=false){
 function loadCheckpoint(){
  try{
   const result=JSON.parse(localStorage.getItem(checkpointKey)||'null');
-  return result?.version===2&&Array.isArray(result.completed)&&result.failures&&
+  return result?.version===3&&Array.isArray(result.completed)&&result.failures&&
    typeof result.failures==='object'?result:null;
  }catch{return null}
 }
@@ -87,7 +87,7 @@ button.addEventListener('click',async()=>{
   let checkpoint=loadCheckpoint();
   const currentKeys=new Set(entries.keys());
   if(!checkpoint||checkpoint.finished){
-   checkpoint={version:2,completed:[],failures:{},stats:blankStats(),finished:false};
+   checkpoint={version:3,completed:[],failures:{},stats:blankStats(),finished:false};
   }
   const completed=new Set(checkpoint.completed.filter(k=>currentKeys.has(k)));
   const errors=Object.fromEntries(
@@ -129,7 +129,7 @@ button.addEventListener('click',async()=>{
       if(saved.changed.includes('genres'))stats.genreUpdates++;
       if(saved.changed.includes('synopsis'))stats.synopsisUpdates++;
      }
-     const cover=await tools.cover({file:epub,bookId:id});
+     const cover=await tools.cover({file:epub,bookId:id,editionId});
      if(cover.published)stats.coversStored++;
      else if(/no cover|not found|unavailable/i.test(cover.detail||''))stats.noCoverFound++;
     }
@@ -138,7 +138,7 @@ button.addEventListener('click',async()=>{
    }catch(error){
     errors[key]='#'+id+' · '+filename+': '+String(error.message||error);
    }
-   checkpoint={version:2,completed:[...completed],failures:errors,stats,finished:false};
+   checkpoint={version:3,completed:[...completed],failures:errors,stats,finished:false};
    const saved=saveCheckpoint(checkpoint);
    updateProgress(attempted.size,total,stats,Object.keys(errors).length);
    if(!saved)status('Your browser could not save scan progress. Keep this tab open.',true);
@@ -147,7 +147,7 @@ button.addEventListener('click',async()=>{
    await new Promise(resolve=>setTimeout(resolve,0));
   }
   const remaining=total-completed.size;
-  checkpoint={version:2,completed:[...completed],failures:errors,stats,
+  checkpoint={version:3,completed:[...completed],failures:errors,stats,
    finished:remaining===0};
   saveCheckpoint(checkpoint);
   updateProgress(attempted.size,total,stats,Object.keys(errors).length);
