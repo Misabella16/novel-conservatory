@@ -17,7 +17,7 @@ assert "nu?'Refresh details from Novel Updates':'Add Novel Updates link &amp; so
 assert "&url=${encodeURIComponent(nu||'')}" in profile
 assert "copy its series URL" in profile[profile.index("function renderDetail(d)"):profile.index("function openDetail(d)")]
 assert "Even an already-linked novel can request updated synopsis, genres, tags and a cover reference" in profile
-assert "title=" in profile[profile.index("Refresh details from Novel Updates")-400:profile.index("Refresh details from Novel Updates")+400]
+assert 'title="Submit or refresh information from the actual Novel Updates series listing"' in profile
 
 assert "id=\"linked-novel\"" in form_html
 assert "The exact novel is already selected" in form_html
