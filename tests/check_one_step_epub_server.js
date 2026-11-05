@@ -82,12 +82,21 @@ async function check(){
  result=await ctx.ingest(request,env,'owner@example.com','owner');
  assert.equal(result.status,409);
  assert.equal(privateRow,previous,'A conflicting source URL must not mutate private metadata');
- stagedEnabled=false;privateRow=null;privateEvent=null;
+ stagedEnabled=false;privateRow=null;privateEvent=null;original.nuUrl='';
  result=await ctx.ingest({...request,body:{...request.body,
-  metadata:{title:'Summer Novel',nuUrl:nu,tags:['Fantasy']}}},
+  metadata:{title:'Summer Novel',author:'Author',nuUrl:nu,tags:['Fantasy']}}},
   env,'owner@example.com','owner');
  assert.equal(result.payload.stagedSourceUsed,false);
  assert.equal(JSON.parse(privateRow).tags[0],'Fantasy');
+ assert.equal(JSON.parse(privateRow).nuUrl,nu,
+  'An exact EPUB source URL can be saved privately when both title and author match');
+ privateRow=null;privateEvent=null;
+ result=await ctx.ingest({...request,body:{...request.body,
+  metadata:{title:'Summer Novel',author:'Different Person',nuUrl:nu,tags:['Mystery']}}},
+  env,'owner@example.com','owner');
+ assert.equal(result.status,200);
+ assert.equal(JSON.parse(privateRow).nuUrl,undefined,
+  'A conflicting author cannot silently establish a source identity');
  console.log('Staged NU metadata used only after identity check, private-only fields + undo snapshot: OK');
 }
 check().catch(e=>{console.error(e);process.exitCode=1});
