@@ -18,13 +18,13 @@ const code=[
 ].join('\n');
 
 const state={
- privatePatch:null,publicPatch:null,source:null,event:null,alias:null,
+ privatePatch:null,publicPatch:null,source:null,event:null,alias:null,alias:null,
  hasEpub:false,journalFailure:false,publicWrites:0
 };
 const base={id:7,title:'Moon Ice',author:'H. Park',synopsis:'Original summary',
  tags:['Adventure'],genres:['Fantasy'],nuUrl:'https://www.novelupdates.com/series/moon-ice/'};
 function reset(){
- state.privatePatch=null;state.publicPatch=null;state.event=null;state.alias=null;
+ state.privatePatch=null;state.publicPatch=null;state.event=null;state.alias=null;state.alias=null;
  state.hasEpub=false;state.journalFailure=false;state.publicWrites=0;
  state.source={
   id:100142,title:'Moon Ice',visibility:'private',cover_key:'',
@@ -44,6 +44,7 @@ function statement(domain,sql,args=[]){
    if(domain==='community'&&sql.startsWith('SELECT patch_json FROM published_catalogue_overrides'))return state.publicPatch===null?null:{patch_json:state.publicPatch};
    if(domain==='community'&&sql.startsWith('SELECT source_submission_id FROM additional_catalogue_novels'))return {source_submission_id:state.source.source_submission_id};
    if(domain==='community'&&sql.startsWith('SELECT * FROM catalogue_edit_events'))return state.event;
+   if(domain==='community'&&sql.startsWith('SELECT target_id,event_id FROM canonical_novel_aliases'))return state.alias;
    if(domain==='community'&&sql.startsWith('SELECT target_id,event_id FROM canonical_novel_aliases'))return state.alias;
    throw Error('Unexpected first(): '+domain+' '+sql);
   },
@@ -78,6 +79,15 @@ function statement(domain,sql,args=[]){
     }
     return response(0);
    }
+   if(domain==='community'&&sql.startsWith('INSERT INTO canonical_novel_aliases')){
+    if(state.alias)return response(0);
+    state.alias={source_id:args[0],target_id:args[1],event_id:args[2]};
+    return response();
+   }
+   if(domain==='community'&&sql.startsWith('DELETE FROM canonical_novel_aliases')){
+    if(state.alias?.source_id===args[0]){state.alias=null;return response()}
+    return response(0);
+   }
    if(domain==='community'&&sql.startsWith('INSERT INTO catalogue_edit_events')){
     if(state.journalFailure)throw Error('Simulated journal outage');
     state.event={id:args[0],operation:args[1],target_id:args[2],duplicate_id:args[3],
@@ -107,7 +117,7 @@ const ctx={
  extraId:value=>Number(value)>=100000?Number(value):null,
  extraPayload:value=>value,
  nuStoredTitleKey:value=>String(value||'').toLowerCase(),
- nuEnsureJournal:async()=>{},canonicalEnsurePrivate:async()=>{},
+ nuEnsureJournal:async()=>{},canonicalEnsurePrivate:async()=>{},canonicalEnsurePrivate:async()=>{},
  nuGetExisting:async()=>({kind:'seed',id:7,base,data:{...base},title:base.title,beforeRaw:state.publicPatch}),
  nuAdditionalData:row=>({...JSON.parse(row.payload_json),id:row.id,title:row.title}),
  nuHasPrivateEpub:async()=>state.hasEpub,
