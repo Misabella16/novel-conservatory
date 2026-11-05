@@ -11,6 +11,20 @@ async function activeBanner(env){
 }
 export default {async fetch(request,env){
  const url=new URL(request.url),path=url.pathname;
+ if(path==='/api/novel/resolve'&&request.method==='GET'){
+  if(!env.COMMUNITY_DB)return respond({error:'Catalogue unavailable'},503);
+  const id=await canonicalPublicResolve(env,url.searchParams.get('id'));
+  if(!id)return respond({error:'Unknown novel'},404);
+  if(id>962){
+   const row=await env.COMMUNITY_DB.prepare('SELECT visibility,source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(id).first();
+   if(!row||/^(?:merged-into:|reverted-create:)/.test(row.source_submission_id||''))return respond({error:'Unknown novel'},404);
+   if(row.visibility!=='published'){
+    const projection=await env.COMMUNITY_DB.prepare('SELECT novel_id FROM public_novel_projections WHERE novel_id=?').bind(id).first();
+    if(!projection)return respond({error:'Unknown novel'},404);
+   }
+  }
+  return respond({id,canonicalId:id});
+ }
  if(path.startsWith('/api/additional/'))return additionalRoutes(request,env,'public');
  if(path==='/api/site/config')return siteConfigRoute(request,env,'public');
  if(path==='/api/site/feedback')return siteFeedbackRoute(request,env,'public','');
@@ -493,7 +507,20 @@ const canonicalKeys=book=>{
 async function canonicalEnsure(env){
  await env.COMMUNITY_DB.prepare('CREATE TABLE IF NOT EXISTS canonical_novel_keys (identity_key TEXT PRIMARY KEY,novel_id INTEGER NOT NULL CHECK(novel_id >= 1),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run();
  await env.COMMUNITY_DB.prepare('CREATE INDEX IF NOT EXISTS idx_canonical_novel_id ON canonical_novel_keys(novel_id)').run();
+ await env.COMMUNITY_DB.prepare('CREATE TABLE IF NOT EXISTS canonical_novel_aliases (source_id INTEGER PRIMARY KEY CHECK(source_id >= 100000),target_id INTEGER NOT NULL CHECK(target_id >= 1),event_id TEXT NOT NULL UNIQUE,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run();
  await env.COMMUNITY_DB.prepare('CREATE TABLE IF NOT EXISTS public_novel_projections (novel_id INTEGER PRIMARY KEY CHECK(novel_id >= 100000),payload_json TEXT NOT NULL,cover_key TEXT NOT NULL DEFAULT \'\',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run();
+}
+async function canonicalPublicResolve(env,raw){
+ let id=Number(raw);
+ if(!Number.isSafeInteger(id)||id<1||id>9999999999)return null;
+ await canonicalEnsure(env);
+ for(let n=0;n<8;n++){
+  const alias=await env.COMMUNITY_DB.prepare('SELECT target_id FROM canonical_novel_aliases WHERE source_id=?').bind(id).first();
+  if(!alias)return id;
+  if(!Number.isSafeInteger(Number(alias.target_id))||Number(alias.target_id)===id)return null;
+  id=Number(alias.target_id);
+ }
+ return null;
 }
 async function canonicalOwner(env,book){
  const keys=canonicalKeys(book);
@@ -502,7 +529,7 @@ async function canonicalOwner(env,book){
  const q=keys.map(()=>'?').join(',');
  const rows=await env.COMMUNITY_DB.prepare('SELECT identity_key,novel_id FROM canonical_novel_keys WHERE identity_key IN ('+q+')').bind(...keys).all();
  const ids=[...new Set((rows.results||[]).map(row=>Number(row.novel_id)))];
- return ids.length===1?ids[0]:ids.length>1?-1:null;
+ return ids.length===1?canonicalPublicResolve(env,ids[0]):ids.length>1?-1:null;
 }
 async function canonicalClaim(env,book,id){
  const keys=canonicalKeys(book);
