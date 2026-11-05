@@ -4,7 +4,7 @@
 <main><div class="grid"><aside class="panel"><h2>Stored EPUBs</h2><p class="muted">Only authorized accounts with both editing and EPUB reading permissions can use this page.</p><label class="field" for="search">Search filename or novel ID</label><input id="search" type="search" placeholder="Title filename or #ID"><div class="row"><button id="search-btn">Find</button><button class="secondary" id="previous">Previous</button><button class="secondary" id="next">Next</button></div><p class="muted" id="range">Loading…</p><div id="library-list"></div>
 <div class="panel" style="margin-top:15px;background:#eff6ed">
 <h3 style="margin:0 0 7px;font:500 20px Georgia,serif">Recover metadata from stored EPUBs</h3>
-<p class="muted">Already uploaded EPUBs are not scanned automatically. Scan up to 8 entries from the current results page. This reads each EPUB privately in your browser and saves only <strong>unapproved review drafts</strong>, skipping existing drafts. No EPUB reupload or public publication.</p>
+<p class="muted">Existing EPUBs were not automatically enriched. Scan the next 8 titles on this results page, then repeat for the remaining groups. Each scan reads the private EPUB in your browser, saves only <strong>unapproved metadata drafts</strong> where the file provides information, and previews embedded covers separately. No reupload and no public publication.</p>
 <div class="row"><button id="scan-existing" type="button">Scan 8 stored EPUBs</button><button id="stop-scan" type="button" class="secondary" disabled>Stop</button></div>
 <p id="scan-existing-result" class="status" role="status" aria-live="polite">No scans started.</p>
 <div id="scan-cover-gallery" class="cover-gallery" aria-label="Covers found in already uploaded EPUBs"></div>
@@ -18,7 +18,7 @@
 <div id="embedded-cover-panel" class="panel" style="background:#f7f7f2" hidden>
 <h3 style="font:500 20px Georgia,serif;margin:0 0 7px">Embedded EPUB cover</h3>
 <p id="embedded-cover-status" class="muted">Scanning for an image…</p>
-<img id="embedded-cover-preview" alt="Embedded EPUB cover preview" hidden style="max-width:175px;max-height:240px;display:block;object-fit:contain;margin:9px 0;border:1px solid #ccd9cb;border-radius:7px">
+<img id="embedded-cover-preview" alt="Embedded EPUB cover preview" hidden style="max-width:175px;max-height:240px;object-fit:contain;margin:9px 0;border:1px solid #ccd9cb;border-radius:7px">
 <label class="check"><input id="embedded-cover-rights" type="checkbox"> I confirm I have permission to display this cover to private library members.</label>
 <div class="row"><button id="embedded-cover-save" type="button" disabled>Use as private library cover</button><button id="embedded-cover-replace" class="secondary" type="button" disabled>Replace existing private cover</button></div>
 <p class="muted">Previewing does not publish a cover. Saving requires permission and updates only the private site, never the public catalogue.</p>
