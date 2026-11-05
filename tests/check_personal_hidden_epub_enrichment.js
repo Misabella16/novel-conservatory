@@ -62,7 +62,7 @@ async function test(){
  console.log('Personal Hide and Restore are isolated by signed-in account');
 
  const helper=between('const PRIVATE_EMBEDDED_KEY=', 'async function privateEpubCoverRoute(');
- const sandbox={};
+ const sandbox={textField:(value,max)=>String(value??'').trim().slice(0,max)};
  vm.createContext(sandbox);
  const funcs=vm.runInContext(helper+';({mergeEpubTags})',sandbox);
  assert.deepEqual([...funcs.mergeEpubTags(['Magic','Romance'],['romance','Time Travel'])],['Magic','Romance','Time Travel']);
