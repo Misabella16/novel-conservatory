@@ -2069,7 +2069,7 @@ async function nuAdminRoutes(request,env,email,role){
    const row=await env.COMMUNITY_DB.prepare('SELECT title,author,payload_json,nu_url,custom_locked FROM nu_staged_series WHERE slug=? LIMIT 1').bind(match[1]).first();
    if(!row)return respond({error:'That Novel Updates series has not been captured yet. Use Capture Novel Updates on the series page, then stage it in the master catalogue.'},404);
    let metadata={};try{metadata=JSON.parse(row.payload_json||'{}')}catch{}
-   return respond({metadata:{title:row.title,author:row.author,synopsis:extraTxt(metadata.synopsis,6000),tags:extraTags(metadata.tags),genres:extraTags(metadata.genres),nuUrl:canonical},source:'Novel Updates (captured)',notice:'This is staged source metadata, not published catalogue content.'});
+   return respond({metadata:{title:row.title,author:row.author,originalTitle:extraTxt(metadata.originalTitle,210),synopsis:extraTxt(metadata.synopsis,6000),tags:extraTags(metadata.tags),genres:extraTags(metadata.genres),nuUrl:canonical},source:'Novel Updates (captured)',notice:'This is staged source metadata, not published catalogue content.'});
   }
   if(path==='/api/admin/nu/staging'&&method==='GET'){
    const q=String(url.searchParams.get('q')||'').trim().slice(0,100);
