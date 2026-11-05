@@ -33,7 +33,10 @@ assert "afterSourceMarker=sourceRow?'merged-into:'+target.id:null" in private
 assert "const eventId=crypto.randomUUID()" in private
 assert "beforePrivate:previousPrivate,afterPrivate:nextPrivate" in private
 assert "snap.afterTarget" in private
-assert "if(await nuHasPrivateEpub(env,sourceId))throw Error" in private
+assert "opts.transferAssets!==true" in private
+assert "await nuMoveAssetReferences(env,assetPlan)" in private
+assert "await nuMoveAssetReferences(env,snap.assetPlan,true)" in private
+assert "const privateSourceOnly=" in private
 assert "if((current?.patch_json??null)!==snap.afterTarget)" in private
 assert "if(row?.payload_json!==snap.afterTarget||" in private
 assert "snap.afterVisibility!==undefined&&row.visibility!==snap.afterVisibility" in private
