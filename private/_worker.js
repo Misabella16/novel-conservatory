@@ -2070,6 +2070,59 @@ async function nuBaseCatalogue(env,url){
  if(!res.ok)throw Error('Original catalogue unavailable');
  const raw=await res.json();return Array.isArray(raw)?raw:(raw.books||[]);
 }
+// Shared identity identifiers never contain EPUB content, private covers or
+// private annotations. The same COMMUNITY_DB key registry serves both sites.
+const canonicalPrivateKeys=book=>{
+ const series=nuCanon(book?.nuUrl)||nuCanon(book?.sourceUrl);
+ const title=nuIdentity(book?.title),author=nuIdentity(book?.author);
+ return series?['nu:'+series]:title&&author?['ta:'+title+'|'+author]:[];
+};
+async function canonicalEnsurePrivate(env){
+ await env.COMMUNITY_DB.prepare('CREATE TABLE IF NOT EXISTS canonical_novel_keys (identity_key TEXT PRIMARY KEY,novel_id INTEGER NOT NULL CHECK(novel_id >= 1),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run();
+ await env.COMMUNITY_DB.prepare('CREATE INDEX IF NOT EXISTS idx_canonical_novel_id ON canonical_novel_keys(novel_id)').run();
+ await env.COMMUNITY_DB.prepare('CREATE TABLE IF NOT EXISTS canonical_novel_aliases (source_id INTEGER PRIMARY KEY CHECK(source_id >= 100000),target_id INTEGER NOT NULL CHECK(target_id >= 1),event_id TEXT NOT NULL UNIQUE,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run();
+ await env.COMMUNITY_DB.prepare('CREATE INDEX IF NOT EXISTS idx_canonical_alias_target ON canonical_novel_aliases(target_id)').run();
+ await env.COMMUNITY_DB.prepare("CREATE TABLE IF NOT EXISTS public_novel_projections (novel_id INTEGER PRIMARY KEY CHECK(novel_id >= 100000),payload_json TEXT NOT NULL,cover_key TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+}
+async function canonicalPrivateResolve(env,raw){
+ let id=editionBook(raw);
+ if(!id)return null;
+ await canonicalEnsurePrivate(env);
+ for(let i=0;i<8;i++){
+  const alias=await env.COMMUNITY_DB.prepare('SELECT target_id FROM canonical_novel_aliases WHERE source_id=?').bind(id).first();
+  if(!alias)return id;
+  if(!editionBook(alias.target_id)||id===Number(alias.target_id))return null;
+  id=Number(alias.target_id);
+ }
+ return null;
+}
+async function canonicalPrivateOwner(env,book){
+ const keys=canonicalPrivateKeys(book);
+ if(!keys.length)return null;
+ await canonicalEnsurePrivate(env);
+ const where=keys.map(()=>'?').join(',');
+ const r=await env.COMMUNITY_DB.prepare('SELECT novel_id FROM canonical_novel_keys WHERE identity_key IN ('+where+')').bind(...keys).all();
+ const ids=[...new Set((r.results||[]).map(x=>Number(x.novel_id)))];
+ if(ids.length!==1)return ids.length? -1:null;
+ return canonicalPrivateResolve(env,ids[0]);
+}
+async function canonicalPrivateClaim(env,book,id){
+ const keys=canonicalPrivateKeys(book),claimed=[];
+ if(!keys.length)return {ok:true,claimed};
+ await canonicalEnsurePrivate(env);
+ for(const key of keys){
+  const row=await env.COMMUNITY_DB.prepare('INSERT INTO canonical_novel_keys(identity_key,novel_id) VALUES(?,?) ON CONFLICT DO NOTHING').bind(key,id).run();
+  if(row.meta?.changes===1)claimed.push(key);
+  const match=await env.COMMUNITY_DB.prepare('SELECT novel_id FROM canonical_novel_keys WHERE identity_key=?').bind(key).first();
+  const resolved=await canonicalPrivateResolve(env,match?.novel_id);
+  if(Number(resolved)!==id){
+   for(const added of claimed)await env.COMMUNITY_DB.prepare('DELETE FROM canonical_novel_keys WHERE identity_key=? AND novel_id=?').bind(added,id).run().catch(()=>{});
+   return {ok:false,owner:resolved};
+  }
+ }
+ return {ok:true,claimed};
+}
+
 async function nuAdditionalRows(env){
  const list=await env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000").all();
  return list.results||[];
