@@ -325,6 +325,14 @@ async function audit(env,email,action,target,details=''){
 async function routes(request,env,ctx,email,role){
   const url=new URL(request.url),path=url.pathname;
   const method=request.method.toUpperCase();
+  // Retire the old page that auto-published cover replacements. Bookmarks and
+  // existing admin links now lead to owner-controlled, private-first artwork.
+  if(path==='/admin/epub-artwork.html'&&method==='GET'){
+   const target=new URL('/admin/epub-cover-library.html',request.url);
+   const id=url.searchParams.get('novel')||url.searchParams.get('id');
+   if(id&&editionBook(id))target.searchParams.set('novel',id);
+   return Response.redirect(target.toString(),302);
+  }
   // Both the owner and explicitly approved friends may read EPUBs after the
   // owner enables sharing. All uploads, edits and bulk inventory remain owner-only.
   if(path==='/api/novel/resolve'&&method==='GET'){
