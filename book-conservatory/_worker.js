@@ -147,6 +147,12 @@ async function patchRecord(db,table,key,payload,fields,{audit=true}={}){
   }
   if(Object.hasOwn(next,'title')) next.normalized_title=normalize(next.title);
   if(Object.hasOwn(next,'author')) next.normalized_author=normalize(next.author);
+  if(table==='books' && (Object.hasOwn(next,'title') || Object.hasOwn(next,'author'))){
+    const other=await getOne(db,
+      'SELECT id FROM books WHERE normalized_title=? AND normalized_author=? AND id<>? AND archived_at IS NULL LIMIT 1',
+      [next.normalized_title||prior.normalized_title,next.normalized_author||prior.normalized_author,key]);
+    if(other) return json({error:'Another book already uses this title and author. Edit its existing record or add another edition instead.',existing_book_id:other.id},409);
+  }
   const keys=Object.keys(next);
   const now=stamp();
   const result=await run(db,
