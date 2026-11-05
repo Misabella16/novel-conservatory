@@ -145,8 +145,9 @@ $('editor-form').addEventListener('submit',async e=>{
    });
    id=result.id;title=trim('entry-title');
    catalogue.set(id,{id,title});
-   show((result.reused?'Updated existing novel #':'Created novel #')+id+'. '+
-    (result.reused?'Existing synopsis and tags were preserved or safely merged. Undo is available in Merge history. ':'')+
+   show((result.reused?'Found existing novel #':'Created novel #')+id+'. '+
+    (result.notUpdated?'Its current metadata and publication state were kept. Edit the existing entry if needed. ':
+     result.reused?'Compatible fields were combined, existing synopsis retained, and Undo is available. ':'')+
     (files.length?'Now processing EPUB editions…':'No EPUBs were selected.'));
   }else{
    const book=bookId();id=book.id;title=book.title;
@@ -168,7 +169,7 @@ $('editor-form').addEventListener('submit',async e=>{
    }catch(error){issues.push(file.name+': '+error.message)}
    show('Novel #'+id+'. '+(i+1)+'/'+files.length+' EPUB files processed. '+successes+' succeeded, '+issues.length+' failed.');
   }
-  const output=['Novel #'+id+(create?' created':' selected')+'.'];
+  const output=['Novel #'+id+(create?' saved or reused':' selected')+'.'];
   if(files.length)output.push(role==='owner'?successes+' EPUB(s) stored privately.':successes+' EPUB(s) sent for owner review.');
   if(issues.length)output.push('Issues:\n'+issues.join('\n'));
   if(role==='owner'&&successes)output.push('Newly uploaded EPUB editions start unverified.');
