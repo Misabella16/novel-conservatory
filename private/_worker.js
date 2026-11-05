@@ -1760,6 +1760,46 @@ async function extraInsert(env,payload,coverKey,visibility,who,submissionId=''){
 // Single canonical entry point for manually created novels. Reuse/merge an
 // unambiguous existing additional record instead of creating another card.
 // Never infer sameness solely from a title when authors differ or are unknown.
+
+// Direct Editor changes take effect immediately. The same append-only history
+// used by Novel Updates merges enables Undo without a moderation queue.
+async function extraEditWithUndo(env,email,row,patch,visibility){
+ await nuEnsureJournal(env);
+ const id=Number(row.id),before=row.payload_json;
+ if(String(row.source_submission_id||'').startsWith('merged-into:')||
+    String(row.source_submission_id||'').startsWith('reverted-create:'))
+  throw Error('This record was merged or reverted. Open its surviving entry.');
+ let old;try{old=JSON.parse(before||'{}')}catch{throw Error('Existing metadata could not be parsed')}
+ const next=extraPayload({...old,...patch}),after=JSON.stringify(next);
+ if(next.title.length<2)throw Error('A novel title is required');
+ if(after===before&&visibility===row.visibility)return {ok:true,id,unchanged:true};
+ // Changing a title must not accidentally create two active, identical entries.
+ if(nuIdentity(next.title)!==nuIdentity(row.title)){
+  const duplicate=await env.COMMUNITY_DB.prepare("SELECT id FROM additional_catalogue_novels WHERE normalized_title=? AND id<>? AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' LIMIT 1")
+   .bind(nuStoredTitleKey(next.title),id).first();
+  if(duplicate)throw Error('A novel with this title already exists as #'+duplicate.id+'. Use Merge duplicates instead.');
+ }
+ const eventId=crypto.randomUUID(),snapshot={
+  targetKind:'extra',beforeTarget:before,afterTarget:after,sourceId:null,
+  beforeSourceMarker:null,afterSourceMarker:null,beforePrivate:null,afterPrivate:null,
+  beforeVisibility:row.visibility,afterVisibility:visibility
+ };
+ const result=await env.COMMUNITY_DB.prepare(
+  "UPDATE additional_catalogue_novels SET title=?,normalized_title=?,payload_json=?,visibility=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND visibility=? AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%'"
+ ).bind(next.title,nuStoredTitleKey(next.title),after,visibility,id,before,row.visibility).run();
+ if((result.meta?.changes||0)!==1)throw Error('Another editor changed the book. Refresh and retry.');
+ try{
+  await env.COMMUNITY_DB.prepare('INSERT INTO catalogue_edit_events(id,operation,target_id,duplicate_id,before_json,after_json,source_url,actor_email) VALUES(?,?,?,?,?,?,?,?)')
+   .bind(eventId,'metadata_sync',id,null,JSON.stringify(snapshot),JSON.stringify({target:after}),nuCanon(next.nuUrl),email).run();
+ }catch(error){
+  await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET title=?,normalized_title=?,payload_json=?,visibility=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND visibility=?")
+   .bind(row.title,nuStoredTitleKey(row.title),before,row.visibility,id,after,visibility).run().catch(()=>{});
+  throw Error('Could not save edit history. The metadata change was rolled back: '+String(error.message||error).slice(0,100));
+ }
+ try{await audit(env,email,'catalogue.direct.edit',id,eventId)}catch{}
+ return {ok:true,id,eventId,changed:true,visibility};
+}
+
 async function extraCreateOrReuse(env,url,email,p,visibility){
  const found=await nuFindCandidates(env,url,p,null);
  const safe=[],uncertain=[];
@@ -1885,10 +1925,10 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
    if(!editor||!extraOrigin(request))return extraJson({error:'Editor permission required'},403);
    const b=await request.json(),id=extraId(b.id);if(!id)return extraJson({error:'Invalid additional novel ID'},400);
    const row=await env.COMMUNITY_DB.prepare('SELECT * FROM additional_catalogue_novels WHERE id=?').bind(id).first();if(!row)return extraJson({error:'Novel not found'},404);
-   const next=extraPayload({...JSON.parse(row.payload_json||'{}'),...b.patch});
+   if(!b.patch||typeof b.patch!=='object'||Array.isArray(b.patch))return extraJson({error:'Provide the metadata changes to save'},400);
    const vis=b.publish===true?'published':b.publish===false?'private':row.visibility;
-   await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET title=?,normalized_title=?,payload_json=?,visibility=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(next.title,next.title.toLocaleLowerCase(),JSON.stringify(next),vis,id).run();
-   return extraJson({ok:true,id});
+   const result=await extraEditWithUndo(env,email,row,b.patch,vis);
+   return extraJson(result);
   }
   if(path==='/api/admin/additional/auto-cover'&&method==='POST'){
    if(!editor||!extraOrigin(request))return extraJson({error:'Editor permission required'},403);
@@ -2231,9 +2271,10 @@ async function nuUndoEdit(env,email,eventId){
  if(event.undone_at)throw Error('This change has already been undone');
  const snap=JSON.parse(event.before_json),targetId=Number(event.target_id);
  if(snap.targetKind==='created'){
-  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
-  if(row?.payload_json!==snap.afterTarget||row.source_submission_id!=='')
-   throw Error('The new book changed since creation. Undo any later edits first.');
+  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,source_submission_id,visibility FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
+  if(row?.payload_json!==snap.afterTarget||row.source_submission_id!==''||
+     snap.afterVisibility!==undefined&&row.visibility!==snap.afterVisibility)
+   throw Error('The new book changed or was published since creation. Undo any later edits first.');
   if(await nuHasPrivateEpub(env,targetId))throw Error('This book now has EPUBs. Unlink or transfer them safely before undoing creation.');
   const result=await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND source_submission_id=''")
    .bind('reverted-create:'+targetId,targetId,snap.afterTarget).run();
@@ -2246,8 +2287,10 @@ async function nuUndoEdit(env,email,eventId){
   const current=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(targetId).first();
   if(current?.patch_json!==snap.afterTarget)throw Error('The book was edited again. Resolve those newer changes before undoing this one.');
  }else{
-  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
-  if(row?.payload_json!==snap.afterTarget)throw Error('The book was edited again. Undo the newer edit first.');
+  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,visibility FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
+  if(row?.payload_json!==snap.afterTarget||
+    snap.afterVisibility!==undefined&&row.visibility!==snap.afterVisibility)
+   throw Error('The book was edited or published again. Undo the newer edit first.');
  }
  if(snap.sourceId){
   const extra=await env.COMMUNITY_DB.prepare('SELECT source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(snap.sourceId).first();
@@ -2258,7 +2301,15 @@ async function nuUndoEdit(env,email,eventId){
   else await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND patch_json=?').bind(snap.beforeTarget,targetId,snap.afterTarget).run();
  }else{
   const before=JSON.parse(snap.beforeTarget||'{}');
-  await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=?').bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),targetId,snap.afterTarget).run();
+  let restored;
+  if(snap.beforeVisibility!==undefined){
+   restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,visibility=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND visibility=?')
+    .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),snap.beforeVisibility,targetId,snap.afterTarget,snap.afterVisibility).run();
+  }else{
+   restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=?')
+    .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),targetId,snap.afterTarget).run();
+  }
+  if((restored.meta?.changes||0)!==1)throw Error('A newer edit changed the record while Undo was running.');
  }
  if(snap.sourceId){
   await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND source_submission_id=?')
