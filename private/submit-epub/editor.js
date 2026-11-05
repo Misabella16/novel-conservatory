@@ -134,7 +134,9 @@ $('editor-form').addEventListener('submit',async e=>{
   if(role==='editor'&&files.length&&!$('entry-rights').checked){
    throw Error('Check the EPUB rights confirmation in this form before submitting.');
   }
-  if(!confirm(create?'Create the novel entry'+($('entry-publish').checked?' and publish its metadata':' as a private draft')+(files.length?' and process '+files.length+' EPUB(s)':'')+'?':'Process '+files.length+' EPUB(s) for the selected novel?'))return;
+  // Saving the entry is the editor's action; no separate confirmation or
+  // moderation is required. Saved changes appear immediately, with Undo in
+  // catalogue history. EPUB submissions retain their separate file permissions.
   busy=true;$('entry-submit').disabled=true;
   let id, title;
   if(create){
