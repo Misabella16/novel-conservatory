@@ -51,6 +51,9 @@ $('safe-merge').addEventListener('click',async()=>{
    (errors.length?'\nSkipped: '+errors.slice(0,5).map(x=>'#'+x.sourceId+': '+x.error).join('; '):''));
   await history();
   await scanSafe();
+  show($('safe-status'),'✓ '+result.merged+' safe duplicate'+(result.merged===1?'':'s')+' merged; '+
+   errors.length+' skipped while saving. All merges can be reversed below.'+
+   (result.remainingMayExist?' More pairs may remain; run the next batch.':''));
  }catch(error){show($('safe-status'),'Nothing else was merged: '+error.message,true);button.disabled=false}
 });
 
