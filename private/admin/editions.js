@@ -19,6 +19,14 @@ function addBook(b){
 async function ensureBook(r){
  if(r.bookId)return r.bookId;
  if(r.matchKind!=='new'||!r.newTitle)throw Error(r.reason||'Choose a title for this EPUB');
+ // A previous EPUB in the same batch may just have created this book.
+ // Recheck so Volume 2 attaches to Volume 1 rather than becoming another card.
+ const fresh=MATCH.resolve(r.file,r.meta||{},books);
+ if(fresh.kind==='matched'){
+  r.bookId=fresh.bookId;r.matchKind='matched';r.reason='Matched after an earlier EPUB in this batch';
+  return r.bookId;
+ }
+ if(fresh.kind==='ambiguous')throw Error(fresh.reason||'Several novels match this EPUB. Choose one.');
  const b=MATCH.createPayload({title:r.newTitle},r.meta||{});
  // The server checks all 962 original novels and added records again,
  // so a simultaneous submission cannot silently create an extra copy.
@@ -99,10 +107,13 @@ async function tryAutoCover(r){
   if(!result.image)return {published:false,detail:result.reason||'No cover found'};
   const data=new FormData();data.set('novel_id',String(r.bookId));data.set('source',r.file.name.slice(0,125));data.set('image',new File([result.image],'epub-cover.jpg',{type:'image/jpeg'}));
   // Never publish artwork from a private-only, automatically created novel.
-  const endpoint=r.wasCreatedPrivate?'/api/admin/additional/auto-cover':'/api/admin/epub-artwork/auto';
+  const endpoint=r.bookId>=100000?'/api/admin/additional/auto-cover':'/api/admin/epub-artwork/auto';
   const response=await fetch(endpoint,{method:'POST',body:data,credentials:'same-origin'});
   const j=await response.json().catch(()=>({}));if(!response.ok)return {published:false,detail:j.error||'Cover publishing failed'};
-  return {published:!!j.published,detail:j.published?(j.privateSynced?'Cover published':'Cover published; check private catalogue synchronization'):j.skipped?'Cover saved as alternative (existing cover retained)':'Cover stored'};
+  return {published:!!j.published,
+   detail:r.bookId>=100000?(j.published?'Cover stored for additional novel':'Existing cover retained'):
+    j.published?(j.privateSynced?'Cover published':'Cover published; check private catalogue synchronization'):
+    j.skipped?'Cover saved as alternative (existing cover retained)':'Cover stored'};
 }
 $('start').addEventListener('click',async()=>{if(busy||!approved)return;const work=rows.filter(r=>['Ready','Ready · create private novel'].includes(rowState(r)));if(!work.length)return;
  
