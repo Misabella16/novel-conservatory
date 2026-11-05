@@ -61,6 +61,10 @@ jobs:
         run: python tests/check_stored_epub_recovery.py
       - name: Verify direct NU sync, duplicate merging, literal search and Undo
         run: python tests/check_nu_direct_merge_undo.py
+      - name: Verify duplicate-safe direct novel creation
+        run: python tests/check_direct_novel_reuse.py
+      - name: Prevent duplicate Add Novel records and preserve Undo
+        run: python tests/check_duplicate_safe_create.py
       - name: Check migration SQL offline
         run: |
           python - <<'PY'

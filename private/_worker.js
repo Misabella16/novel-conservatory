@@ -1756,6 +1756,49 @@ async function extraInsert(env,payload,coverKey,visibility,who,submissionId=''){
  }
  throw Error('Could not assign novel ID; please retry');
 }
+
+// Single canonical entry point for manually created novels. Reuse/merge an
+// unambiguous existing additional record instead of creating another card.
+// Never infer sameness solely from a title when authors differ or are unknown.
+async function extraCreateOrReuse(env,url,email,p,visibility){
+ const found=await nuFindCandidates(env,url,p,null);
+ const safe=[],uncertain=[];
+ for(const candidate of found){
+  const existing=await nuGetExisting(env,url,candidate.id);
+  const current=existing.data;
+  const sourceA=nuCanon(p.nuUrl),sourceB=nuCanon(current.nuUrl);
+  const sameSource=!!sourceA&&sourceA===sourceB;
+  const sameTitle=!!nuIdentity(p.title)&&nuIdentity(p.title)===nuIdentity(current.title);
+  const sameAuthor=!!nuIdentity(p.author)&&nuIdentity(p.author)===nuIdentity(current.author);
+  const item={id:existing.id,title:current.title,author:current.author||'',kind:existing.kind,
+    visibility:existing.kind==='extra'?existing.row.visibility:'published',
+    reason:sameSource?'Identical Novel Updates URL':sameTitle?'Matching title':'Related title'};
+  if(sameSource||(sameTitle&&sameAuthor))safe.push(item);
+  else uncertain.push(item);
+ }
+ if(safe.length>1)return {ok:false,needsChoice:true,candidates:safe,
+  error:'Several existing entries match this novel. Use Merge duplicates so no EPUBs or edits are lost.'};
+ if(safe.length===1){
+  const matched=safe[0];
+  // Reuse the canonical ID even if the user came through the wrong add form.
+  // A private submission cannot silently change an already-published record,
+  // and a publish request cannot silently promote an existing private entry.
+  if(matched.visibility!==visibility){
+   return {ok:true,id:matched.id,reused:true,changed:[],notUpdated:true,
+    note:'Existing novel reused. Its '+matched.visibility+' visibility and current metadata were preserved. Edit that existing entry to make changes.'};
+  }
+  const result=await nuSaveEdit(env,url,email,matched.id,p);
+  return {ok:true,id:matched.id,reused:true,eventId:result.eventId,changed:result.changed||[],
+   conflicts:result.conflicts||[],note:'Merged with an existing novel. The earlier metadata was preserved; Undo is available in history.'};
+ }
+ // Ambiguous same-title entries must not be accidentally hidden or overwritten.
+ const sameTitle=uncertain.filter(x=>nuIdentity(x.title)===nuIdentity(p.title));
+ if(sameTitle.length)return {ok:false,needsChoice:true,candidates:sameTitle,
+  error:'A novel with this title already exists. Check the author and Novel Updates URL before adding another.'};
+ const id=await extraInsert(env,p,'',visibility,email);
+ return {ok:true,id,reused:false};
+}
+
 async function additionalRoutes(request,env,scope,email='',role='reader'){
  const path=new URL(request.url).pathname,method=request.method.toUpperCase();
  if(!env.COMMUNITY_DB)return extraJson({error:'Community database binding is missing'},503);
@@ -1822,14 +1865,18 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
   if(path==='/api/admin/additional/create'&&method==='POST'){
    if(!editor||!extraOrigin(request))return extraJson({error:'Editor permission required'},403);
    const b=await request.json(),p=extraPayload(b),visibility=b.publish===true?'published':'private';
-   const id=await extraInsert(env,p,'',visibility,email);return extraJson({ok:true,id});
+   const result=await extraCreateOrReuse(env,new URL(request.url),email,p,visibility);
+   return extraJson(result,result.ok?200:409);
   }
   if(path==='/api/admin/additional/bulk'&&method==='POST'){
    if(!owner||!extraOrigin(request))return extraJson({error:'Owner permission required'},403);
    const body=await request.json();if(!Array.isArray(body.novels)||body.novels.length===0||body.novels.length>100)return extraJson({error:'Import 1–100 novels per batch'},400);
    const results=[];
-   for(const raw of body.novels){try{const p=extraPayload(raw),id=await extraInsert(env,p,'',body.publish===true?'published':'private',email);results.push({title:p.title,id,ok:true});}
-    catch(e){results.push({title:extraTxt(raw?.title,100),error:String(e.message||e),ok:false});}}
+   for(const raw of body.novels){try{
+    const p=extraPayload(raw);
+    const result=await extraCreateOrReuse(env,new URL(request.url),email,p,body.publish===true?'published':'private');
+    results.push({title:p.title,...result});
+   }catch(e){results.push({title:extraTxt(raw?.title,100),error:String(e.message||e),ok:false});}}
    return extraJson({ok:true,results});
   }
   if(path==='/api/admin/additional/edit'&&method==='POST'){
@@ -1864,6 +1911,12 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
 
 // Reversible editor reconciliation. Only attached to the authenticated private
 // API. Never delete an EPUB-bearing book or publish an extracted EPUB.
+async function nuEnsureJournal(env){
+ if(!env.COMMUNITY_DB)throw Error('Shared community database unavailable');
+ await env.COMMUNITY_DB.prepare("CREATE TABLE IF NOT EXISTS catalogue_edit_events (id TEXT PRIMARY KEY,operation TEXT NOT NULL CHECK(operation IN ('merge','metadata_sync','create')),target_id INTEGER NOT NULL,duplicate_id INTEGER,before_json TEXT NOT NULL,after_json TEXT NOT NULL,source_url TEXT NOT NULL DEFAULT '',actor_email TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,undone_at TEXT,undone_by TEXT NOT NULL DEFAULT '',CHECK(target_id >= 1))").run();
+ await env.COMMUNITY_DB.prepare('CREATE INDEX IF NOT EXISTS idx_catalogue_edit_events_recent ON catalogue_edit_events(created_at DESC)').run();
+ await env.COMMUNITY_DB.prepare('CREATE INDEX IF NOT EXISTS idx_catalogue_edit_events_target ON catalogue_edit_events(target_id,created_at DESC)').run();
+}
 const NU_EDITABLE=['title','author','originalTitle','synopsis','genres','tags','contentWarnings','nuUrl','translator','translatorUrl','originalLanguage','translation'];
 const NU_LIST_FIELDS=new Set(['genres','tags','contentWarnings']);
 const nuIdentity=x=>String(x||'').normalize('NFKD').toLocaleLowerCase()
@@ -1953,6 +2006,7 @@ async function nuHasPrivateEpub(env,sourceId){
 }
 async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  if(!env.COMMUNITY_DB||!env.DB)throw Error('Private and shared databases are required');
+ await nuEnsureJournal(env);
  const target=await nuGetExisting(env,url,targetId),sourceId=extraId(opts.sourceId);
  if(sourceId===target.id)throw Error('A novel cannot be merged into itself');
  let sourceRow=null;
@@ -2084,6 +2138,7 @@ async function nuSyncSource(env,url,email,source,options={}){
  return {...created,matchedExisting:false,candidates:[]};
 }
 async function nuCreateEdited(env,email,source){
+ await nuEnsureJournal(env);
  const data=extraPayload({...source,metadataReview:true,metadataSource:source.metadataSource||'Novel Updates source'});
  if(data.title.length<2)throw Error('A title is required');
  if(!data.nuUrl)throw Error('Use a canonical Novel Updates series URL');
@@ -2103,6 +2158,7 @@ async function nuCreateEdited(env,email,source){
  return {ok:true,id,eventId,created:true,changed:NU_EDITABLE.filter(k=>!nuBlank(data[k])),privateSynced:true};
 }
 async function nuUndoEdit(env,email,eventId){
+ await nuEnsureJournal(env);
  const id=String(eventId||'');
  if(!/^[a-f0-9-]{36}$/.test(id))throw Error('Choose a valid change to undo');
  const event=await env.COMMUNITY_DB.prepare('SELECT * FROM catalogue_edit_events WHERE id=?').bind(id).first();
@@ -2189,6 +2245,7 @@ async function nuAdminRoutes(request,env,email,role){
    return respond({items:matches});
   }
   if(path==='/api/admin/nu/merge-history'&&method==='GET'){
+   await nuEnsureJournal(env);
    const rows=await env.COMMUNITY_DB.prepare(
     'SELECT id,operation,target_id,duplicate_id,source_url,actor_email,created_at,undone_at FROM catalogue_edit_events ORDER BY created_at DESC LIMIT 40'
    ).all();
