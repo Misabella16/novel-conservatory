@@ -463,7 +463,7 @@ async function extraNovelExists(env,id){
 async function extraInsert(env,payload,coverKey,visibility,who,submissionId=''){
  const key=payload.title.toLocaleLowerCase().replace(/\s+/g,' ').trim();
  if(!payload.title||payload.title.length<2)throw Error('Enter a novel title');
- const duplicate=await env.COMMUNITY_DB.prepare('SELECT id,title FROM additional_catalogue_novels WHERE normalized_title=? LIMIT 1').bind(key).first();
+ const duplicate=await env.COMMUNITY_DB.prepare("SELECT id,title FROM additional_catalogue_novels WHERE normalized_title=? AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' LIMIT 1").bind(key).first();
  if(duplicate)throw Error('This title may already exist as #'+duplicate.id+'. Check before submitting again.');
  for(let i=0;i<5;i++){
   const id=100000+crypto.getRandomValues(new Uint32Array(1))[0];
