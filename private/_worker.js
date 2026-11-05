@@ -642,6 +642,42 @@ async function routes(request,env,ctx,email,role){
         }
        }
       }
+      // Private NU imports are never copied into public catalogue metadata.
+      // Combine separately sourced tags and genres without replacing edits.
+      const nuRows=await env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-nu-page:%' LIMIT 5000").all();
+      const editMap=new Map(edits.map(x=>[Number(x.id),x]));
+      const extraMap=new Map(additional.map(x=>[Number(x.id),x]));
+      for(const row of nuRows.results||[]){
+       const match=/^private-nu-page:([1-9][0-9]*)$/.exec(row.key);
+       if(!match)continue;
+       const id=Number(match[1]);let imported;
+       try{imported=JSON.parse(row.value)}catch{continue}
+       const target=id<=962?(editMap.get(id)||{id,patch:{}}):extraMap.get(id);
+       if(!target)continue;
+       if(id<=962&&!editMap.has(id)){edits.push(target);editMap.set(id,target)}
+       const fields=id<=962?target.patch:target;
+       if(!fields.nuUrl&&imported.nuUrl)fields.nuUrl=imported.nuUrl;
+       for(const key of ['synopsis','author','originalTitle']){
+        if(!fields[key]&&imported[key])fields[key]=imported[key];
+       }
+       if(imported.tags?.length){
+        fields.tags=mergeEpubTags(fields.tags,imported.tags);
+        if(id<=962)fields.tagsCombinedFromNu=true;
+       }
+       if(imported.genres?.length){
+        fields.genres=mergeEpubTags(fields.genres,imported.genres);
+        if(id<=962)fields.genresCombinedFromNu=true;
+       }
+       if(!fields.cover&&imported.cover&&privateNuImageUrl(imported.cover)){
+        fields.cover=imported.cover;fields.privateCover=true;
+        fields.coverCredit=imported.coverCredit||'Novel Updates source cover, private reference';
+       }
+       if(imported.nuCoverUrl)fields.nuCoverUrl=imported.nuCoverUrl;
+       if(!fields.metadataReview&&imported.metadataOrigin==='nu'){
+        fields.metadataOrigin='nu';
+        fields.metadataSource=imported.metadataSource||'Novel Updates (private)';
+       }
+      }
       return respond({edits,additional,homepage:setting?JSON.parse(setting.value):{},configured:true});
     }catch{return respond({error:'Database unavailable'},503);}
   }
