@@ -139,59 +139,8 @@ $('start').addEventListener('click',async()=>{if(busy||!approved)return;const wo
  text(`${success} EPUB editions uploaded to private storage; ${created} new private novel entries created; ${failed} failed; ${covers} covers processed. ${coverNotes.length?'Other covers retained, unavailable, or skipped: '+coverNotes.slice(0,3).join('; '):''} ${stop?'Paused after current file. Re-select files to resume.':''}`,failed>0);draw();
 });
 $('stop').addEventListener('click',()=>{stop=true;text('Stopping after the current EPUB finishes…')});
-const inspectedStoredEditions=new Set();
-let backfillBusy=false;
-$('backfill').addEventListener('click',async()=>{
- if(backfillBusy||busy||!approved)return;
- backfillBusy=true;$('backfill').disabled=true;
- const budget=12;
- let done=0,imported=0,covers=0,skipped=0;
- try{
-  const [cat,content,inventoryData,legacyData]=await Promise.all([
-   json(await fetch('/api/catalogue',{cache:'no-store'})),
-   json(await fetch('/api/content',{cache:'no-store'})),
-   json(await fetch('/api/private/edition/inventory',{cache:'no-store'})),
-   json(await fetch('/api/private/epub/bulk-status',{cache:'no-store'}))
-  ]);
-  const edits=new Map((content.edits||[]).map(x=>[Number(x.id),x.patch]));
-  const merged=(Array.isArray(cat)?cat:cat.books||[]).map(x=>({...x,...(edits.get(Number(x.id))||{})}));
-  const byId=new Map(merged.map(x=>[Number(x.id),x]));
-  const selected=new Set();
-  const combined=[...(inventoryData.editions||[]),
-   ...Object.entries(legacyData.files||{}).map(([id,info])=>({
-    id:Number(id),editionId:'legacy',filename:info.name||'stored.epub',bytes:Number(info.size)||0
-   }))];
-  for(const row of combined){
-   const id=Number(row.id),editionId=row.editionId,recordKey=id+':'+editionId;
-   if(selected.has(id)||inspectedStoredEditions.has(recordKey))continue;
-   const book=byId.get(id);if(!book)continue;
-   if(book.synopsis&&Array.isArray(book.tags)&&book.tags.length&&book.cover)continue;
-   selected.add(id);
-   if(done>=budget)break;
-   inspectedStoredEditions.add(recordKey);done++;
-   text('Enriching stored EPUB '+done+'/'+budget+': '+row.filename);
-   try{
-    if(Number(row.bytes)>250*1048576){skipped++;continue}
-    const endpoint=editionId==='legacy'
-     ?'/api/private/epub/file?id='+encodeURIComponent(id)
-     :'/api/private/edition/file?id='+encodeURIComponent(id)+'&edition='+encodeURIComponent(editionId);
-    const response=await fetch(endpoint,{cache:'no-store',credentials:'same-origin'});
-    if(!response.ok)throw Error('Could not read private EPUB: '+response.status);
-    const blob=await response.blob();
-    const file=new File([blob],row.filename||'stored.epub',{type:'application/epub+zip'});
-    const metadata=await MATCH.inspect(file);
-    const result=await ingestEmbeddedMetadata(id,editionId,metadata);
-    if(result.changed?.length)imported++;
-    const coverResult=await tryAutoCover({file,bookId:id});
-    if(coverResult.published)covers++;
-   }catch(e){skipped++;if(skipped<4)text('Skipped '+row.filename+': '+e.message,true)}
-  }
-  text('Scanned '+done+' stored EPUB(s), improved metadata for '+imported+', saved '+covers+
-   ' private cover(s), skipped '+skipped+'. Reopen your library to see updates.'+
-   (done===budget?' Click again for the next batch.':' No further eligible files in this session.'));
- }catch(e){text('Could not inspect existing EPUBs: '+e.message,true)}
- finally{backfillBusy=false;$('backfill').disabled=false}
-});
+// Used only by the owner's stored-EPUB enrichment control. Do not publish EPUB bytes.
+window.ConservatoryStoredEpubTools={inspect:MATCH.inspect,ingest:ingestEmbeddedMetadata,cover:tryAutoCover,fetchJson:json};
 
 $('lookup-btn').addEventListener('click',async()=>{const id=idFor($('lookup').value);if(!id)return text('Choose an existing novel.',true);try{
  const data=await json(await fetch('/api/private/edition/list?id='+id,{cache:'no-store'}));const box=$('editions');box.replaceChildren();if(!data.editions.length){box.textContent='No private editions stored.';return;}
