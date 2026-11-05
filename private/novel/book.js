@@ -12,7 +12,9 @@ const json=async url=>{
 };
 const cleanUrl=(value)=>{
  try{
-  const u=new URL(String(value||''),location.origin);
+  const raw=String(value||'').trim();
+  const safeRelative=/^covers\/[0-9]+\.(?:png|jpe?g|webp)$/i.test(raw)?'/'+raw:raw;
+  const u=new URL(safeRelative,location.origin);
   if(u.protocol==='https:'||u.origin===location.origin&&u.pathname.startsWith('/')){
    if(u.username||u.password)return '';
    return u.href;
