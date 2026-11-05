@@ -54,10 +54,21 @@
 <section id="workspace-epubs" class="workspace-panel hidden" aria-label="EPUB tools">
  <div class="workspace-intro"><h2>EPUBs &amp; reading</h2><p>Upload once, automatically match books, check editions and manage private reading access.</p></div>
  <div class="workspace-cards">
-  <article class="workspace-card"><h3>Upload &amp; match</h3><p>Drop multiple EPUBs or a whole folder. Existing books are matched; missing books get private entries.</p><a class="workspace-link primary-link" href="/admin/editions.html">📚 Upload EPUBs</a><a class="workspace-link" href="/admin/add-novels.html">Single novel &amp; EPUB</a></article>
-  <article class="workspace-card"><h3>Manage the library</h3><p>Inspect saved metadata, verify good editions, and adjust their covers.</p><a class="workspace-link" href="/admin/epub-insights.html">Extract metadata</a><a class="workspace-link" href="/admin/epub-verification/">✓ Verify EPUBs</a><a class="workspace-link" href="/admin/library-health.html">Library Health</a><a class="workspace-link" href="/admin/epub-artwork.html">Change covers</a></article>
+  <article class="workspace-card"><h3>Upload &amp; match</h3><p>Drop multiple EPUBs or a whole folder. New novel entries and separate translation editions are catalogued automatically.</p><a class="workspace-link primary-link" href="/admin/editions.html">📚 Upload EPUBs</a><a class="workspace-link" href="/admin/add-novels.html">Single novel &amp; EPUB</a></article>
+  <article class="workspace-card"><h3>📚 EPUB Editions</h3><p>See every saved translation file for a novel, scan already uploaded EPUBs for missing details and covers, or manage your editions.</p><a class="workspace-link primary-link" href="/admin/editions.html#stored-editions">Browse &amp; manage editions</a><a class="workspace-link" href="/admin/editions.html#enrich-all">↻ Enrich all stored EPUBs</a></article>
+  <article class="workspace-card"><h3>🖼 Cover library</h3><p>Each EPUB edition saves its extracted cover separately. Switch private covers and choose which image, if permitted, goes public.</p><a class="workspace-link primary-link" href="/admin/epub-cover-library.html">Manage private covers &amp; public sync</a><a class="workspace-link" href="/admin/epub-verification/">✓ Verify EPUBs</a><a class="workspace-link" href="/admin/epub-insights.html">Extract metadata</a></article>
   <article class="workspace-card"><h3>Access &amp; contributions</h3><p>Review private files submitted by friends and control who can read stored EPUBs.</p><a class="workspace-link" href="/admin/epub-submissions/">Incoming EPUBs</a><button class="workspace-link workspace-button" type="button" data-existing-pane="readers" data-owner-only>EPUB reader permissions</button></article>
  </div>
+ <section class="panel" id="epub-editions-quick" aria-label="EPUB Editions">
+  <h3>📖 EPUB Editions</h3>
+  <p>Find any novel here to see its stored EPUB editions. Covers are stored separately, so each version can have its own artwork.</p>
+  <div style="display:flex;align-items:end;gap:9px;flex-wrap:wrap">
+   <label style="flex:1 1 240px">Novel title or #ID <input id="epub-edition-quick-find" list="epub-edition-quick-choices" placeholder="Search a novel or enter #123" style="display:block;width:100%;padding:10px;margin-top:5px;border:1px solid #c8d5cd;border-radius:9px"></label>
+   <datalist id="epub-edition-quick-choices"></datalist>
+   <button type="button" id="epub-edition-quick-show">Show editions</button>
+  </div>
+  <div id="epub-edition-quick-results" role="status" aria-live="polite" style="padding:12px 0;overflow-wrap:anywhere">Choose a novel to see its EPUB editions and cover options.</div>
+ </section>
 </section>
 <section id="workspace-community" class="workspace-panel hidden" aria-label="Community tools">
  <div class="workspace-intro"><h2>Community</h2><p>Reader activity, corrections and contributions in one place. Routine catalogue additions do not require your approval.</p></div>
@@ -424,4 +435,4 @@ for(const [id,endpoint,success] of [
   finally{button.disabled=false}
  });
 }
-</script><script src="/admin/admin-workspaces.js" defer></script></body></html>
+</script><script src="/admin/admin-workspaces.js" defer></script><script src="/admin/epub-editions-workspace.js" defer></script></body></html>
