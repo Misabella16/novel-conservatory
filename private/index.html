@@ -767,7 +767,26 @@ function applyTagSelection(){
 function renderTagLibrary(){const host=$('#tag-library-results');if(!host)return;
  const q=$('#tag-library-search').value.trim().toLowerCase();const group=$('#tag-library-category').value;
  const onlyMatches=$('#tag-library-matches').checked;const counts=storyTagCounts();
- let entries=[];for(const [cat,items] of Object.entries(tagLibraryGroups)){if(group!=='all'&&group!==cat)continue;for(const name of items){const count=counts[normStoryTag(name)]||0;if((!q||name.toLowerCase().includes(q))&&(!onlyMatches||count>0))entries.push({name,cat,count});}}
+ // EPUB OPF subject tags are valid private catalogue metadata even when a
+ // contributor has not manually placed them in the static tag vocabulary.
+ // Add only tags actually assigned to discoverable books; never guess tropes.
+ const vocabulary=new Set(Object.values(tagLibraryGroups).flat().map(normStoryTag));
+ const imported=new Map();
+ for(const book of data){
+  if(!isDiscoverable(book)||book.metadataOrigin!=='epub')continue;
+  for(const raw of book.tags||[]){
+   const name=String(raw||'').trim(),key=normStoryTag(name);
+   if(key&&!vocabulary.has(key)&&name.length>=2&&name.length<=90&&!imported.has(key))imported.set(key,name);
+  }
+ }
+ const groups={...tagLibraryGroups};
+ if(imported.size){
+  groups['EPUB discoveries']=[...imported.values()].sort((a,b)=>a.localeCompare(b));
+  if(![...$('#tag-library-category').options].some(o=>o.value==='EPUB discoveries')){
+   const option=document.createElement('option');option.value='EPUB discoveries';option.textContent='EPUB discoveries';$('#tag-library-category').append(option);
+  }
+ }
+ let entries=[];for(const [cat,items] of Object.entries(groups)){if(group!=='all'&&group!==cat)continue;for(const name of items){const count=counts[normStoryTag(name)]||0;if((!q||name.toLowerCase().includes(q))&&(!onlyMatches||count>0))entries.push({name,cat,count});}}
  entries.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base',numeric:true}));
  const unique=[];const seen=new Set();for(const item of entries){const key=normStoryTag(item.name);if(seen.has(key))continue;seen.add(key);unique.push(item)}
  host.replaceChildren();for(const item of unique.slice(0,tagLibraryLimit)){
