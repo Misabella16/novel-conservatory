@@ -147,28 +147,35 @@ $('backfill').addEventListener('click',async()=>{
  const budget=12;
  let done=0,imported=0,covers=0,skipped=0;
  try{
-  const [cat,content,inventoryData]=await Promise.all([
+  const [cat,content,inventoryData,legacyData]=await Promise.all([
    json(await fetch('/api/catalogue',{cache:'no-store'})),
    json(await fetch('/api/content',{cache:'no-store'})),
-   json(await fetch('/api/private/edition/inventory',{cache:'no-store'}))
+   json(await fetch('/api/private/edition/inventory',{cache:'no-store'})),
+   json(await fetch('/api/private/epub/bulk-status',{cache:'no-store'}))
   ]);
   const edits=new Map((content.edits||[]).map(x=>[Number(x.id),x.patch]));
   const merged=(Array.isArray(cat)?cat:cat.books||[]).map(x=>({...x,...(edits.get(Number(x.id))||{})}));
   const byId=new Map(merged.map(x=>[Number(x.id),x]));
   const selected=new Set();
-  for(const row of inventoryData.editions||[]){
-   const id=Number(row.id),editionId=row.editionId;
-   if(selected.has(id)||inspectedStoredEditions.has(editionId))continue;
+  const combined=[...(inventoryData.editions||[]),
+   ...Object.entries(legacyData.files||{}).map(([id,info])=>({
+    id:Number(id),editionId:'legacy',filename:info.name||'stored.epub',bytes:Number(info.size)||0
+   }))];
+  for(const row of combined){
+   const id=Number(row.id),editionId=row.editionId,recordKey=id+':'+editionId;
+   if(selected.has(id)||inspectedStoredEditions.has(recordKey))continue;
    const book=byId.get(id);if(!book)continue;
    if(book.synopsis&&Array.isArray(book.tags)&&book.tags.length&&book.cover)continue;
    selected.add(id);
    if(done>=budget)break;
-   inspectedStoredEditions.add(editionId);done++;
+   inspectedStoredEditions.add(recordKey);done++;
    text('Enriching stored EPUB '+done+'/'+budget+': '+row.filename);
    try{
     if(Number(row.bytes)>250*1048576){skipped++;continue}
-    const response=await fetch('/api/private/edition/file?id='+encodeURIComponent(id)+
-     '&edition='+encodeURIComponent(editionId),{cache:'no-store',credentials:'same-origin'});
+    const endpoint=editionId==='legacy'
+     ?'/api/private/epub/file?id='+encodeURIComponent(id)
+     :'/api/private/edition/file?id='+encodeURIComponent(id)+'&edition='+encodeURIComponent(editionId);
+    const response=await fetch(endpoint,{cache:'no-store',credentials:'same-origin'});
     if(!response.ok)throw Error('Could not read private EPUB: '+response.status);
     const blob=await response.blob();
     const file=new File([blob],row.filename||'stored.epub',{type:'application/epub+zip'});
