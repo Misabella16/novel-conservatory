@@ -118,7 +118,7 @@ async function syncCaptured(options={}){
   if(result.needsIdentityConfirmation){
    if(!confirm('This catalogue record does not match the captured Novel Updates title or URL. Are you certain they are the same novel?'))
     return status('No changes saved.');
-   return syncCaptured({...options,confirmDifferent:true});
+   return syncCaptured({...options,targetId:result.selected||options.targetId,confirmDifferent:true});
   }
   saveResult(result);
  }catch(err){status(err.message)}

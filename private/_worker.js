@@ -1996,7 +1996,7 @@ const nuIdentity=x=>String(x||'').normalize('NFKD').toLocaleLowerCase()
 const nuStoredTitleKey=x=>String(x||'').toLocaleLowerCase().replace(/\s+/g,' ').trim();
 const nuCanon=x=>{
  try{const u=new URL(String(x||''));
-  if(u.protocol!=='https:'||u.hostname!=='www.novelupdates.com'||u.port||u.username||u.password||u.search||u.hash)return '';
+  if(u.protocol!=='https:'||!['novelupdates.com','www.novelupdates.com'].includes(u.hostname)||u.port||u.username||u.password||u.search||u.hash)return '';
   const m=/^\/series\/([a-z0-9][a-z0-9-]{0,190})\/?$/.exec(u.pathname);
   return m?'https://www.novelupdates.com/series/'+m[1]+'/':'';
  }catch{return ''}
@@ -2052,7 +2052,7 @@ async function nuGetExisting(env,url,id){
  return {id:bookId,kind:'extra',row,beforeRaw:row.payload_json,data:nuAdditionalData(row),title:row.title};
 }
 async function nuFindCandidates(env,url,source,excludedId){
- const key=nuIdentity(source.title),canonical=nuCanon(source.nuUrl),matches=[];
+ const key=nuIdentity(source.title),canonical=nuCanon(source.nuUrl)||nuCanon(source.sourceUrl),matches=[];
  const base=await nuBaseCatalogue(env,url),added=await nuAdditionalRows(env);
  // Include existing published editorial changes; a novel's source URL or
  // displayed title may differ from its original static catalogue snapshot.
@@ -2065,7 +2065,7 @@ async function nuFindCandidates(env,url,source,excludedId){
   if(x.id===excludedId)continue;
   const exactTitle=!!key&&(nuIdentity(x.title)===key||nuIdentity(x.originalTitle)===key)
    ||!!originalKey&&(nuIdentity(x.title)===originalKey||nuIdentity(x.originalTitle)===originalKey);
-  const exactUrl=!!canonical&&nuCanon(x.nuUrl)===canonical;
+  const exactUrl=!!canonical&&(nuCanon(x.nuUrl)===canonical||nuCanon(x.sourceUrl)===canonical);
   if(exactTitle||exactUrl)matches.push({id:x.id,title:x.title,matchedBy:exactUrl?'Novel Updates URL':'Exact normalized title',kind:x.id<=962?'original':'added'});
  }
  return matches;
@@ -2087,11 +2087,12 @@ async function nuSafeDuplicateScan(env,url){
   env.DB.prepare('SELECT novel_id AS id FROM epub_editions GROUP BY novel_id').all()
  ]);
  const fileIds=new Set([...(extraFiles.results||[]),...(originalFiles.results||[])].map(x=>Number(x.id)));
- const byUrl=new Map(),byTitleAuthor=new Map();
+ const byUrl=new Map(),byTitleAuthor=new Map(),byTitle=new Map();
  const group=(map,key,item)=>{if(!key)return;let a=map.get(key);if(!a){a=[];map.set(key,a)}a.push(item)};
  for(const item of items){
-  item.nuKey=nuCanon(item.nuUrl);
+  item.nuKey=nuCanon(item.nuUrl)||nuCanon(item.sourceUrl);
   item.titleKey=nuIdentity(item.title);
+  group(byTitle,item.titleKey,item);
   item.authorKey=nuIdentity(item.author);
   item.hasEpub=fileIds.has(Number(item.id));
   group(byUrl,item.nuKey,item);
@@ -2116,7 +2117,13 @@ async function nuSafeDuplicateScan(env,url){
    if(x.nuKey&&item.nuKey&&x.nuKey!==item.nuKey)continue;
    set.set(item.id,item);
   }
-  if(!set.size)continue;
+  if(!set.size){
+   const tentative=(byTitle.get(x.titleKey)||[]).filter(item=>item.id!==x.id);
+   if(tentative.length)skipped.push({id:x.id,title:x.title,
+    targetId:tentative.length===1?tentative[0].id:null,
+    reason:'Possible title match but author or series URL is missing or conflicts; compare manually'});
+   continue;
+  }
   if(set.size>1){skipped.push({id:x.id,title:x.title,reason:'More than one possible match; no automatic merge'});continue}
   const y=[...set.values()][0],pair=[x.id,y.id].sort((a,b)=>a-b).join(':');
   if(seen.has(pair))continue;seen.add(pair);
@@ -2155,10 +2162,19 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  const modified=computed.after;
  if(sourceRow&&sourceRow.visibility==='published'&&target.kind==='extra'&&target.row.visibility!=='published')
   throw Error('The duplicate is published but the selected destination is still private. Publish the destination first, or keep a published record, before hiding the duplicate.');
- if(sourceId&&sourceRow?.cover_key&&!target.data.cover&&!target.row?.cover_key&&target.kind==='extra'){
-  // Only carry cover references that already declare display permission.
-  const original=nuAdditionalData(sourceRow);
-  if(original.coverRights===true)modified.coverCredit=original.coverCredit||'Source record cover';
+ // Keep source cover assets intact. An editor-driven merge may reuse a
+ // licensed/authorized cover, but never deletes either original R2 object.
+ const sourceCoverData=sourceRow?nuAdditionalData(sourceRow):null;
+ const canShareCover=!!sourceRow?.cover_key&&sourceCoverData?.coverRights===true;
+ const canAdoptExtra=canShareCover&&target.kind==='extra'&&
+  !target.row.cover_key&&sourceRow.visibility===target.row.visibility;
+ const canAdoptSeed=canShareCover&&target.kind==='seed'&&
+  sourceRow.visibility==='published'&&!target.data.cover;
+ const adoptedCoverKey=canAdoptExtra?sourceRow.cover_key:'';
+ if(canAdoptExtra||canAdoptSeed){
+  modified.coverRights=true;
+  modified.coverCredit=sourceCoverData.coverCredit||'Source record cover';
+  if(canAdoptSeed)modified.cover='/api/additional/cover?id='+sourceId;
  }
  let resultRaw,previousPrivate=null,nextPrivate=null;
  if(target.kind==='seed'){
@@ -2188,7 +2204,9 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  const stageLinks=sourceId?(await env.COMMUNITY_DB.prepare('SELECT slug,published_id FROM nu_staged_series WHERE published_id=?').bind(sourceId).all()).results||[]:[];
  const snapshot={targetKind:target.kind,beforeTarget:target.beforeRaw,afterTarget:resultRaw,
   sourceId:sourceId||null,beforeSourceMarker:oldSourceMarker,afterSourceMarker,stageLinks,
-  beforePrivate:previousPrivate,afterPrivate:nextPrivate};
+  beforePrivate:previousPrivate,afterPrivate:nextPrivate,
+  beforeCoverKey:target.kind==='extra'?(target.row.cover_key||''):null,
+  afterCoverKey:target.kind==='extra'?(adoptedCoverKey||target.row.cover_key||''):null};
  if(resultRaw===target.beforeRaw&&!sourceRow)return {ok:true,alreadyUpToDate:true,id:target.id,conflicts:computed.conflicts,changed:[]};
  // Optimistic write rejects subsequent updates since preview was loaded.
  if(opts.expectedBefore!==undefined&&opts.expectedBefore!==target.beforeRaw)
@@ -2210,8 +2228,15 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
   ).bind(resultRaw,modified.title,nuStoredTitleKey(modified.title),target.id,target.beforeRaw).run();
  }
  if((write.meta?.changes||0)!==1)throw Error('The novel changed while saving. Refresh and retry.');
- let archiveDone=false;
+ let archiveDone=false,coverAdopted=false;
  try{
+  if(adoptedCoverKey){
+   const copied=await env.COMMUNITY_DB.prepare(
+    "UPDATE additional_catalogue_novels SET cover_key=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND COALESCE(cover_key,'')='' AND payload_json=?"
+   ).bind(adoptedCoverKey,target.id,resultRaw).run();
+   if((copied.meta?.changes||0)!==1)throw Error('The target cover changed while merging. Refresh to retry.');
+   coverAdopted=true;
+  }
   if(sourceRow){
    const arch=await env.COMMUNITY_DB.prepare(
     "UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND source_submission_id=?"
@@ -2226,6 +2251,9 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
   ).bind(eventId,sourceId?'merge':'metadata_sync',target.id,sourceId||null,JSON.stringify(snapshot),JSON.stringify({target:resultRaw,sourceMarker:afterSourceMarker}),nuCanon(source.nuUrl),email).run();
  }catch(err){
   // No edit should be left invisible if the audit journal cannot be written.
+  if(coverAdopted)await env.COMMUNITY_DB.prepare(
+   'UPDATE additional_catalogue_novels SET cover_key=? WHERE id=? AND cover_key=?'
+  ).bind(snapshot.beforeCoverKey,target.id,adoptedCoverKey).run().catch(()=>{});
   if(archiveDone){
    await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET source_submission_id=? WHERE id=? AND source_submission_id=?')
     .bind(oldSourceMarker,sourceId,afterSourceMarker).run().catch(()=>{});
@@ -2264,6 +2292,18 @@ async function nuSyncSource(env,url,email,source,options={}){
    message:'Several catalogue entries match this source. Choose the correct novel instead of making another copy.'};
  const targetId=chosen||(candidates.length===1?candidates[0].id:null);
  if(targetId){
+  // A shared title is not proof of a shared work. Different series URLs
+  // or conflicting/unknown authors must be checked by an editor.
+  const existing=await nuGetExisting(env,url,targetId);
+  const a=nuCanon(safe.nuUrl),b=nuCanon(existing.data.nuUrl)||nuCanon(existing.data.sourceUrl);
+  const sameSeries=!!a&&a===b;
+  const differentSeries=!!a&&!!b&&a!==b;
+  const titleMatches=nuIdentity(safe.title)===nuIdentity(existing.data.title)
+   ||!!nuIdentity(safe.originalTitle)&&nuIdentity(safe.originalTitle)===nuIdentity(existing.data.originalTitle);
+  const authorMatches=!!nuIdentity(safe.author)&&nuIdentity(safe.author)===nuIdentity(existing.data.author);
+  if((differentSeries||!sameSeries&&!(titleMatches&&authorMatches))&&options.confirmDifferent!==true)
+   return {ok:false,needsIdentityConfirmation:true,selected:targetId,candidates,
+    message:'A matching title does not confirm this is the same novel. Check both authors and Novel Updates URLs before combining their metadata.'};
   const result=await nuSaveEdit(env,url,email,targetId,safe,{
    preferSourceFields:options.preferSourceFields||[],expectedBefore:options.expectedBefore
   });
@@ -2318,9 +2358,10 @@ async function nuUndoEdit(env,email,eventId){
   const current=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(targetId).first();
   if(current?.patch_json!==snap.afterTarget)throw Error('The book was edited again. Resolve those newer changes before undoing this one.');
  }else{
-  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,visibility FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
+  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,visibility,cover_key FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
   if(row?.payload_json!==snap.afterTarget||
-    snap.afterVisibility!==undefined&&row.visibility!==snap.afterVisibility)
+    snap.afterVisibility!==undefined&&row.visibility!==snap.afterVisibility||
+    snap.afterCoverKey!==undefined&&snap.afterCoverKey!==null&&(row.cover_key||'')!==snap.afterCoverKey)
    throw Error('The book was edited or published again. Undo the newer edit first.');
  }
  if(snap.sourceId){
@@ -2333,12 +2374,23 @@ async function nuUndoEdit(env,email,eventId){
  }else{
   const before=JSON.parse(snap.beforeTarget||'{}');
   let restored;
+  const coverChanged=snap.afterCoverKey!==undefined&&snap.afterCoverKey!==null&&snap.beforeCoverKey!==snap.afterCoverKey;
   if(snap.beforeVisibility!==undefined){
-   restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,visibility=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND visibility=?')
-    .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),snap.beforeVisibility,targetId,snap.afterTarget,snap.afterVisibility).run();
+   if(coverChanged){
+    restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,visibility=?,cover_key=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND visibility=? AND cover_key=?')
+     .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),snap.beforeVisibility,snap.beforeCoverKey,targetId,snap.afterTarget,snap.afterVisibility,snap.afterCoverKey).run();
+   }else{
+    restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,visibility=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND visibility=?')
+     .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),snap.beforeVisibility,targetId,snap.afterTarget,snap.afterVisibility).run();
+   }
   }else{
-   restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=?')
-    .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),targetId,snap.afterTarget).run();
+   if(coverChanged){
+    restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,cover_key=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND cover_key=?')
+     .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),snap.beforeCoverKey,targetId,snap.afterTarget,snap.afterCoverKey).run();
+   }else{
+    restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=?')
+     .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),targetId,snap.afterTarget).run();
+   }
   }
   if((restored.meta?.changes||0)!==1)throw Error('A newer edit changed the record while Undo was running.');
  }
@@ -2413,6 +2465,31 @@ async function nuAdminRoutes(request,env,email,role){
    return respond({ok:true,processed:results.length,merged:results.filter(x=>x.ok).length,
     results,skipped:scan.skipped,remainingMayExist:scan.proposals.length>12,
     note:'All successful merges have independent Undo history records.'});
+  }
+  // Read-only duplicate preflight used by Add Novels. It sees both the
+  // original 962 entries and all active additional entries, including drafts.
+  // Actual writes still re-check identity server-side to prevent races.
+  if(path==='/api/admin/nu/check-duplicate'&&method==='GET'){
+   const source={
+    title:extraTxt(url.searchParams.get('title'),210),
+    originalTitle:extraTxt(url.searchParams.get('originalTitle'),210),
+    author:extraTxt(url.searchParams.get('author'),140),
+    nuUrl:extraUrl(url.searchParams.get('nuUrl')),
+    sourceUrl:extraUrl(url.searchParams.get('sourceUrl'))
+   };
+   if(source.title.length<2&&!nuCanon(source.nuUrl)&&!nuCanon(source.sourceUrl))
+    return respond({items:[],note:'Enter a title or a Novel Updates series URL.'});
+   const matches=await nuFindCandidates(env,url,source,null);
+   const entries=[];
+   for(const x of matches.slice(0,20)){
+    const existing=await nuGetExisting(env,url,x.id);
+    entries.push({id:x.id,title:existing.data.title,author:existing.data.author||'',
+     kind:existing.kind,visibility:existing.kind==='extra'?existing.row.visibility:'published',
+     matchedBy:x.matchedBy,hasSynopsis:!!existing.data.synopsis,
+     tagCount:extraTags(existing.data.tags).length});
+   }
+   return respond({items:entries,total:matches.length,
+    note:'Existing entries are reused when a match is unambiguous. Conflicting records can be compared and merged with Undo.'});
   }
   if(path==='/api/admin/nu/search-books'&&method==='GET'){
    const q=String(url.searchParams.get('q')||'').trim().slice(0,120);
