@@ -7,6 +7,14 @@ CREATE TABLE IF NOT EXISTS canonical_novel_keys (
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_canonical_novel_id ON canonical_novel_keys(novel_id);
+-- Undoable redirect for historical IDs after a duplicate was archived.
+CREATE TABLE IF NOT EXISTS canonical_novel_aliases (
+ source_id INTEGER PRIMARY KEY CHECK(source_id >= 100000),
+ target_id INTEGER NOT NULL CHECK(target_id >= 1),
+ event_id TEXT NOT NULL UNIQUE,
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_canonical_alias_target ON canonical_novel_aliases(target_id);
 -- A public projection of a privately stored novel. The private payload,
 -- private cover and EPUB object keys are NEVER copied into this table.
 CREATE TABLE IF NOT EXISTS public_novel_projections (
