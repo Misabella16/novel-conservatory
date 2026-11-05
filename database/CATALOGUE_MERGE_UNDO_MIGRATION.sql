@@ -3,7 +3,7 @@
 -- Merges keep the original duplicate row, IDs and EPUB files intact for Undo.
 CREATE TABLE IF NOT EXISTS catalogue_edit_events (
  id TEXT PRIMARY KEY,
- operation TEXT NOT NULL CHECK(operation IN ('merge','metadata_sync')),
+ operation TEXT NOT NULL CHECK(operation IN ('merge','metadata_sync','create')),
  target_id INTEGER NOT NULL,
  duplicate_id INTEGER,
  before_json TEXT NOT NULL,
