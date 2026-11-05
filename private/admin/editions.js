@@ -134,7 +134,7 @@ async function uploadReady(){if(busy||!approved)return;const work=rows.filter(r=
    try{const meta=await ingestEmbeddedMetadata(r.bookId,entry.id,r.meta);r.enrichment=meta;
     if(meta.changed?.length&&coverNotes.length<12)coverNotes.push(r.file.name+': private '+meta.changed.join(', ')+' imported');
    }catch(e){if(coverNotes.length<12)coverNotes.push(r.file.name+': metadata import failed ('+e.message+')')}
-   try{const art=await tryAutoCover(r);r.coverImport=art;if(art.published)covers++;else if(coverNotes.length<12)coverNotes.push(r.file.name+': '+art.detail)}catch(e){if(coverNotes.length<12)coverNotes.push(r.file.name+': '+e.message)}
+   try{const art=await tryAutoCover(r);r.coverImport=art;if(art.published)covers++;else if(coverNotes.length<12)coverNotes.push(r.file.name+': '+art.detail) }catch(e){r.coverError='Cover extraction failed ('+e.message+')';if(coverNotes.length<12)coverNotes.push(r.file.name+': '+r.coverError)}
   }catch(e){r.error=String(e.message||e).slice(0,180);failed++;}
   draw();
  }
@@ -144,6 +144,85 @@ async function uploadReady(){if(busy||!approved)return;const work=rows.filter(r=
 }
 $('start').addEventListener('click',async()=>{await uploadReady();renderImportReport();});
 $('stop').addEventListener('click',()=>{stop=true;text('Stopping after the current EPUB finishes…')});
+
+let importReport=null;
+function renderImportReport(){
+ const items=rows.map(r=>({
+  file:r.file?.name||'',bytes:r.file?.size||0,novelId:r.bookId||null,
+  novelPage:r.bookId?'/novel/'+r.bookId:null,
+  status:r.done?'uploaded':r.error?'failed':r.matchKind==='ambiguous'?'ambiguous':'skipped',
+  reason:r.error||r.reason||rowState(r),created:!!r.wasCreatedPrivate,
+  createdUndoEvent:r.creationEventId||null,
+  metadataUndoEvent:r.enrichment?.eventId||null,
+  importedFields:r.enrichment?.changed||[],
+  stagedNovelUpdates:!!r.enrichment?.stagedSourceUsed,
+  privateCoverSaved:!!r.coverImport?.published,
+  metadataError:r.metadataError||'',coverError:r.coverError||''
+ }));
+ const counts={
+  uploaded:items.filter(x=>x.status==='uploaded').length,
+  newNovels:items.filter(x=>x.created).length,
+  ambiguous:items.filter(x=>x.status==='ambiguous').length,
+  failed:items.filter(x=>x.status==='failed').length,
+  skipped:items.filter(x=>x.status==='skipped').length
+ };
+ importReport={format:'novel-conservatory-import-v1',generatedAt:new Date().toISOString(),
+  privacy:'private-only',counts,items};
+ $('import-report').hidden=false;
+ $('import-report-summary').textContent=counts.uploaded+' uploaded · '+counts.newNovels+
+  ' new private novel entries · '+counts.ambiguous+' ambiguous · '+
+  counts.failed+' failed · '+counts.skipped+' skipped.';
+ const host=$('import-report-items');host.replaceChildren();
+ for(const row of items){
+  const container=document.createElement('p');
+  container.className=row.status==='failed'?'error':'hint';
+  const title=document.createElement('strong');title.textContent=row.file+' · '+row.status+' · ';
+  container.append(title,document.createTextNode(row.reason+' '));
+  if(row.novelPage){
+   const link=document.createElement('a');link.href=row.novelPage;
+   link.textContent='Open novel #'+row.novelId;container.append(link);
+  }
+  if(row.importedFields.length)container.append(document.createTextNode(' · Imported '+row.importedFields.join(', ')));
+  if(row.stagedNovelUpdates)container.append(document.createTextNode(' · Captured Novel Updates metadata used'));
+  if(row.privateCoverSaved)container.append(document.createTextNode(' · Private cover saved'));
+  for(const message of [row.metadataError,row.coverError])if(message)
+   container.append(document.createTextNode(' · '+message));
+  if(row.metadataUndoEvent){
+   const undo=document.createElement('button');
+   undo.type='button';undo.className='secondary';undo.style.marginLeft='8px';
+   undo.textContent='Undo metadata import';
+   undo.addEventListener('click',async()=>{
+    undo.disabled=true;
+    try{
+     await json(await fetch('/api/admin/epub/undo-metadata',{
+      method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},
+      body:JSON.stringify({eventId:row.metadataUndoEvent})}));
+     undo.textContent='Metadata reverted';row.metadataUndoEvent=null;
+    }catch(error){undo.disabled=false;undo.textContent='Retry Undo';container.append(document.createTextNode(error.message))}
+   });
+   container.append(undo);
+  }
+  host.append(container);
+ }
+}
+$('download-import-report').addEventListener('click',()=>{
+ if(!importReport)return;
+ const blob=new Blob([JSON.stringify(importReport,null,2)],{type:'application/json'});
+ const objectUrl=URL.createObjectURL(blob),a=document.createElement('a');
+ a.href=objectUrl;a.download='novel-conservatory-import-report.json';a.click();
+ setTimeout(()=>URL.revokeObjectURL(objectUrl),5000);
+});
+$('auto-import').addEventListener('click',async()=>{
+ if(busy||!approved)return;
+ const button=$('auto-import');button.disabled=true;
+ try{
+  await scanFiles();
+  // Unsafe title matches remain unresolved; all reliable entries upload now.
+  await uploadReady();renderImportReport();
+ }catch(error){text('Automatic catalogue import stopped: '+error.message,true)}
+ finally{button.disabled=false}
+});
+
 // Used only by the owner's stored-EPUB enrichment control. Do not publish EPUB bytes.
 window.ConservatoryStoredEpubTools={inspect:MATCH.inspect,ingest:ingestEmbeddedMetadata,cover:tryAutoCover,fetchJson:json};
 
