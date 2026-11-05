@@ -1756,6 +1756,46 @@ async function extraInsert(env,payload,coverKey,visibility,who,submissionId=''){
  }
  throw Error('Could not assign novel ID; please retry');
 }
+
+// Single canonical entry point for manually created novels. Reuse/merge an
+// unambiguous existing additional record instead of creating another card.
+// Never infer sameness solely from a title when authors differ or are unknown.
+async function extraCreateOrReuse(env,url,email,p,visibility){
+ const found=await nuFindCandidates(env,url,p,null);
+ const safe=[],uncertain=[];
+ for(const candidate of found){
+  const existing=await nuGetExisting(env,url,candidate.id);
+  const current=existing.data;
+  const sourceA=nuCanon(p.nuUrl),sourceB=nuCanon(current.nuUrl);
+  const sameSource=!!sourceA&&sourceA===sourceB;
+  const sameTitle=!!nuIdentity(p.title)&&nuIdentity(p.title)===nuIdentity(current.title);
+  const sameAuthor=!!nuIdentity(p.author)&&nuIdentity(p.author)===nuIdentity(current.author);
+  const item={id:existing.id,title:current.title,author:current.author||'',kind:existing.kind,
+    visibility:existing.kind==='extra'?existing.row.visibility:'published',
+    reason:sameSource?'Identical Novel Updates URL':sameTitle?'Matching title':'Related title'};
+  if(sameSource||(sameTitle&&sameAuthor))safe.push(item);
+  else uncertain.push(item);
+ }
+ if(safe.length>1)return {ok:false,needsChoice:true,candidates:safe,
+  error:'Several existing entries match this novel. Use Merge duplicates so no EPUBs or edits are lost.'};
+ if(safe.length===1){
+  const matched=safe[0];
+  if(matched.kind==='original'||matched.visibility!==visibility){
+   return {ok:false,needsChoice:true,existingId:matched.id,candidates:safe,
+    error:'An existing novel already matches. Open that entry to update it; its current publication status will not be changed automatically.'};
+  }
+  const result=await nuSaveEdit(env,url,email,matched.id,p);
+  return {ok:true,id:matched.id,reused:true,eventId:result.eventId,changed:result.changed||[],
+   conflicts:result.conflicts||[],note:'Merged with an existing novel. The earlier metadata was preserved; Undo is available in history.'};
+ }
+ // Ambiguous same-title entries must not be accidentally hidden or overwritten.
+ const sameTitle=uncertain.filter(x=>nuIdentity(x.title)===nuIdentity(p.title));
+ if(sameTitle.length)return {ok:false,needsChoice:true,candidates:sameTitle,
+  error:'A novel with this title already exists. Check the author and Novel Updates URL before adding another.'};
+ const id=await extraInsert(env,p,'',visibility,email);
+ return {ok:true,id,reused:false};
+}
+
 async function additionalRoutes(request,env,scope,email='',role='reader'){
  const path=new URL(request.url).pathname,method=request.method.toUpperCase();
  if(!env.COMMUNITY_DB)return extraJson({error:'Community database binding is missing'},503);
@@ -1822,7 +1862,8 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
   if(path==='/api/admin/additional/create'&&method==='POST'){
    if(!editor||!extraOrigin(request))return extraJson({error:'Editor permission required'},403);
    const b=await request.json(),p=extraPayload(b),visibility=b.publish===true?'published':'private';
-   const id=await extraInsert(env,p,'',visibility,email);return extraJson({ok:true,id});
+   const result=await extraCreateOrReuse(env,new URL(request.url),email,p,visibility);
+   return extraJson(result,result.ok?200:409);
   }
   if(path==='/api/admin/additional/bulk'&&method==='POST'){
    if(!owner||!extraOrigin(request))return extraJson({error:'Owner permission required'},403);
