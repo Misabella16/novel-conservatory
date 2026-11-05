@@ -1,4 +1,4 @@
-// Book Conservatory Phase 2 UI: no sample records, no local storage for private data.
+// My Library Phase 2 UI: no sample records, no local storage for private data.
 // All real writes go to the owner-authenticated, same-origin /api routes.
 'use strict';
 const state = {
@@ -315,7 +315,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
     if(state.books.length) await selectBook(state.books[0].id);
   }catch(err){
     $('#connection-status').textContent='Setup required · Private library is not connected';
-    $('#book-grid').innerHTML='<div class="empty"><h3>Private setup required</h3><p>Configure a separate Cloudflare Access application and Book Conservatory D1 database before editing your library.</p></div>';
+    $('#book-grid').innerHTML='<div class="empty"><h3>Private setup required</h3><p>Configure a separate Cloudflare Access application and My Library D1 database before editing your library.</p></div>';
     showMessage('Private library is unavailable: '+err.message,true);
     $('#add-book').disabled=true;$('#refresh').disabled=true;
   }

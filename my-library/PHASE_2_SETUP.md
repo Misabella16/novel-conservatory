@@ -1,4 +1,4 @@
-# The Book Conservatory: Phase 2 setup and safety checklist
+# My Library: Phase 2 setup and safety checklist
 
 **Status:** Phase 2 backend and frontend are committed on a feature branch. The code is **not deployed**, and no live Cloudflare resources have been created or modified by this change. The original Novel Conservatory sites, R2 buckets and D1 databases must stay untouched.
 
@@ -7,7 +7,7 @@
 - A separate responsive library site with real API-backed browsing, searching and pagination.
 - Add a book and edit title, author, synopsis and reading status.
 - Book pages show genres/tags, reading shelves, ratings and reviews.
-- **My Private Notes is always visible on the book page**, with a textarea and explicit **Save notes** action. Notes are stored in D1's \`books.private_notes\`, not browser storage; concurrent stale edits receive HTTP 409.
+- **My Private Notes is always visible on the book page**, with a textarea and explicit **Save notes** action. Notes are stored in D1's `books.private_notes`, not browser storage; concurrent stale edits receive HTTP 409.
 - Collapsible My Editions & Copies section; add and edit physical/digital editions, signed/personalized copies, ARCs, ownership and precise locations (room, bookcase, shelf, position).
 - Add and remove custom reading shelves and tags.
 - Upload edition-specific covers to a private R2 bucket, view them only through owner-verified image API, and select the display cover.
@@ -28,52 +28,52 @@
 
 ## Security prerequisites
 
-1. Use a **separate** Cloudflare Pages project, not \`novel-conservatory\` or \`novel-conservatory-public\`.
-2. Create a **new** D1 database, e.g. \`book-conservatory-data\`. Make a backup before any later migration.
-3. Create a **new private** R2 bucket, e.g. \`book-conservatory-private\`. **Do not enable a public bucket domain**.
-4. Create a **separate Cloudflare Access application** protecting the Book Conservatory Pages hostname, including any preview hostnames. In its Access policy, **Allow your exact owner email only**. Do not add an Everyone rule.
-5. Verify that the Access application supplies a JWT to the Worker. Set the Worker variables in the Book Conservatory project only:
-   - \`ACCESS_TEAM_DOMAIN\`: your actual \`https://<team>.cloudflareaccess.com\` team domain, without a trailing slash.
-   - \`ACCESS_AUD\`: the **Book Conservatory Access application's** audience tag (not the existing Novel Conservatory tag).
-   - \`OWNER_EMAIL\`: your exact account email (not written in the repository).
-6. Set these **independent Worker bindings** in the Book Conservatory Pages project:
-   - \`BOOK_DB\` → new Book Conservatory D1 database.
-   - \`BOOK_FILES\` → new private Book Conservatory R2 bucket.
-7. Restrict deployments to this site's isolated \`book-conservatory/\` root. No novel-conservatory CI workflow deploys this site automatically. Do not turn on auto-publish for this project before a preview security review.
+1. Use a **separate** Cloudflare Pages project, not `novel-conservatory` or `novel-conservatory-public`.
+2. Create a **new** D1 database, e.g. `my-library-data`. Make a backup before any later migration.
+3. Create a **new private** R2 bucket, e.g. `my-library-private`. **Do not enable a public bucket domain**.
+4. Create a **separate Cloudflare Access application** protecting the My Library Pages hostname, including any preview hostnames. In its Access policy, **Allow your exact owner email only**. Do not add an Everyone rule.
+5. Verify that the Access application supplies a JWT to the Worker. Set the Worker variables in the My Library project only:
+   - `ACCESS_TEAM_DOMAIN`: your actual `https://<team>.cloudflareaccess.com` team domain, without a trailing slash.
+   - `ACCESS_AUD`: the **My Library Access application's** audience tag (not the existing Novel Conservatory tag).
+   - `OWNER_EMAIL`: your exact account email (not written in the repository).
+6. Set these **independent Worker bindings** in the My Library Pages project:
+   - `BOOK_DB` → new My Library D1 database.
+   - `BOOK_FILES` → new private My Library R2 bucket.
+7. Restrict deployments to this site's isolated `my-library/` root. No novel-conservatory CI workflow deploys this site automatically. Do not turn on auto-publish for this project before a preview security review.
 
-Cloudflare Dashboard steps: Workers & Pages → create a separate Pages project; choose a direct upload preview or a new GitHub integration configured to serve only \`book-conservatory/\`. Keep production deployment manual initially. Confirm \`_worker.js\` is activated as the advanced-mode Worker and that all assets route through it.
+Cloudflare Dashboard steps: Workers & Pages → create a separate Pages project; choose a direct upload preview or a new GitHub integration configured to serve only `my-library/`. Keep production deployment manual initially. Confirm `_worker.js` is activated as the advanced-mode Worker and that all assets route through it.
 
 ## Database migration (NEW DATABASE ONLY)
 
-Once the dedicated D1 exists, apply the files in this order via the Cloudflare D1 Console, after confirming the **Book Conservatory** database name:
+Once the dedicated D1 exists, apply the files in this order via the Cloudflare D1 Console, after confirming the **My Library** database name:
 
-1. \`book-conservatory/database/001_initial_schema.sql\`
-2. \`book-conservatory/database/002_shelf_photo_scanning.sql\`
+1. `my-library/database/001_initial_schema.sql`
+2. `my-library/database/002_shelf_photo_scanning.sql`
 
 Alternatively, from a repo checkout with Wrangler authenticated to your Cloudflare account:
 
-\`\`\`sh
-npx wrangler d1 execute book-conservatory-data --remote --file=book-conservatory/database/001_initial_schema.sql
-npx wrangler d1 execute book-conservatory-data --remote --file=book-conservatory/database/002_shelf_photo_scanning.sql
-\`\`\`
+```sh
+npx wrangler d1 execute my-library-data --remote --file=my-library/database/001_initial_schema.sql
+npx wrangler d1 execute my-library-data --remote --file=my-library/database/002_shelf_photo_scanning.sql
+```
 
-Replace the example DB name with the **exact new Book Conservatory database name**. **Never execute these commands against the existing Novel Conservatory databases.**
+Replace the example DB name with the **exact new My Library database name**. **Never execute these commands against the existing Novel Conservatory databases.**
 
 ## Test and preview
 
 From the repository root:
 
-\`\`\`sh
-node --check book-conservatory/_worker.js
-node --check book-conservatory/library.js
-node --test book-conservatory/tests/test-worker.mjs
-node book-conservatory/tests/test-shelf-match.mjs
-python3 -m unittest discover -s book-conservatory/tests -p 'test_*.py' -v
-\`\`\`
+```sh
+node --check my-library/_worker.js
+node --check my-library/library.js
+node --test my-library/tests/test-worker.mjs
+node my-library/tests/test-shelf-match.mjs
+python3 -m unittest discover -s my-library/tests -p 'test_*.py' -v
+```
 
 Then in a private preview deployment:
 
-1. Without a valid Access identity, \`/\`, \`/library.js\`, \`/api/books\`, and \`/api/images/<image-id>\` must all be inaccessible.
+1. Without a valid Access identity, `/`, `/library.js`, `/api/books`, and `/api/images/<image-id>` must all be inaccessible.
 2. An authenticated non-owner also receives 403, even if a Cloudflare policy was accidentally broadened.
 3. As the owner, add a book, enter notes directly on the book page and Save. Refresh and check the text persisted.
 4. Open another tab and save an older version: stale writes must receive 409, not silently replace the newer notes.
@@ -87,7 +87,7 @@ Then in a private preview deployment:
 
 ## Notes behavior
 
-The \`private_notes\` field belongs to the canonical book, not a particular edition. Copy-specific notes have their own \`copies.notes\` field. A private book's personal review is separate (\`books.review\`). Notes remain owner-only and are never included in any public projection. The editor has a deliberate Save button to avoid overwriting thoughtful notes while you are typing.
+The `private_notes` field belongs to the canonical book, not a particular edition. Copy-specific notes have their own `copies.notes` field. A private book's personal review is separate (`books.review`). Notes remain owner-only and are never included in any public projection. The editor has a deliberate Save button to avoid overwriting thoughtful notes while you are typing.
 
 ## Next steps
 

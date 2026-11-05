@@ -1,6 +1,6 @@
-# The Book Conservatory
+# My Library
 
-A **separate sister site** to Novel Conservatory, not another view of the existing private/public catalogue. This isolated site root is `book-conservatory/`; do not deploy it into the existing Novel Conservatory Pages projects.
+A **separate sister site** to Novel Conservatory, not another view of the existing private/public catalogue. This isolated site root is `my-library/`; do not deploy it into the existing Novel Conservatory Pages projects.
 
 ## Current progress
 
@@ -48,22 +48,22 @@ The Phase 2 code and tests are committed, but **Cloudflare Pages, Access, dedica
 From the repository root:
 
 ```sh
-node --check book-conservatory/shelf-photo-matcher.mjs
-node book-conservatory/tests/test-shelf-match.mjs
-python3 -m unittest discover -s book-conservatory/tests -p 'test_*.py' -v
+node --check my-library/shelf-photo-matcher.mjs
+node my-library/tests/test-shelf-match.mjs
+python3 -m unittest discover -s my-library/tests -p 'test_*.py' -v
 ```
 
 These checks cover structural guarantees and match safety. They **do not validate the as-yet-unimplemented image recognition provider**.
 
 ## Later Cloudflare setup
 
-Create a **new** D1 database and a **new private** R2 bucket, for example `book-conservatory-data` and `book-conservatory-private`, plus a separate Cloudflare Pages project `book-conservatory`. Names are examples, not resources already created.
+Create a **new** D1 database and a **new private** R2 bucket, for example `my-library-data` and `my-library-private`, plus a separate Cloudflare Pages project `my-library`. Names are examples, not resources already created.
 
 Only after backups, owner auth, access-control checks, and the Worker are implemented:
 
 1. Run `database/001_initial_schema.sql` on the *new* D1.
 2. Run `database/002_shelf_photo_scanning.sql` on the *new* D1.
-3. Bind the new D1/R2 only to the Book Conservatory Worker, not to the existing Novel Conservatory public site.
+3. Bind the new D1/R2 only to the My Library Worker, not to the existing Novel Conservatory public site.
 4. Keep original EPUBs, shelf photos, collection location, private notes and credentials out of GitHub.
 5. Test in a private preview environment before any manually initiated production publish.
 

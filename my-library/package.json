@@ -1,5 +1,5 @@
 {
-  "name": "book-conservatory",
+  "name": "my-library",
   "private": true,
   "type": "module",
   "description": "Standalone private sister site; no production deployment configured",

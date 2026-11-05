@@ -1,5 +1,5 @@
-"""Offline tests for Book Conservatory's standalone Cloudflare D1 schema.
-Run: python3 -m unittest discover -s book-conservatory/tests -p 'test_*.py'
+"""Offline tests for My Library's standalone Cloudflare D1 schema.
+Run: python3 -m unittest discover -s my-library/tests -p 'test_*.py'
 """
 from pathlib import Path
 import sqlite3

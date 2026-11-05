@@ -1,4 +1,4 @@
--- The Book Conservatory | Phase 1 | NEW, INDEPENDENT Cloudflare D1 database only.
+-- My Library | Phase 1 | NEW, INDEPENDENT Cloudflare D1 database only.
 -- Do NOT run against Novel Conservatory's DB or COMMUNITY_DB.
 PRAGMA foreign_keys = ON;
 

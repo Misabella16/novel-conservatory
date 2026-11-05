@@ -1,4 +1,4 @@
--- The Book Conservatory | Shelf photos | phase 6 preparation.
+-- My Library | Shelf photos | phase 6 preparation.
 -- Companion to 001_initial_schema.sql. Independent D1 database ONLY.
 -- Shelf photos and bounding-box crops stay PRIVATE until explicitly shared.
 PRAGMA foreign_keys = ON;

@@ -1,4 +1,4 @@
-// Book Conservatory Phase 2: private, independent Cloudflare Pages advanced-mode Worker.
+// My Library Phase 2: private, independent Cloudflare Pages advanced-mode Worker.
 // All requests, including static assets, REQUIRE verified Cloudflare Access identity.
 // Never reuse Novel Conservatory databases, Access audience or R2 bindings.
 const HEADER = {'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'};
@@ -165,7 +165,7 @@ async function patchRecord(db,table,key,payload,fields,{audit=true}={}){
 }
 async function serveApi(request,env,path){
   const db=env.BOOK_DB;
-  if(!db) return fail('Book Conservatory database is not configured',503);
+  if(!db) return fail('My Library database is not configured',503);
   const method=request.method;
   if(path==='/api/session'&&method==='GET') return json({authenticated:true,owner:true});
   if(path==='/api/books'&&method==='GET') {
@@ -362,7 +362,7 @@ export default {
       if(err instanceof SyntaxError) return secureHeaders(fail('Invalid JSON',400),true);
       if(err instanceof Error && (/required|Invalid|selection|Rating|Content-Type|large|Expected|price|No recognized/.test(err.message)))
         return secureHeaders(fail(err.message,400),true);
-      console.error('Book Conservatory request failed:',err?.name||'Error');
+      console.error('My Library request failed:',err?.name||'Error');
       return secureHeaders(fail('Request failed',500),true);
     }
   }
