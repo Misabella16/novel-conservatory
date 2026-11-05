@@ -1935,7 +1935,31 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
   if(path==='/api/admin/additional/create'&&method==='POST'){
    if(!editor||!extraOrigin(request))return extraJson({error:'Editor permission required'},403);
    const b=await request.json(),p=extraPayload(b),visibility=b.publish===true?'published':'private';
-   const result=await extraCreateOrReuse(env,new URL(request.url),email,p,visibility);
+   let result;
+   // A contributor can explicitly choose an existing novel from the live
+   // duplicate preview. Never let an unconfirmed fuzzy match overwrite data.
+   if(b.targetId!==undefined&&b.targetId!==null&&String(b.targetId)!==''){
+    const targetId=editionBook(b.targetId);
+    if(!targetId)return extraJson({error:'Select a valid existing novel'},400);
+    const target=await nuGetExisting(env,new URL(request.url),targetId);
+    const candidates=await nuFindCandidates(env,new URL(request.url),p,null);
+    const sourceURL=nuCanon(p.nuUrl)||nuCanon(p.sourceUrl);
+    const targetURL=nuCanon(target.data.nuUrl)||nuCanon(target.data.sourceUrl);
+    const sameSeries=!!sourceURL&&sourceURL===targetURL;
+    const conflictingSeries=!!sourceURL&&!!targetURL&&sourceURL!==targetURL;
+    const sameTitle=!!nuIdentity(p.title)&&(
+     nuIdentity(p.title)===nuIdentity(target.data.title)||
+     nuIdentity(p.title)===nuIdentity(target.data.originalTitle));
+    const sameAuthor=!!nuIdentity(p.author)&&nuIdentity(p.author)===nuIdentity(target.data.author);
+    const safe=!conflictingSeries&&(sameSeries||sameTitle&&sameAuthor);
+    if(!safe&&b.confirmIdentity!==true)
+     return extraJson({ok:false,needsIdentityConfirmation:true,candidates,
+      error:'The title, author, or series URL does not reliably match the chosen novel. Confirm both records refer to the same work before merging.'},409);
+    const changed=await nuSaveEdit(env,new URL(request.url),email,targetId,p);
+    result={...changed,reused:true,matchedExisting:true,
+     visibility:target.kind==='extra'?target.row.visibility:'published',
+     note:'Merged into your selected existing novel. Its publication status was preserved. Undo is available.'};
+   }else result=await extraCreateOrReuse(env,new URL(request.url),email,p,visibility);
    if(result.ok&&!result.reused)result.eventId=await extraRecordCreationUndo(env,email,result.id);
    return extraJson(result,result.ok?200:409);
   }
