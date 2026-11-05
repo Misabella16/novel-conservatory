@@ -59,6 +59,8 @@ jobs:
         run: python tests/check_nu_refresh_guidance.py
       - name: Verify stored EPUB metadata recovery and private cover permissions
         run: python tests/check_stored_epub_recovery.py
+      - name: Verify one-click batch duplicate merges with independent Undo
+        run: python tests/check_one_click_multi_batch_undo.py
       - name: Verify direct NU sync, duplicate merging, literal search and Undo
         run: python tests/check_nu_direct_merge_undo.py
       - name: Verify duplicate-safe direct novel creation
