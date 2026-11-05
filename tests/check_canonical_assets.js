@@ -4,16 +4,17 @@ const raw=fs.readFileSync('private/_worker.js','utf8');
 const a=raw.indexOf('const nuAssetColumns='),b=raw.indexOf('async function nuSaveEdit(',a);
 assert(a>=0&&b>a,'Asset transfer helpers must exist');
 const script=raw.slice(a,b);
-const ctx={editionBook:x=>Number.isSafeInteger(Number(x))&&Number(x)>0?Number(x):null};
+const ctx={editionBook:x=>Number.isSafeInteger(Number(x))&&Number(x)>0?Number(x):null,
+ canonicalEnsurePrivate:async()=>{}};
 vm.createContext(ctx);
 const f=vm.runInContext(script+';({nuAssetPlan,nuMoveAssetReferences,nuVerifyAssetPlan})',ctx);
 const sourceId=100142,seedId=7,extraId=100260;
 function row(id,novelId,key){return {id,novel_id:novelId,label:'Translated edition',translator:'T',language:'English',
  filename:key+'.epub',object_key:key,bytes:2000,uploaded_by:'owner',created_at:'2026-11-05'};}
-let state,active=false,legacy=false;
+let state,active=false,legacy=false,projection=false;
 function reset(){
  state={additional_epub_editions:[row('uuid-1',sourceId,'file-1'),row('uuid-2',sourceId,'file-2')],epub_editions:[]};
- active=false;legacy=false;
+ active=false;legacy=false;projection=false;
 }
 function query(sql,values,mode){
  if(sql.startsWith('SELECT id FROM additional_epub_upload_sessions'))return active?{id:'active'}:null;
@@ -50,7 +51,12 @@ function exec(command){
  }
  throw Error('Unexpected SQL write: '+sql);
 }
-const env={DB:{
+const env={
+ COMMUNITY_DB:{prepare(sql){
+  assert.match(sql,/SELECT novel_id FROM public_novel_projections/);
+  return {bind(id){return {first:async()=>projection?{novel_id:id}:null}}};
+ }},
+ DB:{
  prepare(sql){return {bind(...args){
   return {first:async()=>query(sql,args,'first'),all:async()=>query(sql,args,'all'),sql,args};
  }}},
@@ -84,6 +90,8 @@ async function main(){
 
  reset();active=true;
  await assert.rejects(()=>f.nuAssetPlan(env,sourceId,seedId,{}),/still in progress/);
+ reset();projection=true;
+ await assert.rejects(()=>f.nuAssetPlan(env,sourceId,seedId,{}),/public metadata projection/);
  reset();legacy=true;
  await assert.rejects(()=>f.nuAssetPlan(env,sourceId,seedId,{}),/legacy EPUB/);
  console.log('Unsafe active and legacy uploads are blocked');
