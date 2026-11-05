@@ -112,12 +112,57 @@ async function storedEpubFile(item){
  if(!r.ok)throw Error('Private EPUB read failed ('+r.status+').');
  return r.blob();
 }
+const scannedCoverUrls=[];
+function clearScannedCovers(){
+ for(const url of scannedCoverUrls)URL.revokeObjectURL(url);
+ scannedCoverUrls.length=0;
+ $('scan-cover-gallery').replaceChildren();
+}
+async function persistPrivateCover(item,blob,replace){
+ const fd=new FormData();
+ fd.set('novelId',String(item.novelId));fd.set('editionId',item.editionId);
+ fd.set('replace',String(!!replace));
+ fd.set('rightsConfirmed','true');fd.set('confirm','true');
+ fd.set('image',new File([blob],'private-epub-cover.jpg',{type:'image/jpeg'}));
+ return api('/api/admin/epub-insights/private-cover',{method:'POST',body:fd});
+}
+function displayScannedCover(item,blob){
+ const host=$('scan-cover-gallery'),card=document.createElement('article');
+ card.className='scan-cover-card';
+ const title=document.createElement('strong');title.textContent='#'+item.novelId+' · '+item.filename;card.append(title);
+ const img=document.createElement('img'),url=URL.createObjectURL(blob);
+ scannedCoverUrls.push(url);img.src=url;img.alt='Embedded image preview for novel #'+item.novelId;card.append(img);
+ const label=document.createElement('label'),check=document.createElement('input');
+ check.type='checkbox';const words=document.createElement('span');
+ words.textContent='I have permission to show this image to private members.';
+ label.append(check,words);card.append(label);
+ const save=document.createElement('button'),replace=document.createElement('button'),note=document.createElement('p');
+ save.type='button';replace.type='button';
+ save.textContent='Use as private cover';replace.textContent='Replace private cover';
+ save.disabled=true;replace.disabled=true;
+ check.addEventListener('change',()=>{save.disabled=!check.checked;replace.disabled=!check.checked});
+ const submit=async force=>{
+  if(!check.checked)return;
+  if(!confirm((force?'Replace existing private cover':'Use cover privately')+
+   ' for novel #'+item.novelId+'? This will not publish the image on the public site.'))return;
+  save.disabled=true;replace.disabled=true;
+  try{
+   const result=await persistPrivateCover(item,blob,force);
+   note.textContent=result.publicPublished?'Unexpected public status. Contact site owner.':'✓ Cover saved privately. Refresh the private catalogue.';
+  }catch(e){note.textContent=e.message}
+  finally{save.disabled=!check.checked;replace.disabled=!check.checked}
+ };
+ save.addEventListener('click',()=>submit(false));replace.addEventListener('click',()=>submit(true));
+ note.textContent='Review image and rights before making it visible.';
+ card.append(save,replace,note);host.append(card);
+}
+
 const scanResult=msg=>{$('scan-existing-result').textContent=msg};
 $('stop-scan').addEventListener('click',()=>{scanStop=true;scanResult('Stopping after the current EPUB…')});
 $('scan-existing').addEventListener('click',async()=>{
  if(scanBusy)return;
  if(!confirm('Inspect up to 8 already-stored EPUBs from the current results and save unapproved metadata review drafts? No public or private catalogue fields will be changed.'))return;
- scanBusy=true;scanStop=false;
+ scanBusy=true;scanStop=false;clearScannedCovers();
  $('scan-existing').disabled=true;$('stop-scan').disabled=false;
  const batch=records.filter(x=>x.editionId!=='none').slice(0,8);
  const examined=new Set(),stats={scanned:0,saved:0,skipped:0,errors:[]};
@@ -136,6 +181,11 @@ $('scan-existing').addEventListener('click',async()=>{
     if(existing.draft){stats.skipped++;continue}
     const file=await storedEpubFile(item),d=await inspectBook(file);
     stats.scanned++;
+    if(window.CoverExtractor){
+     try{const cover=await CoverExtractor.detectCover(file);
+      if(cover.image)displayScannedCover(item,cover.image);
+     }catch(e){if(stats.errors.length<8)stats.errors.push(label+' (cover): '+e.message)}
+    }
     const synopsis=String(d.synopsis||'').slice(0,2000),tags=d.tags||[];
     if(!synopsis&&!tags.length){stats.skipped++;continue}
     await api('/api/admin/epub-insights/draft',{
@@ -160,7 +210,7 @@ $('scan-existing').addEventListener('click',async()=>{
   scanBusy=false;$('scan-existing').disabled=false;$('stop-scan').disabled=true;
   scanResult('Done: '+stats.scanned+' EPUBs inspected; '+stats.saved+' unapproved review drafts saved; '+
    stats.skipped+' skipped. '+(stats.errors.length?'Issues:\n'+stats.errors.join('\n'):'No upload or public changes were made.')+
-   '\nSelect a title to review its draft, approve it and apply metadata privately.');
+   '\nCovers found during this scan are previewed below for individual permission checks. Select a title to review its draft, approve it and apply metadata privately.');
  }
 });
 
