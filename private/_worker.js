@@ -1868,6 +1868,7 @@ const NU_EDITABLE=['title','author','originalTitle','synopsis','genres','tags','
 const NU_LIST_FIELDS=new Set(['genres','tags','contentWarnings']);
 const nuIdentity=x=>String(x||'').normalize('NFKD').toLocaleLowerCase()
  .replace(/\p{M}/gu,'').replace(/[^\p{L}\p{N}]/gu,'');
+const nuStoredTitleKey=x=>String(x||'').toLocaleLowerCase().replace(/\s+/g,' ').trim();
 const nuCanon=x=>{
  try{const u=new URL(String(x||''));
   if(u.protocol!=='https:'||u.hostname!=='www.novelupdates.com'||u.port||u.username||u.password||u.search||u.hash)return '';
@@ -2017,7 +2018,7 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  }else{
   write=await env.COMMUNITY_DB.prepare(
    "UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%'"
-  ).bind(resultRaw,modified.title,nuIdentity(modified.title),target.id,target.beforeRaw).run();
+  ).bind(resultRaw,modified.title,nuStoredTitleKey(modified.title),target.id,target.beforeRaw).run();
  }
  if((write.meta?.changes||0)!==1)throw Error('The novel changed while saving. Refresh and retry.');
  let archiveDone=false;
@@ -2046,7 +2047,7 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
   if(target.kind==='seed'){
    if(target.beforeRaw===null)await env.COMMUNITY_DB.prepare('DELETE FROM published_catalogue_overrides WHERE novel_id=? AND patch_json=?').bind(target.id,resultRaw).run().catch(()=>{});
    else await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=? WHERE novel_id=? AND patch_json=?').bind(target.beforeRaw,target.id,resultRaw).run().catch(()=>{});
-  }else await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=? WHERE id=? AND payload_json=?').bind(target.beforeRaw,target.title,nuIdentity(target.title),target.id,resultRaw).run().catch(()=>{});
+  }else await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=? WHERE id=? AND payload_json=?').bind(target.beforeRaw,target.title,nuStoredTitleKey(target.title),target.id,resultRaw).run().catch(()=>{});
   throw err;
  }
  let privateSynced=true;
@@ -2136,7 +2137,7 @@ async function nuUndoEdit(env,email,eventId){
   else await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND patch_json=?').bind(snap.beforeTarget,targetId,snap.afterTarget).run();
  }else{
   const before=JSON.parse(snap.beforeTarget||'{}');
-  await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=?').bind(snap.beforeTarget,before.title,nuIdentity(before.title),targetId,snap.afterTarget).run();
+  await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=?').bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),targetId,snap.afterTarget).run();
  }
  if(snap.sourceId){
   await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND source_submission_id=?')
