@@ -3586,7 +3586,12 @@ async function privateEpubIngestRoute(request,env,email,role){
     delta.genres=combined;changed.push('genres');
    }
   }
-  if(!full.nuUrl&&fromStaged&&stagedSource){delta.nuUrl=stagedSource;changed.push('nuUrl');}
+  const safeEmbeddedSource=!!epubNu&&!!nuIdentity(parsed.title)&&
+   !!nuIdentity(parsed.author)&&nuIdentity(parsed.title)===nuIdentity(source.title)&&
+   nuIdentity(parsed.author)===nuIdentity(source.author);
+  if(!full.nuUrl&&(fromStaged||safeEmbeddedSource)&&candidateUrl){
+   delta.nuUrl=candidateUrl;changed.push('nuUrl');
+  }
   if(!changed.length)return respond({ok:true,id,changed:[],message:'Existing hand-edited metadata was kept. No missing details found.'});
   delta.metadataOrigin='epub';delta.metadataSource=fromStaged?
    'EPUB + confirmed captured Novel Updates metadata (private, unreviewed)':
