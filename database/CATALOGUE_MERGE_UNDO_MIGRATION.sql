@@ -1,17 +1,6 @@
--- One-time migration for editable, reversible catalogue merges.
--- Run against the shared COMMUNITY_DB (novel-conservatory-community) after backing it up.
--- Never delete duplicate book rows: existing EPUB/review references may still point to their IDs.
-CREATE TABLE IF NOT EXISTS catalogue_merge_aliases (
- duplicate_id INTEGER PRIMARY KEY,
- canonical_id INTEGER NOT NULL,
- created_by TEXT NOT NULL,
- created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
- CHECK(duplicate_id >= 100000),
- CHECK(canonical_id >= 1),
- CHECK(duplicate_id <> canonical_id)
-);
-CREATE INDEX IF NOT EXISTS idx_catalogue_merge_alias_target ON catalogue_merge_aliases(canonical_id);
-
+-- One-time migration for reversible catalogue edits and safe duplicate resolution.
+-- Run against shared COMMUNITY_DB (novel-conservatory-community) after a backup.
+-- Merges keep the original duplicate row, IDs and EPUB files intact for Undo.
 CREATE TABLE IF NOT EXISTS catalogue_edit_events (
  id TEXT PRIMARY KEY,
  operation TEXT NOT NULL CHECK(operation IN ('merge','metadata_sync')),
