@@ -1773,7 +1773,9 @@ async function extraCreateOrReuse(env,url,email,p,visibility){
   const item={id:existing.id,title:current.title,author:current.author||'',kind:existing.kind,
     visibility:existing.kind==='extra'?existing.row.visibility:'published',
     reason:sameSource?'Identical Novel Updates URL':sameTitle?'Matching title':'Related title'};
-  if(sameSource||(sameTitle&&sameAuthor))safe.push(item);
+  // Different canonical series URLs can identify distinct works even if title and author match.
+  const conflictingUrls=!!sourceA&&!!sourceB&&sourceA!==sourceB;
+  if(!conflictingUrls&&(sameSource||(sameTitle&&sameAuthor)))safe.push(item);
   else uncertain.push(item);
  }
  if(safe.length>1)return {ok:false,needsChoice:true,candidates:safe,
@@ -1877,7 +1879,7 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
     const result=await extraCreateOrReuse(env,new URL(request.url),email,p,body.publish===true?'published':'private');
     results.push({title:p.title,...result});
    }catch(e){results.push({title:extraTxt(raw?.title,100),error:String(e.message||e),ok:false});}}
-   return extraJson({ok:true,results});
+   return extraJson({ok:results.every(x=>x.ok),results});
   }
   if(path==='/api/admin/additional/edit'&&method==='POST'){
    if(!editor||!extraOrigin(request))return extraJson({error:'Editor permission required'},403);
