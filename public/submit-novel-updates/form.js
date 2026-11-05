@@ -63,7 +63,7 @@ $('nu-form').addEventListener('submit',async e=>{
      [Array.from(document.querySelectorAll('input[name="nu-target"]:checked')).map(box=>box.value).length
        ?'Requested source fields: '+Array.from(document.querySelectorAll('input[name="nu-target"]:checked')).map(box=>box.value).join(', ')
        :'',
-      $('notes').value.trim()].filter(Boolean).join('\\n')
+      $('notes').value.trim()].filter(Boolean).join('\n')
     ).slice(0,1200),website:$('website').value,turnstile:token
   })});
   const data=await r.json().catch(()=>({}));
