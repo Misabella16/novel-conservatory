@@ -6,6 +6,8 @@ function payload(){const p={};for(const field of fields){const v=$(field).value.
 // Show likely matches before saving, not after somebody has created two cards.
 let duplicateLookupSequence=0;
 let duplicateTimer=null;
+let selectedMergeId=null;
+function resetMergeSelection(){selectedMergeId=null;$('create').textContent='Create novel'}
 async function checkDuplicateBeforeSubmit(){
  const seq=++duplicateLookupSequence;
  const title=$('title').value.trim(),nuUrl=$('nuUrl').value.trim();
@@ -38,7 +40,21 @@ async function checkDuplicateBeforeSubmit(){
    href.href=item.kind==='extra'?'/admin/add-novels.html?novel='+encodeURIComponent(item.id):
     '/admin/catalogue-editor.html?id='+encodeURIComponent(item.id);
    href.textContent='Open existing novel';
-   line.append(name,detail,href);box.append(line);
+   const choose=document.createElement('button');
+   choose.type='button';choose.textContent='Merge new details into this novel';
+   choose.style.cssText='display:block;margin:6px 0;background:#49644e;font-size:12px;padding:7px 9px';
+   choose.addEventListener('click',()=>{
+    const same=window.confirm('Confirm this is exactly the same work as “'+item.title+
+     '” (#'+item.id+'). Existing metadata wins conflicts unless you resolve them separately. '+
+     'Its current '+item.visibility+' visibility is preserved, and the change will have an Undo record.');
+    if(!same)return;
+    selectedMergeId=item.id;
+    $('create').textContent='Merge into novel #'+item.id;
+    const note=document.createElement('p');note.style.fontWeight='650';
+    note.textContent='Selected #'+item.id+' as the destination. Submit to fill missing metadata and combine tags.';
+    box.append(note);
+   });
+   line.append(name,detail,href,choose);box.append(line);
   }
   const merge=document.createElement('a');merge.href='/admin/resolve-duplicates.html';
   merge.textContent='Compare or merge duplicates (Undo available)';
@@ -51,16 +67,19 @@ async function checkDuplicateBeforeSubmit(){
 }
 for(const id of ['title','originalTitle','author','nuUrl','sourceUrl']){
  $(id).addEventListener('input',()=>{
+  resetMergeSelection();
   clearTimeout(duplicateTimer);
   duplicateTimer=setTimeout(checkDuplicateBeforeSubmit,350);
  });
- $(id).addEventListener('change',()=>{clearTimeout(duplicateTimer);checkDuplicateBeforeSubmit()});
+ $(id).addEventListener('change',()=>{resetMergeSelection();clearTimeout(duplicateTimer);checkDuplicateBeforeSubmit()});
 }
 function chooseTab(t){if(role!=='owner'&&role!=='editor')return;if(role==='editor'&&['bulk','epubs'].includes(t))return;for(const n of ['single','bulk','epubs','manage','review']){$(n).hidden=n!==t;const b=$('tab-'+n);b.setAttribute('aria-selected',String(n===t))}if(t==='review')loadPending();if(t==='epubs'||t==='manage')loadNovels()}
 for(const t of ['single','bulk','epubs','manage','review'])$('tab-'+t).addEventListener('click',()=>chooseTab(t));
 async function loadNovels(){try{const j=await call('/api/additional/books');novels=j.novels||[];const dl=$('additional-novel-list');dl.replaceChildren();for(const novel of novels){const op=document.createElement('option');op.value=`#${novel.id} · ${novel.title}`;dl.append(op);}}catch(e){show('epub-status',e.message,true)}}
 function selectedNovel(){const x=$('epub-novel').value.trim();const found=/^#(\d+)\b/.exec(x);if(found)return novels.find(b=>b.id===Number(found[1]))||null;return novels.find(b=>b.title.toLocaleLowerCase()===x.toLocaleLowerCase())||null;}
-$('create-form').addEventListener('submit',async(e)=>{e.preventDefault();const btn=$('create');btn.disabled=true;show('created','Creating novel…');try{const j=await post('/api/admin/additional/create',{...payload(),publish:$('publish').checked});lastCreated=j.id>=100000?j.id:null;
+$('create-form').addEventListener('submit',async(e)=>{e.preventDefault();const btn=$('create');btn.disabled=true;show('created','Creating novel…');try{const targetId=selectedMergeId;
+ const j=await post('/api/admin/additional/create',{...payload(),publish:$('publish').checked,
+  ...(targetId?{targetId,confirmIdentity:true}:{})});resetMergeSelection();lastCreated=j.id>=100000?j.id:null;
  const note=j.reused?(j.notUpdated?'Existing record reused without changing its metadata or publication status. ':('Matched an existing book and filled safe metadata gaps. '+(j.conflicts?.length?'Conflicting values were preserved for comparison. ':'')+'Undo is in Merge history. ')):'Created a new entry. ';
  const visibility=j.reused&&j.notUpdated?'Publication status was kept unchanged. ':'';
  show('created',note+'Novel #'+j.id+'. '+visibility+'You can open the existing entry or attach EPUB editions privately.');
