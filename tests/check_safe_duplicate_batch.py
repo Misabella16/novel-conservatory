@@ -47,8 +47,8 @@ const added=[
  {id:100131,visibility:'published',cover_key:'',title:'Wrong book',author:'Second',nuUrl:'https://www.novelupdates.com/series/totally-other/'},
  {id:100140,visibility:'private',cover_key:'',title:'Private Show',author:'Y',nuUrl:'https://www.novelupdates.com/series/private-show/'},
  {id:100141,visibility:'published',cover_key:'',title:'Private Show',author:'Y',nuUrl:'https://www.novelupdates.com/series/private-show/'},
- {id:100150,visibility:'published',cover_key:'some-existing-cover',title:'Cover Book',author:'D',nuUrl:'https://www.novelupdates.com/series/cover-book/'},
- {id:100151,visibility:'published',cover_key:'',title:'Cover Book',author:'D',nuUrl:'https://www.novelupdates.com/series/cover-book/'},
+ {id:100150,visibility:'published',cover_key:'',title:'Cover Book',author:'D',nuUrl:'https://www.novelupdates.com/series/cover-book/',tags:['Drama','School Life','Romance']},
+ {id:100151,visibility:'published',cover_key:'some-existing-cover',title:'Cover Book',author:'D',nuUrl:'https://www.novelupdates.com/series/cover-book/'},
  {id:100160,visibility:'published',cover_key:'',title:'File Book',author:'E',nuUrl:'https://www.novelupdates.com/series/file-book/'},
  {id:100161,visibility:'published',cover_key:'',title:'File Book',author:'E',nuUrl:'https://www.novelupdates.com/series/file-book/'}
 ];
