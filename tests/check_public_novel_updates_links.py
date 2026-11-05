@@ -58,7 +58,7 @@ assert "async function load()" in queue_js
 assert "/api/admin/site-feedback?status=pending" in queue_js
 assert "/api/admin/nu/lookup?url=" in queue_js
 assert "DOMParser()" in queue_js
-assert "textContent=novel.synopsis" in queue_js
+assert "paragraph(parent,String(meta.synopsis)" in queue_js
 assert "/api/admin/nu/stage-browser" in queue_js
 assert "source:'novelupdates-browser-v1'" in queue_js
 assert "/api/admin/novel-updates.html" not in queue_js
