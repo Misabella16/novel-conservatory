@@ -1,6 +1,6 @@
 (()=>{'use strict';
 const $=id=>document.getElementById(id),api=async(url,options)=>{const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...options});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error||'Request failed');return j};
-let records=[],offset=0,total=0,selected=null,source='not scanned',epubInspected=false,fieldSources={},coverBlob=null,coverPreviewUrl='',scanBusy=false,scanStop=false;
+let records=[],offset=0,total=0,selected=null,source='not scanned',epubInspected=false,fieldSources={},coverBlob=null,coverPreviewUrl='',scanBusy=false,scanStop=false,scanCursor=0,scanPage='';
 const applyMissing=(id,value,origin)=>{
  const data=Array.isArray(value)?value.join(', '):String(value||'').trim();
  if(!data||$(id).value.trim())return false;
@@ -164,7 +164,12 @@ $('scan-existing').addEventListener('click',async()=>{
  if(!confirm('Inspect up to 8 already-stored EPUBs from the current results and save unapproved metadata review drafts? No public or private catalogue fields will be changed.'))return;
  scanBusy=true;scanStop=false;clearScannedCovers();
  $('scan-existing').disabled=true;$('stop-scan').disabled=false;
- const batch=records.filter(x=>x.editionId!=='none').slice(0,8);
+ const pageKey=offset+'|'+$('search').value.trim().toLowerCase();
+ if(pageKey!==scanPage){scanPage=pageKey;scanCursor=0}
+ const available=records.filter(x=>x.editionId!=='none');
+ if(scanCursor>=available.length)scanCursor=0;
+ const batch=available.slice(scanCursor,scanCursor+8);
+ scanCursor+=batch.length;
  const examined=new Set(),stats={scanned:0,saved:0,skipped:0,errors:[]};
  try{
   for(let i=0;i<batch.length;i++){
@@ -215,7 +220,7 @@ $('scan-existing').addEventListener('click',async()=>{
   scanBusy=false;$('scan-existing').disabled=false;$('stop-scan').disabled=true;
   scanResult('Done: '+stats.scanned+' EPUBs inspected; '+stats.saved+' unapproved review drafts saved; '+
    stats.skipped+' skipped. '+(stats.errors.length?'Issues:\n'+stats.errors.join('\n'):'No upload or public changes were made.')+
-   '\nCovers found during this scan are previewed below for individual permission checks. Select a title to review its draft, approve it and apply metadata privately.');
+   '\nCovers found during this scan are previewed below for individual permission checks. Select a title to review its draft, approve it and apply metadata privately. Click Scan again for the next group on this page.');
  }
 });
 
