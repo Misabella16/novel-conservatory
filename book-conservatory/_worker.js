@@ -163,15 +163,25 @@ async function serveApi(request,env,path){
   const method=request.method;
   if(path==='/api/session'&&method==='GET') return json({authenticated:true,owner:true});
   if(path==='/api/books'&&method==='GET') {
-    const q=string(new URL(request.url).searchParams.get('q'),150);
+    const url=new URL(request.url);
+    const q=string(url.searchParams.get('q'),150);
+    const limit=Math.max(1,Math.min(100,parseInt(url.searchParams.get('limit')||'60',10)||60));
+    const offset=Math.max(0,Math.min(1000000,parseInt(url.searchParams.get('offset')||'0',10)||0));
     const search='%'+q.replace(/[%_\\]/g,c=>'\\'+c)+'%';
-    const books=q
-      ? await getAll(db,"SELECT id,title,author,reading_status,rating,synopsis,updated_at FROM books WHERE archived_at IS NULL AND (title LIKE ? ESCAPE '\\' OR author LIKE ? ESCAPE '\\') ORDER BY title LIMIT 250",[search,search])
-      : await getAll(db,'SELECT id,title,author,reading_status,rating,synopsis,updated_at FROM books WHERE archived_at IS NULL ORDER BY title LIMIT 250');
-    return json({books,limited:books.length===250});
+    const where=" FROM books b WHERE b.archived_at IS NULL"+(q?" AND (b.title LIKE ? ESCAPE '\\' OR b.author LIKE ? ESCAPE '\\')":"");
+    const args=q?[search,search]:[];
+    const count=await getOne(db,'SELECT COUNT(*) AS total'+where,args);
+    const books=await getAll(db,
+      'SELECT b.id,b.title,b.author,b.reading_status,b.rating,b.synopsis,b.updated_at,'+
+      '(SELECT im.id FROM edition_images im JOIN editions e ON e.id=im.edition_id WHERE e.book_id=b.id AND im.display_cover=1 ORDER BY e.is_special DESC,e.created_at LIMIT 1) AS cover_id'+
+      where+' ORDER BY b.title COLLATE NOCASE LIMIT ? OFFSET ?',[...args,limit,offset]);
+    return json({books,total:count?.total||0,offset,limit});
   }
   if(path==='/api/books'&&method==='POST') {
     const b=await body(request), title=requiredText(b.title,'Title'), author=string(b.author,400);
+    const existing=await getOne(db,'SELECT id FROM books WHERE normalized_title=? AND normalized_author=? AND archived_at IS NULL LIMIT 1',
+      [normalize(title),normalize(author)]);
+    if(existing) return json({error:'This title and author are already in your library. Add an edition or copy to the existing book instead.',existing_book_id:existing.id},409);
     const bookId=id(), now=stamp();
     await run(db,'INSERT INTO books (id,title,author,normalized_title,normalized_author,synopsis,reading_status,private_notes,review,rating,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
       [bookId,title,author,normalize(title),normalize(author),rawString(b.synopsis,25000),requireEnum(b.reading_status,STATUS,'unread'),rawString(b.private_notes),rawString(b.review,50000),ratingValue(b.rating),now,now]);
