@@ -48,7 +48,17 @@ async function inspect(file){
   const metadata=new DOMParser().parseFromString(await opf.async('text'),'application/xml');
   if(els(metadata,'parsererror').length)return fallback;
   const value=(name,max)=>trim(els(metadata,name)[0]?.textContent).slice(0,max);
-  const tags=[...new Set(els(metadata,'subject').map(x=>trim(x.textContent).slice(0,65)).filter(Boolean))].slice(0,35);
+  // Calibre and many fan-made EPUBs put the entire subject catalogue in a
+  // single dc:subject or meta[name="calibre:tags"] record. Split explicit
+  // lists, rather than treating twenty labels as one huge unsearchable tag.
+  const tagFields=[
+   ...els(metadata,'subject').map(x=>trim(x.textContent)),
+   ...els(metadata,'meta').filter(x=>/^(?:calibre:tags|tags|keywords|subject|genre)$/i.test(
+    trim(x.getAttribute('name')||x.getAttribute('property')||'')))
+    .map(x=>trim(x.getAttribute('content')||x.textContent))
+  ];
+  const tags=[...new Set(tagFields.flatMap(x=>x.split(/\s*[,;|\n]\s*/))
+   .map(x=>trim(x).slice(0,70)).filter(Boolean))].slice(0,100);
   // Genre is taken only from explicit embedded subject/type labels. Never
   // infer genre or tropes from chapter prose or the book's title.
   const candidateGenres=[...tags,...els(metadata,'type').map(x=>trim(x.textContent))];
@@ -126,7 +136,7 @@ function createPayload(match,meta){
   title:trim(match.title).slice(0,210),
   author:trim(meta?.author).slice(0,140),
   synopsis:trim(meta?.synopsis).slice(0,6000),
-  tags:Array.isArray(meta?.tags)?meta.tags.slice(0,35):[],
+  tags:Array.isArray(meta?.tags)?meta.tags.slice(0,100):[],
   genres:Array.isArray(meta?.genres)?meta.genres.slice(0,20):[],
   nuUrl:novelUpdatesUrl(meta?.nuUrl),
   metadataSource:meta?.metadataFound?'EPUB embedded metadata':'EPUB filename',
