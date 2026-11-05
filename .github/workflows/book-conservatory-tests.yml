@@ -27,6 +27,9 @@ jobs:
       - name: Check JavaScript match module
         run: |
           node --check book-conservatory/shelf-photo-matcher.mjs
+          node --check book-conservatory/_worker.js
+          node --check book-conservatory/library.js
+          node --test book-conservatory/tests/test-worker.mjs
           node book-conservatory/tests/test-shelf-match.mjs
       - name: Validate standalone schema and privacy constraints
         run: python3 -m unittest discover -s book-conservatory/tests -p 'test_*.py' -v
@@ -40,6 +43,10 @@ jobs:
           assert 'My Editions & Copies' in html
           assert 'Shelf Photos' in html
           assert 'No personal book data included' in html
-          assert 'Nothing is uploaded, analyzed' in html
+          assert 'nothing is uploaded, analyzed' in html.lower()
+          assert '<script type="module" src="/library.js"></script>' in html
+          assert 'My Private Notes' in Path('book-conservatory/library.js').read_text()
+          assert 'private_notes' in Path('book-conservatory/_worker.js').read_text()
+          assert 'book-conservatory/library.css' in [str(p) for p in root.iterdir()]
           print("Isolated prototype verified; no deployment performed")
           PY
