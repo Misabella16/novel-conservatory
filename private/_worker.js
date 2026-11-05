@@ -1928,9 +1928,17 @@ async function nuGetExisting(env,url,id){
 async function nuFindCandidates(env,url,source,excludedId){
  const key=nuIdentity(source.title),canonical=nuCanon(source.nuUrl),matches=[];
  const base=await nuBaseCatalogue(env,url),added=await nuAdditionalRows(env);
- for(const x of [...base,...added.map(nuAdditionalData)]){
+ // Include existing published editorial changes; a novel's source URL or
+ // displayed title may differ from its original static catalogue snapshot.
+ const overrides=await env.COMMUNITY_DB.prepare('SELECT novel_id,patch_json FROM published_catalogue_overrides LIMIT 2500').all();
+ const edits=new Map();
+ for(const row of overrides.results||[]){try{edits.set(Number(row.novel_id),JSON.parse(row.patch_json||'{}'))}catch{}}
+ const baseWithEdits=base.map(b=>({...b,...(edits.get(Number(b.id))||{})}));
+ const originalKey=nuIdentity(source.originalTitle);
+ for(const x of [...baseWithEdits,...added.map(nuAdditionalData)]){
   if(x.id===excludedId)continue;
-  const exactTitle=!!key&&nuIdentity(x.title)===key;
+  const exactTitle=!!key&&(nuIdentity(x.title)===key||nuIdentity(x.originalTitle)===key)
+   ||!!originalKey&&(nuIdentity(x.title)===originalKey||nuIdentity(x.originalTitle)===originalKey);
   const exactUrl=!!canonical&&nuCanon(x.nuUrl)===canonical;
   if(exactTitle||exactUrl)matches.push({id:x.id,title:x.title,matchedBy:exactUrl?'Novel Updates URL':'Exact normalized title',kind:x.id<=962?'original':'added'});
  }
@@ -1955,6 +1963,8 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  }
  const computed=nuMergeData(target.data,source,opts.preferSourceFields||[]);
  const modified=computed.after;
+ if(sourceRow&&sourceRow.visibility==='published'&&target.kind==='extra'&&target.row.visibility!=='published')
+  throw Error('The duplicate is published but the selected destination is still private. Publish the destination first, or keep a published record, before hiding the duplicate.');
  if(sourceId&&sourceRow?.cover_key&&!target.data.cover&&!target.row?.cover_key&&target.kind==='extra'){
   // Only carry cover references that already declare display permission.
   const original=nuAdditionalData(sourceRow);
