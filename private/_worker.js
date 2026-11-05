@@ -380,6 +380,7 @@ async function routes(request,env,ctx,email,role){
     }catch(err){return respond({error:textField(err?.message||'Could not undo this import',160)},400)}
    }
 
+  if(path.startsWith('/api/admin/epub-cover-library/'))return privateEpubCoverLibraryRoute(request,env,email,role);
   if(path==='/api/admin/epub-artwork/private-auto')return privateEpubAutoCoverRoute(request,env,email,role);
   if(path==='/api/admin/epub-insights/private-cover')return privateEpubCoverRoute(request,env,email,role);
   if(path.startsWith('/api/admin/epub-insights/'))return epubInsightsRoutes(request,env,email,role);
@@ -3804,6 +3805,98 @@ async function privateEpubIngestRoute(request,env,email,role){
    stagedSourceUsed:fromStaged,source:delta.metadataSource});
  }catch(error){return respond({error:textField(error?.message||'Could not ingest embedded metadata',200)},400)}
 }
+// EPUB cover candidates are independent private JPEG assets, one per
+// translation edition and image digest. Never copy an EPUB or its R2 key into
+// a shared bucket. Public syncing is a separate, permission-gated action.
+async function epubCoverEnsure(env){
+ await env.DB.prepare("CREATE TABLE IF NOT EXISTS epub_cover_candidates(id TEXT PRIMARY KEY,novel_id INTEGER NOT NULL,edition_id TEXT NOT NULL,object_key TEXT NOT NULL,sha256 TEXT NOT NULL,source_name TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(novel_id,edition_id,sha256))").run();
+ await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_epub_cover_candidates_novel ON epub_cover_candidates(novel_id,created_at DESC)').run();
+}
+const epubCoverJson=(v,status=200)=>editionJson(v,status);
+const epubCoverSafe=row=>({id:row.id,novelId:Number(row.novel_id),editionId:row.edition_id,
+ source:row.source_name,createdAt:row.created_at,url:'/media/'+row.object_key});
+const epubCoverUUID=value=>/^[0-9a-f-]{36}$/.test(String(value||''));
+async function privateEpubCoverLibraryRoute(request,env,email,role){
+ if(role!=='owner')return epubCoverJson({error:'Only the owner may manage extracted EPUB covers'},403);
+ if(!env.DB||!env.IMAGES)return epubCoverJson({error:'Private image storage unavailable'},503);
+ const u=new URL(request.url),path=u.pathname,method=request.method.toUpperCase();
+ try{
+  await epubCoverEnsure(env);
+  if(path==='/api/admin/epub-cover-library/list'&&method==='GET'){
+   const id=editionBook(u.searchParams.get('id'));
+   if(!id)return epubCoverJson({error:'Select a novel'},400);
+   const [rows,selected]=await Promise.all([
+    env.DB.prepare('SELECT * FROM epub_cover_candidates WHERE novel_id=? ORDER BY created_at DESC,id DESC LIMIT 200').bind(id).all(),
+    env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub-cover:'+id).first()
+   ]);
+   let current={};try{current=JSON.parse(selected?.value||'{}')}catch{}
+   return epubCoverJson({novelId:id,privateOnly:true,selectedCover:current.cover||'',
+    selectedCandidateId:current.candidateId||null,candidates:(rows.results||[]).map(epubCoverSafe)});
+  }
+  if(path==='/api/admin/epub-cover-library/upload'&&method==='POST'){
+   if(!strictOrigin(request))return epubCoverJson({error:'Invalid request origin'},403);
+   const fd=await request.formData(),id=editionBook(fd.get('novelId')),
+    edition=String(fd.get('editionId')||''),file=fd.get('image');
+   if(!id||!(file instanceof File)||file.type!=='image/jpeg'||file.size<80||file.size>2800000)
+    return epubCoverJson({error:'Choose a linked EPUB and JPEG under 2.8 MB'},400);
+   if(!await privateEpubLinked(env,id,edition))
+    return epubCoverJson({error:'That EPUB edition is not linked to this novel'},409);
+   const bytes=await file.arrayBuffer(),v=new Uint8Array(bytes);
+   if(v[0]!==255||v[1]!==216||v[2]!==255)return epubCoverJson({error:'Invalid JPEG'},415);
+   const digest=await crypto.subtle.digest('SHA-256',bytes);
+   const hash=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+   const existing=await env.DB.prepare('SELECT * FROM epub_cover_candidates WHERE novel_id=? AND edition_id=? AND sha256=?')
+     .bind(id,edition,hash).first();
+   if(existing)return epubCoverJson({ok:true,saved:false,existing:true,candidate:epubCoverSafe(existing),privateOnly:true});
+   const candidateId=crypto.randomUUID(),key=candidateId+'.jpg',source=textField(fd.get('source'),160);
+   await env.IMAGES.put(key,bytes,{httpMetadata:{contentType:'image/jpeg'}});
+   try{
+    const write=await env.DB.prepare('INSERT INTO epub_cover_candidates(id,novel_id,edition_id,object_key,sha256,source_name) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING')
+     .bind(candidateId,id,edition,key,hash,source).run();
+    if((write.meta?.changes||0)!==1){
+     await env.IMAGES.delete(key).catch(()=>{});
+     const found=await env.DB.prepare('SELECT * FROM epub_cover_candidates WHERE novel_id=? AND edition_id=? AND sha256=?').bind(id,edition,hash).first();
+     return found?epubCoverJson({ok:true,saved:false,existing:true,candidate:epubCoverSafe(found),privateOnly:true}):
+      epubCoverJson({error:'Concurrent image import. Retry.'},409);
+    }
+    return epubCoverJson({ok:true,saved:true,privateOnly:true,publicPublished:false,
+     candidate:{id:candidateId,novelId:id,editionId:edition,source,url:'/media/'+key}});
+   }catch(e){await env.IMAGES.delete(key).catch(()=>{});throw e;}
+  }
+  if(method!=='POST'||!strictOrigin(request))return epubCoverJson({error:'Not found'},404);
+  const body=await getJson(request);
+  if(path==='/api/admin/epub-cover-library/select'){
+   const candidate=epubCoverUUID(body.candidateId)?
+    await env.DB.prepare('SELECT * FROM epub_cover_candidates WHERE id=?').bind(String(body.candidateId)).first():null;
+   if(!candidate)return epubCoverJson({error:'Private cover option not found'},404);
+   const id=Number(candidate.novel_id),key='private-epub-cover:'+id;
+   const old=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(key).first();
+   const after=JSON.stringify({cover:'/media/'+candidate.object_key,candidateId:candidate.id,
+    selectedByOwner:true,privateCover:true,coverRights:false,
+    coverCredit:'Private EPUB artwork; public permission not yet confirmed',scope:'private'});
+   if(after===old?.value)return epubCoverJson({ok:true,unchanged:true,privateOnly:true});
+   const eventId=crypto.randomUUID();
+   await env.DB.prepare('CREATE TABLE IF NOT EXISTS epub_metadata_import_events(id TEXT PRIMARY KEY,novel_id INTEGER NOT NULL,setting_key TEXT NOT NULL,before_value TEXT,after_value TEXT NOT NULL,actor_email TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,undone_at TEXT)').run();
+   const wrote=old?
+    await env.DB.prepare('UPDATE site_settings SET value=?,updated_at=CURRENT_TIMESTAMP WHERE key=? AND value=?').bind(after,key,old.value).run():
+    await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES(?,?) ON CONFLICT DO NOTHING').bind(key,after).run();
+   if((wrote.meta?.changes||0)!==1)return epubCoverJson({error:'Cover changed concurrently. Refresh.'},409);
+   try{
+    await env.DB.prepare('INSERT INTO epub_metadata_import_events(id,novel_id,setting_key,before_value,after_value,actor_email) VALUES(?,?,?,?,?,?)')
+     .bind(eventId,id,key,old?.value??null,after,email).run();
+   }catch(e){
+    if(old)await env.DB.prepare('UPDATE site_settings SET value=? WHERE key=? AND value=?').bind(old.value,key,after).run().catch(()=>{});
+    else await env.DB.prepare('DELETE FROM site_settings WHERE key=? AND value=?').bind(key,after).run().catch(()=>{});
+    return epubCoverJson({error:'Could not save Undo history; selection reverted'},503);
+   }
+   return epubCoverJson({ok:true,privateOnly:true,publicPublished:false,cover:'/media/'+candidate.object_key,eventId,novelId:id});
+  }
+  if(path==='/api/admin/epub-cover-library/publish'||path==='/api/admin/epub-cover-library/undo-public')
+   return epubCoverPublicAction(request,env,email,path,body);
+  return epubCoverJson({error:'Unknown cover action'},404);
+ }catch(e){return epubCoverJson({error:'Cover library: '+String(e.message||e).slice(0,180)},400)}
+}
+
 async function privateEpubAutoCoverRoute(request,env,email,role){
  if(role!=='owner')return respond({error:'Only the owner can import EPUB artwork privately'},403);
  if(request.method!=='POST'||!strictOrigin(request))return respond({error:'Cross-origin or invalid request'},403);
