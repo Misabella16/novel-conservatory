@@ -572,9 +572,46 @@ async function routes(request,env,ctx,email,role){
         if(!/^\/media\/[a-f0-9-]{36}\.jpg$/.test(cover))continue;
         if(id<=962){
          let edit=byId.get(id);if(!edit){edit={id,patch:{}};edits.push(edit);byId.set(id,edit)}
-         edit.patch={...edit.patch,cover,coverRights:true,coverCredit:'Private EPUB cover · permission confirmed'};
+         if(!edit.patch.cover)edit.patch={...edit.patch,cover,privateCover:true,
+          coverCredit:'Private EPUB cover · not publicly published'};
         }else{
-         const extra=extras.get(id);if(extra){extra.cover=cover;extra.coverRights=true;extra.coverCredit='Private EPUB cover · permission confirmed'}
+         const extra=extras.get(id);
+         if(extra&&!extra.cover){extra.cover=cover;extra.privateCover=true;
+          extra.coverCredit='Private EPUB cover · not publicly published'}
+        }
+       }
+      }
+      // Private-only EPUB imports are blended into the member's catalogue
+      // after the shared public corrections. Original/manual fields take
+      // precedence; unreviewed EPUB subjects fill gaps or add unique tags.
+      if(await canReadEpubs(email,role,env)){
+       const metaRows=await env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-epub-metadata:%' LIMIT 5000").all();
+       const byId=new Map(edits.map(x=>[Number(x.id),x]));
+       const extras=new Map(additional.map(x=>[Number(x.id),x]));
+       for(const row of metaRows.results||[]){
+        const match=/^private-epub-metadata:([1-9][0-9]*)$/.exec(row.key);
+        if(!match)continue;
+        const id=Number(match[1]);let imported;
+        try{imported=JSON.parse(row.value)}catch{continue}
+        if(id<=962){
+         let entry=byId.get(id);if(!entry){entry={id,patch:{}};edits.push(entry);byId.set(id,entry)}
+         const patch=entry.patch;
+         if(!patch.synopsis&&imported.synopsis)patch.synopsis=imported.synopsis;
+         if(!patch.author&&imported.author)patch.author=imported.author;
+         if(!patch.metadataReview&&imported.tags?.length){
+          patch.tags=mergeEpubTags(patch.tags,imported.tags);
+          patch.metadataOrigin='epub';patch.metadataSource=imported.metadataSource;
+         }
+         if(!patch.metadataReview&&patch.synopsis&&imported.synopsis)patch.metadataOrigin='epub';
+        }else{
+         const item=extras.get(id);if(!item)continue;
+         if(!item.synopsis&&imported.synopsis)item.synopsis=imported.synopsis;
+         if(!item.author&&imported.author)item.author=imported.author;
+         if(!item.metadataReview&&imported.tags?.length){
+          item.tags=mergeEpubTags(item.tags,imported.tags);
+          item.metadataOrigin='epub';item.metadataSource=imported.metadataSource;
+         }
+         if(!item.metadataReview&&item.synopsis&&imported.synopsis)item.metadataOrigin='epub';
         }
        }
       }
@@ -3464,7 +3501,7 @@ async function privateEpubIngestRoute(request,env,email,role){
   const full={...source,...saved},delta={...saved},changed=[];
   if(synopsis&&!full.synopsis){delta.synopsis=synopsis;changed.push('synopsis')}
   if(author&&!full.author){delta.author=author;changed.push('author')}
-  if(tags.length){
+  if(tags.length&&!source.metadataReview){
    const combined=mergeEpubTags(full.tags,tags);
    if(combined.length>mergeEpubTags([],full.tags).length){
     delta.tags=combined;changed.push('tags');
