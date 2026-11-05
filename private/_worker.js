@@ -3542,6 +3542,16 @@ async function privateEpubAutoCoverRoute(request,env,email,role){
    const patch=await env.DB.prepare('SELECT patch FROM novel_edits WHERE id=?').bind(id).first();
    let fields={};try{fields=JSON.parse(patch?.patch||'{}')}catch{}
    if(fields.cover)return respond({ok:true,stored:false,skipped:true,reason:'Editorial cover already exists'});
+   const seedResponse=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',request.url)));
+   if(seedResponse.ok){
+    const raw=await seedResponse.json(),book=(Array.isArray(raw)?raw:raw.books||[]).find(x=>Number(x.id)===id);
+    if(book?.cover)return respond({ok:true,stored:false,skipped:true,reason:'Original catalogue cover already exists'});
+   }
+   if(env.COMMUNITY_DB){
+    const publicEdit=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(id).first();
+    let pub={};try{pub=JSON.parse(publicEdit?.patch_json||'{}')}catch{}
+    if(pub.cover)return respond({ok:true,stored:false,skipped:true,reason:'Published cover already exists'});
+   }
   }else{
    const novel=await env.COMMUNITY_DB.prepare('SELECT cover_key,payload_json FROM additional_catalogue_novels WHERE id=?').bind(id).first();
    if(!novel)return respond({error:'Novel not found'},404);
