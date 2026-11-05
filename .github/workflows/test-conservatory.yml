@@ -55,6 +55,8 @@ jobs:
         run: python tests/check_per_novel_nu_corrections.py
       - name: Verify Novel Updates staged metadata imports into submitted books
         run: python tests/check_submitted_nu_metadata_import.py
+      - name: Verify existing Novel Updates link refresh guidance and cover safety
+        run: python tests/check_nu_refresh_guidance.py
       - name: Check migration SQL offline
         run: |
           python - <<'PY'
