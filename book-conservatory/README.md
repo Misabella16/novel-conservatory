@@ -2,6 +2,14 @@
 
 A **separate sister site** to Novel Conservatory, not another view of the existing private/public catalogue. This isolated site root is `book-conservatory/`; do not deploy it into the existing Novel Conservatory Pages projects.
 
+## Current progress
+
+**Phase 1:** Foundation complete and tested.
+
+**Phase 2:** Authenticated private-library Worker, responsive library browser, searchable/paginated book records, book/edit forms, genres and personal tags, personal reading shelves, ratings, reviews, edition-specific cover upload/selection, and editable physical/digital copies. **Private notes are permanently visible and editable on every selected book page** (with an explicit Save notes button). Owner identity is verified against a separately configured Cloudflare Access JWT. Stale edits are rejected instead of overwriting another tab's changes.
+
+The Phase 2 code and tests are committed, but **Cloudflare Pages, Access, dedicated D1/R2 resource creation, migrations and production smoke tests have not yet been performed**. Do not merge or deploy until the instructions in [PHASE_2_SETUP.md](PHASE_2_SETUP.md) are completed and a private preview passes.
+
 ## Phase 1 status
 
 - ✅ Standalone responsive **development preview** (`index.html`) using the familiar forest/cream/gold visual style.
@@ -11,13 +19,13 @@ A **separate sister site** to Novel Conservatory, not another view of the existi
 - ✅ Companion D1 schema for shelf photographs, per-book detected regions, candidate matches, photo sharing flags, and safe revisions.
 - ✅ Deterministic, **read-only** title/author/ISBN/vendor suggestion utility with tests; noise like z-library is ignored in matching.
 - ✅ Shelf-photo **local selection preview** (browser only; no server upload).
-- 🚧 No authentication, D1/R2 binding, persistence, working Goodreads import, EPUB extraction, OCR/vision recognition, live metadata lookup, image matching, or Undo UI yet. The demo books are fictional.
+- ✅ Authenticated API and persistent CRUD are implemented in Phase 2 code but require separate Cloudflare bindings to run. No working Goodreads import, EPUB extraction, OCR recognition, live cover lookup or Undo UI yet.
 - 🚫 No production deployment in this stage.
 
 ## Phases in order
 
-1. **Isolated foundation.** UI prototype, databases and matching contracts. Run offline tests; confirm no changes to existing site roots.
-2. **Connected private library.** New Cloudflare Pages project, private owner authentication, separate Book Conservatory D1 and R2 bindings, real CRUD for books/tags/reviews/editions/copies, and responsive browse/search.
+1. **Isolated foundation.** Complete: initial UI prototype, independent database schema, conservative matching contracts and offline tests.
+2. **Connected private library.** Code built and tested: owner-authenticated Worker, private D1/R2 support, CRUD, book notes on-page, responsive browsing and search. Separate Cloudflare project/bindings/migration and preview tests remain setup tasks.
 3. **Goodreads CSV import.** Import titles, author names, custom shelves, ratings, read dates and available reviews. Reconcile to canonical work records, keep a report, and support batch Undo.
 4. **Bulk EPUB import.** Parse EPUB package/OPF metadata and embedded covers, clean noisy filenames, hash exact duplicates and retain original files in private R2. Do not lose distinct editions or original file metadata.
 5. **Special-edition covers.** Per-edition artwork for FairyLoot, Illumicrate, OwlCrate, The Broken Binding, LitJoy and others. Match exact editions through reliable identifiers and permitted official product images; allow owner-provided links and photo uploads. Never silently use a standard cover as an exact special-edition cover.
