@@ -2174,7 +2174,7 @@ async function nuSafeDuplicateScan(env,url){
   let reason='';
   const privateToOriginal=source.visibility==='private'&&target.kind==='original';
   if(source.hasEpub)reason='Duplicate has private EPUB editions. Move those editions before merging; no book file was altered.';
-  else if(source.coverKey)reason='Duplicate has a private cover file. Preserve it before merging.';
+  else if(source.coverKey)reason='Duplicate has a private cover image attached. Preserve it before merging.';
   else if(source.visibility!==target.visibility&&!privateToOriginal)
    reason='Private/public visibility differs; automatic merging only supports private into original with no files.';
   if(reason){skipped.push({id:source.id,title:source.title,targetId:target.id,reason});continue}
