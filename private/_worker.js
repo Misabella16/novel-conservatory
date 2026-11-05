@@ -2101,7 +2101,9 @@ async function nuAdminRoutes(request,env,email,role){
    const offset=Math.max(0,Math.min(500000,Number(url.searchParams.get('offset'))||0));
    const where=[],args=[];
    if(state!=='all'){where.push('state=?');args.push(state);}
-   if(q){where.push('(title LIKE ? OR author LIKE ? OR slug LIKE ?)');args.push('%'+q+'%','%'+q+'%','%'+q+'%');}
+   // Literal substring search. A book title containing SQL wildcard characters
+   // must never become a LIKE pattern (which can trigger SQLITE_ERROR).
+   if(q){where.push('(instr(lower(title),lower(?))>0 OR instr(lower(author),lower(?))>0 OR instr(lower(slug),lower(?))>0)');args.push(q,q,q);}
    const sql=where.length?' WHERE '+where.join(' AND '):'';
    const [total,rows]=await Promise.all([
     env.COMMUNITY_DB.prepare('SELECT COUNT(*) AS n FROM nu_staged_series'+sql).bind(...args).first(),
