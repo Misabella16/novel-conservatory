@@ -27,6 +27,15 @@ function canonical(raw){
   return 'https://www.novelupdates.com/series/'+match[1]+'/';
  }catch{return null}
 }
+// Existing novels can use the same source URL to request updated tags,
+ // synopsis, genres, or a cover reference without replacing the link.
+const prefilled=canonical(params.get('url')||'');
+if(selectedBook&&prefilled){
+ $('nu-url').value=prefilled;
+ $('submission-heading').textContent='Refresh existing novel information';
+}else if(selectedBook){
+ $('submission-heading').textContent='Add or correct a novel’s source information';
+}
 async function init(){
  try{
   const r=await fetch('/api/site/config',{cache:'no-store'}),j=await r.json();
@@ -50,7 +59,12 @@ $('nu-form').addEventListener('submit',async e=>{
  status('Sending your link to the private review queue…');
  try{
   const r=await fetch('/api/nu-links/submit',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({
-    nuUrl:url,novelId:selectedBook,name:$('visitor').value.trim(),replyTo:$('reply').value.trim(),note:$('notes').value.trim(),website:$('website').value,turnstile:token
+    nuUrl:url,novelId:selectedBook,name:$('visitor').value.trim(),replyTo:$('reply').value.trim(),note:(
+     [Array.from(document.querySelectorAll('input[name="nu-target"]:checked')).map(box=>box.value).length
+       ?'Requested source fields: '+Array.from(document.querySelectorAll('input[name="nu-target"]:checked')).map(box=>box.value).join(', ')
+       :'',
+      $('notes').value.trim()].filter(Boolean).join('\\n')
+    ).slice(0,1200),website:$('website').value,turnstile:token
   })});
   const data=await r.json().catch(()=>({}));
   if(!r.ok)throw Error(data.error||'Could not save link');
