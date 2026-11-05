@@ -2204,6 +2204,32 @@ async function nuAdminRoutes(request,env,email,role){
     preferSourceFields:Array.isArray(b.preferSourceFields)?b.preferSourceFields.filter(x=>NU_EDITABLE.includes(x)):[]});
    return respond(result);
   }
+  // Keep older Publish-selected clients safe: use the same reversible merge
+  // algorithm instead of making a new record beside an existing one.
+  if(path==='/api/admin/nu/publish'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   const b=await getJson(request),slugs=Array.isArray(b.slugs)?[...new Set(b.slugs.map(nuValidSlug).filter(Boolean))]:[];
+   if(!slugs.length||slugs.length>20)return respond({error:'Choose 1–20 valid staged series'},400);
+   const results=[];
+   for(const slug of slugs){
+    try{
+     const row=await env.COMMUNITY_DB.prepare('SELECT * FROM nu_staged_series WHERE slug=?').bind(slug).first();
+     if(!row)throw Error('Staged series not found');
+     const source=JSON.parse(row.payload_json||'{}');
+     const result=await nuSyncSource(env,url,email,{...source,title:row.title,author:row.author,nuUrl:row.nu_url,
+      metadataSource:'Novel Updates (editor sync)'},{});
+     if(result.needsChoice||result.needsIdentityConfirmation){
+      results.push({slug,error:'Multiple matching novels. Select a destination in Resolve duplicates before syncing.',candidates:result.candidates||[]});
+      continue;
+     }
+     if(!result.ok)throw Error(result.message||'Sync failed');
+     await env.COMMUNITY_DB.prepare("UPDATE nu_staged_series SET state='published',published_id=?,published_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE slug=?")
+      .bind(result.id,slug).run();
+     results.push({slug,ok:true,id:result.id,linkedExisting:!!result.matchedExisting,eventId:result.eventId||null});
+    }catch(e){results.push({slug,error:String(e.message||'Sync failed').slice(0,190)})}
+   }
+   return respond({ok:true,results});
+  }
   if(path==='/api/admin/nu/sync-staged'&&method==='POST'){
    if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
    const b=await getJson(request),slug=nuValidSlug(b.slug);
