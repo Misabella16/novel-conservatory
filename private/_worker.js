@@ -361,6 +361,25 @@ async function routes(request,env,ctx,email,role){
   if(path.startsWith('/api/epub-submissions/'))return privateEpubSubmissionRoutes(request,env,email,role);
   if(path.startsWith('/api/admin/nu/'))return nuAdminRoutes(request,env,email,role);
   if(path==='/api/admin/epub/ingest-metadata')return privateEpubIngestRoute(request,env,email,role);
+  if(path==='/api/admin/epub/undo-metadata'&&method==='POST'){
+    if(role!=='owner'||!strictOrigin(request))return respond({error:'Owner-only Undo'},403);
+    if(!env.DB)return respond({error:'Private metadata database missing'},503);
+    try{
+     const body=await getJson(request),eventId=String(body.eventId||'');
+     if(!/^[a-f0-9-]{36}$/.test(eventId))return respond({error:'Invalid Undo reference'},400);
+     const event=await env.DB.prepare('SELECT * FROM epub_metadata_import_events WHERE id=? AND undone_at IS NULL').bind(eventId).first();
+     if(!event)return respond({error:'Import event already undone or not found'},404);
+     const current=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(event.setting_key).first();
+     if(current?.value!==event.after_value)return respond({error:'Metadata changed after this import. Undo later changes first.'},409);
+     const update=event.before_value===null?
+      await env.DB.prepare('DELETE FROM site_settings WHERE key=? AND value=?').bind(event.setting_key,event.after_value).run():
+      await env.DB.prepare('UPDATE site_settings SET value=?,updated_at=CURRENT_TIMESTAMP WHERE key=? AND value=?').bind(event.before_value,event.setting_key,event.after_value).run();
+     if((update.meta?.changes||0)!==1)return respond({error:'A concurrent edit prevented Undo'},409);
+     await env.DB.prepare('UPDATE epub_metadata_import_events SET undone_at=CURRENT_TIMESTAMP WHERE id=? AND undone_at IS NULL').bind(eventId).run();
+     return respond({ok:true,undone:true,id:event.novel_id,eventId,privateOnly:true});
+    }catch(err){return respond({error:textField(err?.message||'Could not undo this import',160)},400)}
+   }
+
   if(path==='/api/admin/epub-artwork/private-auto')return privateEpubAutoCoverRoute(request,env,email,role);
   if(path==='/api/admin/epub-insights/private-cover')return privateEpubCoverRoute(request,env,email,role);
   if(path.startsWith('/api/admin/epub-insights/'))return epubInsightsRoutes(request,env,email,role);
@@ -1418,6 +1437,17 @@ export default {
       head.set('cache-control','private,no-store');head.set('x-robots-tag','noindex,nofollow');
       return new Response(asset.body,{status:asset.status,statusText:asset.statusText,headers:head});
     }
+    // Static page shared by all novel IDs. The URL remains stable across
+    // re-cataloguing; API resolver redirects archived IDs to canonical ones.
+    if(/^\/novel\/[1-9]\d{0,10}\/?$/.test(path)){
+      const asset=await env.ASSETS.fetch(new Request(new URL('/novel/index.html',request.url)));
+      const headers=new Headers(asset.headers);
+      headers.set('content-type','text/html; charset=utf-8');
+      headers.set('cache-control','private,no-store');
+      headers.set('x-robots-tag','noindex,nofollow,noarchive');
+      headers.set('referrer-policy','no-referrer');
+      return new Response(asset.body,{status:asset.status,headers});
+    }
     if(path.startsWith('/api/')||path.startsWith('/media/')||path.startsWith('/admin/')||path==='/admin')
       return routes(request,env,ctx,email,role);
     const res=await env.ASSETS.fetch(request);
@@ -1829,8 +1859,13 @@ async function extraNovelExists(env,id){
  const r=await env.COMMUNITY_DB.prepare('SELECT id FROM additional_catalogue_novels WHERE id=?').bind(id).first();return !!r;
 }
 async function extraInsert(env,payload,coverKey,visibility,who,submissionId=''){
- // Every additional entry is an owner-created or editor-approved catalogue record.
- payload={...payload,metadataReview:true};
+ // Automatically catalogued private EPUBs have source-derived metadata, not
+ // editor-reviewed metadata. Preserve that provenance so tags become
+ // discoverable without falsely claiming a person verified them.
+ const fromPrivateEpub=visibility==='private'&&
+  /^EPUB (?:embedded metadata|filename)$/i.test(String(payload.metadataSource||''));
+ payload={...payload,metadataReview:fromPrivateEpub?false:true,
+  ...(fromPrivateEpub?{metadataOrigin:'epub'}:{})};
  const key=payload.title.toLocaleLowerCase().replace(/\s+/g,' ').trim();
  if(!payload.title||payload.title.length<2)throw Error('Enter a novel title');
  const duplicate=await env.COMMUNITY_DB.prepare("SELECT id,title FROM additional_catalogue_novels WHERE normalized_title=? AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' LIMIT 1").bind(key).first();
@@ -3483,8 +3518,8 @@ async function privateEpubIngestRoute(request,env,email,role){
   const body=await getJson(request),id=editionBook(body.id),edition=body.editionId==='legacy'?'legacy':editionUuid(body.editionId);
   if(!id||!edition||!await privateEpubLinked(env,id,edition))return respond({error:'First upload the selected EPUB edition to this novel'},409);
   const parsed=body.metadata&&typeof body.metadata==='object'?body.metadata:{};
-  const synopsis=textField(parsed.synopsis,6000),tags=epubSubjects(parsed.tags),author=textField(parsed.author,140);
-  if(!synopsis&&!tags.length&&!author)return respond({ok:true,id,changed:[],message:'This EPUB has no embedded synopsis, subjects, or author.'});
+  let synopsis=textField(parsed.synopsis,6000),tags=epubSubjects(parsed.tags),
+   genres=epubSubjects(parsed.genres),author=textField(parsed.author,140);
   let source={};
   if(id<=962){
    const response=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',request.url)));
@@ -3500,6 +3535,39 @@ async function privateEpubIngestRoute(request,env,email,role){
    if(!row||/^(merged-into:|reverted-create:)/.test(String(row.source_submission_id||'')))throw Error('Novel is missing or already merged');
    source={...JSON.parse(row.payload_json||'{}'),title:row.title};
   }
+  // An EPUB's dc:identifier or the matched catalogue may carry the exact NU
+  // series URL. We only import staged, previously captured NU metadata if
+  // the known catalogue URL matches, or if title AND author both agree.
+  // We never scrape Novel Updates or infer a series URL from a filename.
+  let fromStaged=false,stagedSource='';
+  const catalogueNu=nuCanon(source.nuUrl),epubNu=nuCanon(parsed.nuUrl);
+  if(catalogueNu&&epubNu&&catalogueNu!==epubNu)
+   return respond({error:'EPUB Novel Updates URL conflicts with the existing catalogue. Metadata was not changed.'},409);
+  const candidateUrl=catalogueNu||epubNu;
+  if(body.enrichFromStaged===true&&candidateUrl&&env.COMMUNITY_DB){
+   const slug=candidateUrl.split('/')[4];
+   const staged=await env.COMMUNITY_DB.prepare(
+    'SELECT title,author,payload_json,nu_url FROM nu_staged_series WHERE slug=? LIMIT 1'
+   ).bind(slug).first();
+   if(staged&&nuCanon(staged.nu_url)===candidateUrl){
+    const sameTitle=nuIdentity(staged.title)===nuIdentity(source.title)||
+     nuIdentity(staged.title)===nuIdentity(parsed.title);
+    const sameAuthor=!!nuIdentity(staged.author)&&
+     (nuIdentity(staged.author)===nuIdentity(source.author)||
+      nuIdentity(staged.author)===nuIdentity(parsed.author));
+    if(catalogueNu===candidateUrl||sameTitle&&sameAuthor){
+     let trusted={};try{trusted=JSON.parse(staged.payload_json||'{}')}catch{}
+     // EPUB subjects remain the first source; staged fields only supplement.
+     tags=mergeEpubTags(tags,epubSubjects(trusted.tags));
+     genres=mergeEpubTags(genres,epubSubjects(trusted.genres));
+     synopsis=synopsis||textField(trusted.synopsis,6000);
+     author=author||textField(staged.author,140);
+     fromStaged=true;stagedSource=candidateUrl;
+    }
+   }
+  }
+  if(!synopsis&&!tags.length&&!genres.length&&!author)
+   return respond({ok:true,id,changed:[],message:'No usable embedded or confirmed staged metadata.'});
   const key=PRIVATE_EMBEDDED_KEY+id;
   const row=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(key).first();
   let saved={};try{saved=JSON.parse(row?.value||'{}')}catch{throw Error('Stored embedded metadata is unreadable')}
@@ -3512,14 +3580,34 @@ async function privateEpubIngestRoute(request,env,email,role){
     delta.tags=combined;changed.push('tags');
    }
   }
+  if(genres.length&&!source.metadataReview){
+   const combined=mergeEpubTags(full.genres,genres);
+   if(combined.length>mergeEpubTags([],full.genres).length){
+    delta.genres=combined;changed.push('genres');
+   }
+  }
+  if(!full.nuUrl&&fromStaged&&stagedSource){delta.nuUrl=stagedSource;changed.push('nuUrl');}
   if(!changed.length)return respond({ok:true,id,changed:[],message:'Existing hand-edited metadata was kept. No missing details found.'});
-  delta.metadataOrigin='epub';delta.metadataSource='Embedded EPUB metadata (private, unreviewed)';
+  delta.metadataOrigin='epub';delta.metadataSource=fromStaged?
+   'EPUB + confirmed captured Novel Updates metadata (private, unreviewed)':
+   'Embedded EPUB metadata (private, unreviewed)';
   delta.importedAt=new Date().toISOString();delta.editionId=edition;
-  const next=JSON.stringify(delta);
+  const next=JSON.stringify(delta),eventId=crypto.randomUUID();
+  // Each successful automatic change is journaled for owner-controlled Undo.
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS epub_metadata_import_events (id TEXT PRIMARY KEY,novel_id INTEGER NOT NULL,setting_key TEXT NOT NULL,before_value TEXT,after_value TEXT NOT NULL,actor_email TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,undone_at TEXT)').run();
   const write=row?await env.DB.prepare('UPDATE site_settings SET value=?,updated_at=CURRENT_TIMESTAMP WHERE key=? AND value=?').bind(next,key,row.value).run():
    await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING').bind(key,next).run();
   if((write.meta?.changes||0)!==1)return respond({error:'This novel was updated in another tab. Retry the metadata import.'},409);
-  return respond({ok:true,id,changed,privateOnly:true,published:false});
+  try{
+   await env.DB.prepare('INSERT INTO epub_metadata_import_events (id,novel_id,setting_key,before_value,after_value,actor_email) VALUES (?,?,?,?,?,?)')
+    .bind(eventId,id,key,row?.value??null,next,email).run();
+  }catch(err){
+   if(row)await env.DB.prepare('UPDATE site_settings SET value=?,updated_at=CURRENT_TIMESTAMP WHERE key=? AND value=?').bind(row.value,key,next).run().catch(()=>{});
+   else await env.DB.prepare('DELETE FROM site_settings WHERE key=? AND value=?').bind(key,next).run().catch(()=>{});
+   throw Error('Could not record Undo history for this metadata import.');
+  }
+  return respond({ok:true,id,changed,eventId,privateOnly:true,published:false,
+   stagedSourceUsed:fromStaged,source:delta.metadataSource});
  }catch(error){return respond({error:textField(error?.message||'Could not ingest embedded metadata',200)},400)}
 }
 async function privateEpubAutoCoverRoute(request,env,email,role){
@@ -3564,13 +3652,22 @@ async function privateEpubAutoCoverRoute(request,env,email,role){
   await env.IMAGES.put(objectKey,bytes,{httpMetadata:{contentType:'image/jpeg'}});
   const cover={cover:'/media/'+objectKey,scope:'private',extractedFrom: textField(fd.get('source'),130),
    coverCredit:'Private EPUB embedded cover',privateCover:true,publicPublished:false,createdAt:new Date().toISOString()};
+  const after=JSON.stringify(cover),eventId=crypto.randomUUID();
   try{
-   const inserted=await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO NOTHING').bind(key,JSON.stringify(cover)).run();
+   await env.DB.prepare('CREATE TABLE IF NOT EXISTS epub_metadata_import_events (id TEXT PRIMARY KEY,novel_id INTEGER NOT NULL,setting_key TEXT NOT NULL,before_value TEXT,after_value TEXT NOT NULL,actor_email TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,undone_at TEXT)').run();
+   const inserted=await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO NOTHING').bind(key,after).run();
    if((inserted.meta?.changes||0)!==1){
     await env.IMAGES.delete(objectKey);return respond({ok:true,stored:false,skipped:true,reason:'Another cover was stored first'});
    }
+   try{
+    await env.DB.prepare('INSERT INTO epub_metadata_import_events (id,novel_id,setting_key,before_value,after_value,actor_email) VALUES (?,?,?,?,?,?)')
+     .bind(eventId,id,key,null,after,email).run();
+   }catch(error){
+    await env.DB.prepare('DELETE FROM site_settings WHERE key=? AND value=?').bind(key,after).run().catch(()=>{});
+    throw Error('Could not record Undo history for the private cover.');
+   }
   }catch(error){await env.IMAGES.delete(objectKey).catch(()=>{});throw error}
-  return respond({ok:true,stored:true,cover:cover.cover,privateOnly:true,publicPublished:false});
+  return respond({ok:true,stored:true,cover:cover.cover,privateOnly:true,publicPublished:false,eventId});
  }catch(error){return respond({error:textField(error?.message||'Could not import private cover',200)},400)}
 }
 
