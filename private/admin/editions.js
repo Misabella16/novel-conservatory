@@ -95,7 +95,7 @@ $('skip').addEventListener('change',draw);
 async function uploadEdition(r,onProgress){
  const key=`conservatory-mpu:${r.bookId}:${r.file.name}:${r.file.size}`;let sessionId=localStorage.getItem(key)||'',completed=new Set(),partSize=8*1048576;
  if(sessionId){try{const info=await json(await fetch('/api/private/edition/resume?session='+encodeURIComponent(sessionId),{cache:'no-store'}));if(info.session.novel_id!==r.bookId||info.session.bytes!==r.file.size||info.session.filename!==r.file.name)throw Error('Changed match');completed=new Set(info.uploadedParts||[]);partSize=info.partSize;}catch{sessionId='';localStorage.removeItem(key);}}
- if(!sessionId){const j=await json(await fetch('/api/private/edition/start',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({novelId:r.bookId,size:r.file.size,filename:r.file.name,label:r.label||'Translation edition',translator:r.translator,language:'English'})}));sessionId=j.sessionId;partSize=j.partSize;localStorage.setItem(key,sessionId);}
+ if(!sessionId){const j=await json(await fetch('/api/private/edition/start',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({novelId:r.bookId,size:r.file.size,filename:r.file.name,label:r.label||'Translation edition',translator:r.translator,language:String(r.meta?.language||'English').slice(0,40)})}));sessionId=j.sessionId;partSize=j.partSize;localStorage.setItem(key,sessionId);}
  const total=Math.ceil(r.file.size/partSize);
  for(let n=1;n<=total;n++){if(completed.has(n)){onProgress(n/total);continue;}
    const chunk=r.file.slice((n-1)*partSize,Math.min(n*partSize,r.file.size));let err;
