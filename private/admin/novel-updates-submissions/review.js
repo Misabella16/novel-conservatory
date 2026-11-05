@@ -82,6 +82,16 @@ function renderSourceDetails(parent,meta,url){
  details(parent,'Original title',meta.originalTitle);
  details(parent,'Genres',shortValue(meta.genres));
  details(parent,'Tags',shortValue(meta.tags));
+ if(meta.coverUrl){
+  try{
+   const sourceCover=new URL(meta.coverUrl);
+   if(sourceCover.protocol==='https:'&&!sourceCover.username&&!sourceCover.password){
+    const linkRow=document.createElement('p');linkRow.className='small';
+    link(linkRow,'View cover referenced on Novel Updates ↗',sourceCover.href);parent.appendChild(linkRow);
+    paragraph(parent,'Cover reference only: verify the original artist, image permission and credit through the separate cover-image review workflow before publishing artwork.','small');
+   }
+  }catch{}
+ }
  if(meta.synopsis){const title=document.createElement('strong');title.textContent='Retrieved synopsis';parent.appendChild(title);
   paragraph(parent,String(meta.synopsis).slice(0,6000),'summary')}
  paragraph(parent,'Metadata source: '+url,'small');
