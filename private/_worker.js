@@ -2041,6 +2041,30 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  try{await audit(env,email,sourceId?'nu.duplicate.merge':'nu.metadata.sync',target.id,eventId)}catch{}
  return {ok:true,id:target.id,eventId,mergedFrom:sourceId||null,conflicts:computed.conflicts,changed:computed.changed,privateSynced};
 }
+async function nuSyncSource(env,url,email,source,options={}){
+ const safe=extraPayload({...source,metadataReview:true,metadataSource:source.metadataSource||'Novel Updates source'});
+ safe.nuUrl=nuCanon(source.nuUrl);
+ if(!safe.nuUrl||safe.title.length<2)throw Error('Use a valid Novel Updates series URL and a title.');
+ if(!safe.synopsis&&!safe.genres.length&&!safe.tags.length)
+  throw Error('No actual synopsis, genres or tags were retrieved. Nothing was saved.');
+ const candidates=await nuFindCandidates(env,url,safe,null);
+ const chosen=editionBook(options.targetId),exact=candidates.find(x=>x.id===chosen);
+ if(chosen&&!exact&&options.confirmDifferent!==true)
+  return {ok:false,needsIdentityConfirmation:true,candidates,selected:chosen,
+   message:'The chosen novel does not match the source URL or normalized title. Confirm its identity before merging.'};
+ if(!chosen&&candidates.length>1)
+  return {ok:false,needsChoice:true,candidates,
+   message:'Several catalogue entries match this source. Choose the correct novel instead of making another copy.'};
+ const targetId=chosen||(candidates.length===1?candidates[0].id:null);
+ if(targetId){
+  const result=await nuSaveEdit(env,url,email,targetId,safe,{
+   preferSourceFields:options.preferSourceFields||[],expectedBefore:options.expectedBefore
+  });
+  return {...result,matchedExisting:true,candidates};
+ }
+ const created=await nuCreateEdited(env,email,safe);
+ return {...created,matchedExisting:false,candidates:[]};
+}
 async function nuCreateEdited(env,email,source){
  const data=extraPayload({...source,metadataReview:true,metadataSource:source.metadataSource||'Novel Updates source'});
  if(data.title.length<2)throw Error('A title is required');
@@ -2131,6 +2155,71 @@ async function nuAdminRoutes(request,env,email,role){
  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
  try{
 
+
+  if(path==='/api/admin/nu/merge-history'&&method==='GET'){
+   const rows=await env.COMMUNITY_DB.prepare(
+    'SELECT id,operation,target_id,duplicate_id,source_url,actor_email,created_at,undone_at FROM catalogue_edit_events ORDER BY created_at DESC LIMIT 40'
+   ).all();
+   return respond({items:rows.results||[]});
+  }
+  if(path==='/api/admin/nu/merge-preview'&&method==='GET'){
+   const sourceId=extraId(url.searchParams.get('sourceId')),targetId=editionBook(url.searchParams.get('targetId'));
+   if(!sourceId||!targetId||sourceId===targetId)return respond({error:'Select different source and destination novel IDs'},400);
+   const sourceRow=await env.COMMUNITY_DB.prepare('SELECT * FROM additional_catalogue_novels WHERE id=?').bind(sourceId).first();
+   if(!sourceRow)return respond({error:'Source duplicate not found'},404);
+   const target=await nuGetExisting(env,url,targetId),data=nuAdditionalData(sourceRow),preview=nuMergeData(target.data,data,[]);
+   return respond({source:{id:sourceId,title:data.title,visibility:sourceRow.visibility,fields:data},
+    target:{id:target.id,title:target.title,kind:target.kind,fields:target.data},
+    alreadyMerged:String(sourceRow.source_submission_id||'').startsWith('merged-into:'),
+    blockedByEpub:await nuHasPrivateEpub(env,sourceId),changed:preview.changed,conflicts:preview.conflicts,
+    expectedBefore:target.beforeRaw});
+  }
+  if(path==='/api/admin/nu/merge-apply'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   const b=await getJson(request),sourceId=extraId(b.sourceId),targetId=editionBook(b.targetId);
+   if(!sourceId||!targetId||sourceId===targetId)return respond({error:'Select two different existing books'},400);
+   const sourceRow=await env.COMMUNITY_DB.prepare('SELECT * FROM additional_catalogue_novels WHERE id=?').bind(sourceId).first();
+   if(!sourceRow)return respond({error:'Source book not found'},404);
+   const fields=Array.isArray(b.preferSourceFields)?b.preferSourceFields.filter(x=>NU_EDITABLE.includes(x)):[];
+   const result=await nuSaveEdit(env,url,email,targetId,nuAdditionalData(sourceRow),{
+    sourceId,preferSourceFields:fields,expectedBefore:b.expectedBefore
+   });
+   return respond(result);
+  }
+  if(path==='/api/admin/nu/undo'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   const b=await getJson(request);
+   return respond(await nuUndoEdit(env,email,b.eventId));
+  }
+  if(path==='/api/admin/nu/sync-capture'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   const b=await getJson(request),raw=b.capture?.novel;
+   if(b.capture?.source!=='novelupdates-browser-v1'||!raw||typeof raw!=='object'||Array.isArray(raw))
+    return respond({error:'Paste the original captured Novel Updates metadata'},400);
+   if(raw.tags!==undefined&&!Array.isArray(raw.tags)||raw.genres!==undefined&&!Array.isArray(raw.genres))
+    return respond({error:'Source tags and genres must be lists'},400);
+   const source={...raw,metadataSource:'Novel Updates (browser capture)'};
+   const result=await nuSyncSource(env,url,email,source,{
+    targetId:b.targetId,confirmDifferent:b.confirmDifferent===true,
+    preferSourceFields:Array.isArray(b.preferSourceFields)?b.preferSourceFields.filter(x=>NU_EDITABLE.includes(x)):[]});
+   return respond(result);
+  }
+  if(path==='/api/admin/nu/sync-staged'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   const b=await getJson(request),slug=nuValidSlug(b.slug);
+   if(!slug)return respond({error:'Choose a staged Novel Updates series'},400);
+   const row=await env.COMMUNITY_DB.prepare('SELECT * FROM nu_staged_series WHERE slug=?').bind(slug).first();
+   if(!row)return respond({error:'Staged series not found'},404);
+   const data=JSON.parse(row.payload_json||'{}');
+   const result=await nuSyncSource(env,url,email,{...data,title:row.title,author:row.author,nuUrl:row.nu_url,metadataSource:'Novel Updates (editor sync)'},{
+    targetId:b.targetId,confirmDifferent:b.confirmDifferent===true,
+    preferSourceFields:Array.isArray(b.preferSourceFields)?b.preferSourceFields.filter(x=>NU_EDITABLE.includes(x)):[]});
+   if(result.ok&&result.id){
+    await env.COMMUNITY_DB.prepare("UPDATE nu_staged_series SET state='published',published_id=?,published_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE slug=?")
+     .bind(result.id,slug).run();
+   }
+   return respond(result);
+  }
 
   // An editor can import ONLY metadata previously captured from the submitted
   // Novel Updates URL. The guest supplies a URL, never the fields to publish.
