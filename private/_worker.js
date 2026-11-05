@@ -1981,7 +1981,7 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
   nextPrivate=JSON.stringify(privatePatch);
  }else{
   // A source sync must never silently promote a private novel to public.
-  resultRaw=JSON.stringify(extraPayload(modified));
+  resultRaw=JSON.stringify({...target.data,...extraPayload(modified)});
  }
  const eventId=crypto.randomUUID(),oldSourceMarker=sourceRow?.source_submission_id??null;
  const afterSourceMarker=sourceRow?'merged-into:'+target.id:null;
@@ -2156,6 +2156,17 @@ async function nuAdminRoutes(request,env,email,role){
  try{
 
 
+  if(path==='/api/admin/nu/search-books'&&method==='GET'){
+   const q=String(url.searchParams.get('q')||'').trim().slice(0,120);
+   if(q.length<2&&!/^[1-9]\d*$/.test(q))return respond({items:[],note:'Enter at least two characters or an ID'});
+   const key=nuIdentity(q);
+   const original=await nuBaseCatalogue(env,url),added=await nuAdditionalRows(env);
+   const matches=[...original.map(x=>({...x,kind:'original'})),...added.map(x=>({...nuAdditionalData(x),kind:'added'}))]
+    .filter(x=>String(x.id)===q||nuIdentity(x.title).includes(key)||nuIdentity(x.originalTitle).includes(key))
+    .slice(0,50).map(x=>({id:x.id,title:x.title,kind:x.kind,nuUrl:x.nuUrl||'',
+     tags:(x.tags||[]).length,genres:(x.genres||[]).length,hasSynopsis:!!x.synopsis}));
+   return respond({items:matches});
+  }
   if(path==='/api/admin/nu/merge-history'&&method==='GET'){
    const rows=await env.COMMUNITY_DB.prepare(
     'SELECT id,operation,target_id,duplicate_id,source_url,actor_email,created_at,undone_at FROM catalogue_edit_events ORDER BY created_at DESC LIMIT 40'
@@ -2601,7 +2612,8 @@ async function nuAdminRoutes(request,env,email,role){
   return respond({ok:true,results});
  }catch(e){
   const msg=String(e?.message||'Staging unavailable');
-  if(/no such table/i.test(msg))return respond({error:'Run database/NU_STAGING_MIGRATION.sql in the community D1 database first.'},503);
+  if(/no such table.*catalogue_edit_events/i.test(msg))return respond({error:'Run database/CATALOGUE_MERGE_UNDO_MIGRATION.sql in the community D1 database before using Undo.'},503);
+  if(/no such table/i.test(msg))return respond({error:'Run the relevant community D1 database migration first: '+msg.slice(0,120)},503);
   return respond({error:msg.slice(0,240)},400);
  }
 }
