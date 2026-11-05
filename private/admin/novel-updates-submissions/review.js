@@ -64,43 +64,148 @@ async function updateStatus(id,next){
  await api('/api/admin/site-feedback',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,status:next})});
  await load();
 }
-async function fetchSource(item,url,panel,actions,trigger){
+
+const IMPORT_FIELDS=[
+ ['synopsis','Synopsis'],
+ ['genres','Genres'],
+ ['tags','Story tags'],
+ ['author','Author'],
+ ['originalTitle','Original title']
+];
+const shortValue=(v,max=650)=>Array.isArray(v)?v.join(', '):String(v||'').slice(0,max);
+function paragraph(parent,textValue,cls='small'){
+ const p=document.createElement('p');p.className=cls;p.textContent=textValue;parent.appendChild(p);return p;
+}
+function renderSourceDetails(parent,meta,url){
+ details(parent,'Original NU title',meta.title||'Unknown');
+ details(parent,'Source author',meta.author);
+ details(parent,'Original title',meta.originalTitle);
+ details(parent,'Genres',shortValue(meta.genres));
+ details(parent,'Tags',shortValue(meta.tags));
+ if(meta.synopsis){const title=document.createElement('strong');title.textContent='Retrieved synopsis';parent.appendChild(title);
+  paragraph(parent,String(meta.synopsis).slice(0,6000),'summary')}
+ paragraph(parent,'Metadata source: '+url,'small');
+}
+async function showStaged(item,url,bookId,bookTitle,panel){
+ const response=await api('/api/admin/nu/staged-by-url?url='+encodeURIComponent(url));
+ const meta=response.metadata;
+ if(!meta||typeof meta!=='object'||!meta.title)throw Error('The captured source has no title');
+ panel.replaceChildren();
+ const head=document.createElement('h3');head.textContent='Source metadata retrieved · not yet applied';panel.appendChild(head);
+ renderSourceDetails(panel,meta,url);
+ if(!bookId){
+  paragraph(panel,'This suggestion is for a new series. The Novel Updates information has been staged privately and must still be reviewed and published through the main NU staging dashboard.');
+  link(panel,'Review staged series ↗','/admin/novel-updates.html');
+  return;
+ }
+ const notice=paragraph(panel,'Destination: '+bookTitle+' · Catalogue #'+bookId+'. Compare its identity with the Novel Updates source title above. Import defaults to filling missing metadata only.','small');
+ notice.classList.add('source-destination');
+ const form=document.createElement('div');form.className='import-fields';
+ const title=document.createElement('h4');title.textContent='Choose which source fields to import';form.appendChild(title);
+ const choices=[];
+ for(const [key,label] of IMPORT_FIELDS){
+  const value=meta[key],available=Array.isArray(value)?value.length>0:!!String(value||'').trim();
+  const box=document.createElement('label');box.className='import-check';
+  const input=document.createElement('input');input.type='checkbox';input.checked=available;input.disabled=!available;
+  const labelSpan=document.createElement('span');labelSpan.textContent=label+(available?' · '+shortValue(value,90):' (missing at source)');
+  box.append(input,labelSpan);form.appendChild(box);choices.push([key,input]);
+ }
+ const label=document.createElement('label');label.className='import-check';
+ const replace=document.createElement('input');replace.type='checkbox';
+ const words=document.createElement('span');words.textContent='Replace existing metadata for checked fields (normally, only blanks are filled)';
+ label.append(replace,words);form.appendChild(label);
+ paragraph(form,'Title, cover art, translator links and translation status will not be overwritten. A source URL alone does not prove the synopsis and tags are available.','small');
+ const buttonRow=document.createElement('div');buttonRow.className='actions';
+ const apply=button('✓ Review & import selected fields',async btn=>{
+  const fields=choices.filter(([,el])=>el.checked).map(([name])=>name);
+  if(!fields.length){paragraph(form,'Select at least one field.','small');return}
+  const sourceTitle=String(meta.title||''),matched=sourceTitle.trim().toLocaleLowerCase()===String(bookTitle||'').trim().toLocaleLowerCase();
+  const identification=matched?'':'\nWarning: the source title differs from the catalogue title. Confirm that they are the same work.';
+  if(!confirm('Import retrieved Novel Updates information into '+bookTitle+' (#'+bookId+')?'+identification+
+    '\n\nFields: '+fields.join(', ')+(replace.checked?'\nExisting metadata in those fields WILL be replaced.':'\nOnly fields currently missing data will be filled.')+
+    '\n\nThis will update the public catalogue after confirmation.'))return;
+  btn.disabled=true;
+  const send=async replaceExisting=>api('/api/admin/nu/import-submitted-metadata',{
+   method:'POST',headers:{'content-type':'application/json'},
+   body:JSON.stringify({submissionId:item.id,confirm:true,fields,replaceFields:replace.checked,replaceExisting})
+  });
+  try{
+   let result;
+   try{result=await send(false)}catch(error){
+    if(!String(error.message||'').includes('already has a Novel Updates link'))throw error;
+    if(!confirm('This novel already has a different Novel Updates link. Replace that link as part of the metadata import?'))return;
+    result=await send(true);
+   }
+   await load();
+   status.textContent='Imported source metadata into '+bookTitle+' (#'+bookId+'). Applied: '+(result.appliedFields||[]).join(', ')+
+    '. Skipped: '+(result.skipped||[]).join('; ')+(result.privateSynced===false?'. Public updated; private sync needs review.':'. Shared catalogue updated.');
+  }catch(error){paragraph(form,'Import failed: '+error.message,'small')}
+  finally{btn.disabled=false}
+ },'');
+ buttonRow.appendChild(apply);
+ form.appendChild(buttonRow);panel.appendChild(form);
+}
+function showCaptureFallback(item,url,bookId,bookTitle,panel,why){
+ const box=document.createElement('section');box.className='capture-fallback';
+ paragraph(box,why,'small');
+ paragraph(box,'Novel Updates may block server requests (403 / 429). Open the series page in your own browser, use the existing Capture Novel Updates bookmarklet, and paste the copied JSON below. Never copy cookies or account data.');
+ const p=document.createElement('p');
+ link(p,'Open original NU page ↗',url);p.append(' · ');link(p,'Get Capture Novel Updates bookmarklet ↗','/admin/novel-updates.html');
+ box.appendChild(p);
+ const label=document.createElement('label');label.textContent='Paste browser-captured Novel Updates JSON';
+ const textarea=document.createElement('textarea');textarea.rows=4;textarea.maxLength=15000;
+ textarea.placeholder='{"source":"novelupdates-browser-v1","novel":{...}}';label.appendChild(textarea);box.appendChild(label);
+ const row=document.createElement('div');row.className='actions';
+ row.appendChild(button('Use captured metadata',async btn=>{
+  btn.disabled=true;
+  try{
+   const obj=JSON.parse(textarea.value.trim());
+   if(obj.source!=='novelupdates-browser-v1'||typeof obj.novel!=='object'||!obj.novel)
+    throw Error('Use the Capture Novel Updates bookmarklet JSON.');
+   const captured=escNU(obj.novel.nuUrl);
+   if(!captured||captured!==url)throw Error('Captured source must match the submitted Novel Updates URL.');
+   await api('/api/admin/nu/stage-browser',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(obj)});
+   await showStaged(item,url,bookId,bookTitle,panel);
+  }catch(error){paragraph(box,'Could not stage captured metadata: '+error.message,'small')}
+  finally{btn.disabled=false}
+ },''));
+ row.appendChild(button('Load previously captured metadata',async btn=>{
+  btn.disabled=true;
+  try{await showStaged(item,url,bookId,bookTitle,panel)}
+  catch(error){paragraph(box,'No usable staged metadata yet: '+error.message,'small')}
+  finally{btn.disabled=false}
+ }));
+ box.appendChild(row);panel.appendChild(box);
+}
+async function fetchSource(item,url,panel,actions,trigger,bookId,bookTitle){
  trigger.disabled=true;panel.replaceChildren();panel.hidden=false;
- const message=document.createElement('p');message.className='small';message.textContent='Retrieving the existing Novel Updates page…';panel.appendChild(message);
+ paragraph(panel,'Retrieving the original Novel Updates synopsis, genres and tags…','small');
  try{
-  // The server fetches ONLY the validated Novel Updates host, with no redirects.
   const result=await api('/api/admin/nu/lookup?url='+encodeURIComponent(url));
   const novel=parseNU(result.html,url);
   if(!novel.title||(!novel.synopsis&&!novel.genres.length&&!novel.tags.length))
-   throw Error('The source page did not contain enough readable metadata. Open the page yourself and use Browser Capture in staging.');
-  panel.replaceChildren();
-  const head=document.createElement('h3');head.textContent='Retrieved source details · Not yet published';panel.appendChild(head);
-  details(panel,'Title',novel.title);
-  details(panel,'Author',novel.author);
-  details(panel,'Original title',novel.originalTitle);
-  details(panel,'Genres',novel.genres.join(', '));
-  details(panel,'Tags',novel.tags.join(', '));
-  if(novel.synopsis){const title=document.createElement('strong');title.textContent='Original synopsis';panel.appendChild(title);const p=document.createElement('p');p.className='summary';p.textContent=novel.synopsis;panel.appendChild(p)}
-  const stage=button('Save these fields as unpublished draft',async btn=>{
-   if(!confirm('Stage the retrieved Novel Updates metadata as an unpublished draft? This does not publish a novel.'))return;
-   btn.disabled=true;
-   message.textContent='Saving source-only metadata…';
-   try{
-    const staged=await api('/api/admin/nu/stage-browser',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({source:'novelupdates-browser-v1',novel})});
-    message.textContent='Saved “'+staged.title+'” to the private staging queue. Nothing was published.';
-    stage.remove();
-    const next=document.createElement('p');next.className='small';panel.appendChild(next);
-    link(next,'Review and publish later in Novel Updates staging ↗','/admin/novel-updates.html');
-   }catch(e){message.textContent=e.message;btn.disabled=false}
-  },'');
-  panel.appendChild(stage);panel.appendChild(message);
- }catch(e){
-  message.textContent=e.message||'Direct retrieval failed.';
-  const p=document.createElement('p');p.className='small';
-  p.textContent='You can still review this link manually: ';
-  link(p,'Open the Novel Updates series page ↗',url);p.append(' · ');
-  link(p,'Browser-assisted capture instructions ↗','/admin/novel-updates.html');
-  panel.appendChild(p);
+   throw Error('The source page did not contain enough readable metadata.');
+  try{
+   await api('/api/admin/nu/stage-browser',{
+    method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({source:'novelupdates-browser-v1',novel})
+   });
+  }catch(error){
+   // Published/locked drafts cannot be replaced; show their existing source
+   // data if it is already available.
+   await showStaged(item,url,bookId,bookTitle,panel);
+   paragraph(panel,'The previous source capture is protected; its staged version was used.','small');
+   return;
+  }
+  await showStaged(item,url,bookId,bookTitle,panel);
+ }catch(error){
+  try{
+   await showStaged(item,url,bookId,bookTitle,panel);
+   paragraph(panel,'The direct lookup was unavailable; showing previously captured Novel Updates data.','small');
+  }catch{
+   panel.replaceChildren();showCaptureFallback(item,url,bookId,bookTitle,panel,
+    'Automatic retrieval was unavailable: '+(error.message||'Source did not respond')+'. No metadata has been invented or published.');
+  }
  }finally{trigger.disabled=false}
 }
 
@@ -152,7 +257,8 @@ async function load(){
    const actions=document.createElement('div');actions.className='actions';
    const panel=document.createElement('section');panel.className='review';panel.hidden=true;
    if(url&&bookId)actions.appendChild(button('✓ Approve link for this novel',b=>approveExistingLink(item,bookId,bookTitle,url,b),''));
-   if(url)actions.appendChild(button('Retrieve synopsis & tags',b=>fetchSource(item,url,panel,actions,b),''));
+   if(url)actions.appendChild(button('Retrieve & preview NU metadata',b=>fetchSource(item,url,panel,actions,b,bookId,bookTitle),''));
+   if(url)actions.appendChild(button('Load staged / browser-captured NU data',async b=>{b.disabled=true;panel.hidden=false;try{await showStaged(item,url,bookId,bookTitle,panel)}catch(err){panel.replaceChildren();showCaptureFallback(item,url,bookId,bookTitle,panel,'No captured source information is available yet. '+err.message)}finally{b.disabled=false}}));
    actions.appendChild(button('Mark resolved',async b=>{
     if(!confirm('Mark this link suggestion as resolved? It will leave the pending queue, but will not automatically publish anything.'))return;
     b.disabled=true;try{await updateStatus(item.id,'resolved')}catch(e){status.textContent=e.message;b.disabled=false}

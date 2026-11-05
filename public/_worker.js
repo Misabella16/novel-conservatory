@@ -18,7 +18,7 @@ export default {async fetch(request,env){
  if(path==='/api/published/novels'&&request.method==='GET'){
   if(!env.COMMUNITY_DB)return respond({overrides:[],configured:false});
   try{const r=await env.COMMUNITY_DB.prepare('SELECT novel_id,patch_json,updated_at FROM published_catalogue_overrides ORDER BY novel_id LIMIT 1000').all();
-   const allowed=new Set(['tags','nuUrl','translatorUrl','translatorLinks','synopsis','translation','title','cover','coverRights','coverCredit','metadataReview','metadataSource']);
+   const allowed=new Set(['tags','genres','author','originalTitle','nuUrl','translatorUrl','translatorLinks','synopsis','translation','title','cover','coverRights','coverCredit','metadataReview','metadataSource']);
    const overrides=(r.results||[]).map(row=>{let patch={};try{for(const [k,v] of Object.entries(JSON.parse(row.patch_json||'{}')))if(allowed.has(k))patch[k]=v;}catch{}return {id:row.novel_id,patch,updatedAt:row.updated_at};});
    // Community additions appear immediately without overwriting the canonical records.
    // Removing an approved contribution through the editor queue removes it from this feed.

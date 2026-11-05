@@ -1853,6 +1853,126 @@ async function nuAdminRoutes(request,env,email,role){
  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
  try{
 
+
+  // An editor can import ONLY metadata previously captured from the submitted
+  // Novel Updates URL. The guest supplies a URL, never the fields to publish.
+  // Source data is staged by our existing fetch / authorized browser capture.
+  if(path==='/api/admin/nu/import-submitted-metadata'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   const body=await getJson(request);
+   const submissionId=String(body?.submissionId||'');
+   const allowedFields=new Set(['synopsis','tags','genres','author','originalTitle']);
+   if(!/^[a-f0-9-]{36}$/.test(submissionId)||body?.confirm!==true
+      ||!Array.isArray(body.fields)||body.fields.length>5||!body.fields.length
+      ||body.fields.some(field=>!allowedFields.has(field)))
+    return respond({error:'Select approved source fields and confirm the import'},400);
+   const pending=await env.COMMUNITY_DB.prepare(
+     "SELECT id,subject,message,status FROM conservatory_site_feedback WHERE id=? AND scope='public' AND kind='suggestion'"
+   ).bind(submissionId).first();
+   if(!pending||pending.status!=='pending'||!String(pending.subject||'').startsWith('Novel Updates link: '))
+    return respond({error:'Pending Novel Updates link not found'},404);
+   const match=/^Novel Updates series: (https:\/\/www\.novelupdates\.com\/series\/([a-z0-9][a-z0-9-]{0,190})\/)\nCatalogue ID: ([1-9][0-9]*)\nCatalogue title: ([^\n]{1,180})(?:\n|$)/.exec(pending.message||'');
+   if(!match)return respond({error:'This request is not tied to an existing novel'},409);
+   const link=match[1],slug=match[2],novelId=Number(match[3]);
+   if(!Number.isSafeInteger(novelId)||novelId<1)return respond({error:'Invalid catalogue ID'},400);
+   const staged=await env.COMMUNITY_DB.prepare(
+    'SELECT title,author,payload_json,nu_url FROM nu_staged_series WHERE slug=?'
+   ).bind(slug).first();
+   if(!staged||staged.nu_url!==link)
+    return respond({error:'Source metadata has not been retrieved yet. Use Retrieve or authorized Browser Capture first.'},409);
+   let saved;try{saved=JSON.parse(staged.payload_json||'{}')}catch{return respond({error:'Source metadata is unreadable'},409)}
+   // Never use user-supplied descriptions or tags. The only accepted
+   // values come from the existing Novel Updates staging record.
+   const source={
+    synopsis:extraTxt(saved.synopsis,6000),
+    tags:extraTags(saved.tags),
+    genres:extraTags(saved.genres),
+    author:extraTxt(staged.author||saved.author,140),
+    originalTitle:extraTxt(saved.originalTitle,210)
+   };
+   if(!source.synopsis&&!source.tags.length&&!source.genres.length)
+    return respond({error:'No usable synopsis, genres, or tags were retrieved from Novel Updates'},409);
+   const chosen=[...new Set(body.fields)];
+   const replaceFields=body.replaceFields===true;
+   let existing={},prior=null,oldUrl='',name='',record=null,isSeed=novelId<=962;
+   if(isSeed){
+    const asset=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',url.origin)));
+    if(!asset.ok)return respond({error:'Original catalogue unavailable'},503);
+    const data=await asset.json(),base=(Array.isArray(data)?data:data.books||[]).find(x=>x.id===novelId);
+    if(!base)return respond({error:'Novel not found'},404);
+    name=String(base.title||'');
+    prior=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(novelId).first();
+    let override={};try{if(prior)override=JSON.parse(prior.patch_json)}catch{return respond({error:'Invalid published catalogue patch'},409)}
+    existing={...base,...override};
+   }else{
+    record=await env.COMMUNITY_DB.prepare(
+      "SELECT title,payload_json FROM additional_catalogue_novels WHERE id=? AND visibility='published'"
+    ).bind(novelId).first();
+    if(!record)return respond({error:'Published novel not found'},404);
+    name=String(record.title||'');
+    try{existing=JSON.parse(record.payload_json||'{}')}catch{return respond({error:'Existing novel metadata is invalid'},409)}
+   }
+   oldUrl=String(existing.nuUrl||'');
+   if(oldUrl&&oldUrl!==link&&body.replaceExisting!==true)
+    return respond({error:'This novel already has a Novel Updates link. Confirm replacement before importing metadata.',currentUrl:oldUrl},409);
+   const update={},skipped=[];
+   for(const field of chosen){
+    const value=source[field];
+    if(!value||(Array.isArray(value)&&!value.length)){skipped.push(field+' (missing at source)');continue;}
+    const current=existing[field],hasCurrent=Array.isArray(current)?current.length>0:typeof current==='string'?!!current.trim():current!==null&&current!==undefined&&current!=='';
+    if(hasCurrent&&!replaceFields){skipped.push(field+' (already has metadata)');continue;}
+    update[field]=value;
+   }
+   const fields=Object.keys(update);
+   if(!fields.length&&oldUrl===link)
+    return respond({error:'All selected fields already have metadata. Choose replacement explicitly if needed.'},409);
+   // Do not replace verified cover art, translator credits, translation status,
+   // or the novel's title, all of which are distinct from the NU source.
+   const patch={...update,nuUrl:link};
+   if(fields.length){patch.metadataSource=link;patch.metadataReview='source-reviewed';}
+   if(isSeed){
+    const old=prior?JSON.parse(prior.patch_json||'{}'):{};
+    const val=JSON.stringify({...old,...patch});
+    const write=prior?
+      await env.COMMUNITY_DB.prepare(
+       'UPDATE published_catalogue_overrides SET patch_json=?,source_entry_id=?,published_by=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND patch_json=?'
+      ).bind(val,submissionId,email,novelId,prior.patch_json).run():
+      await env.COMMUNITY_DB.prepare(
+       'INSERT INTO published_catalogue_overrides(novel_id,patch_json,source_entry_id,published_by) VALUES(?,?,?,?) ON CONFLICT DO NOTHING'
+      ).bind(novelId,val,submissionId,email).run();
+    if((write.meta?.changes||0)!==1)return respond({error:'Another editor changed this novel; refresh before importing'},409);
+   }else{
+    const val=JSON.stringify({...existing,...patch});
+    const write=await env.COMMUNITY_DB.prepare(
+     "UPDATE additional_catalogue_novels SET payload_json=? WHERE id=? AND payload_json=? AND visibility='published'"
+    ).bind(val,novelId,record.payload_json).run();
+    if((write.meta?.changes||0)!==1)return respond({error:'Another editor changed this novel; refresh before importing'},409);
+   }
+   for(const field of [...fields,...(oldUrl===link?[]:['nuUrl'])]){
+    await env.COMMUNITY_DB.prepare(
+      'INSERT INTO published_correction_history(id,source_entry_id,novel_id,field_name,published_value,actor_email) VALUES (?,?,?,?,?,?)'
+    ).bind(crypto.randomUUID(),submissionId,novelId,field,JSON.stringify(patch[field]),email).run();
+   }
+   let privateSynced=true;
+   if(isSeed){
+    try{
+     if(!env.DB)throw Error('Private catalogue database unavailable');
+     const priorPrivate=await env.DB.prepare('SELECT patch FROM novel_edits WHERE id=?').bind(novelId).first();
+     const before=priorPrivate?JSON.parse(priorPrivate.patch||'{}'):{};
+     await env.DB.prepare(
+      'INSERT INTO novel_edits(id,patch) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET patch=excluded.patch,updated_at=CURRENT_TIMESTAMP'
+     ).bind(novelId,JSON.stringify({...before,...patch})).run();
+    }catch{privateSynced=false}
+   }
+   await env.COMMUNITY_DB.prepare(
+    "UPDATE conservatory_site_feedback SET status='resolved',moderated_by=?,moderated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'"
+   ).bind(email,submissionId).run();
+   try{await audit(env,email,'nu.metadata.imported',novelId,fields.join(',')+' from '+link)}catch{}
+   return respond({ok:true,novelId,title:name,nuUrl:link,sourceTitle:staged.title,
+    appliedFields:fields,skipped,privateSynced,metadataSource:link,
+    notice:'Only retrieved Novel Updates fields were imported. No other novel information was changed.'});
+  }
+
   if(path==='/api/admin/nu/apply-submitted-link'&&method==='POST'){
    if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
    const body=await getJson(request),submissionId=String(body?.submissionId||'');
@@ -1949,7 +2069,7 @@ async function nuAdminRoutes(request,env,email,role){
    const row=await env.COMMUNITY_DB.prepare('SELECT title,author,payload_json,nu_url,custom_locked FROM nu_staged_series WHERE slug=? LIMIT 1').bind(match[1]).first();
    if(!row)return respond({error:'That Novel Updates series has not been captured yet. Use Capture Novel Updates on the series page, then stage it in the master catalogue.'},404);
    let metadata={};try{metadata=JSON.parse(row.payload_json||'{}')}catch{}
-   return respond({metadata:{title:row.title,author:row.author,synopsis:extraTxt(metadata.synopsis,6000),tags:extraTags(metadata.tags),genres:extraTags(metadata.genres),nuUrl:canonical},source:'Novel Updates (captured)',notice:'This is staged source metadata, not published catalogue content.'});
+   return respond({metadata:{title:row.title,author:row.author,originalTitle:extraTxt(metadata.originalTitle,210),synopsis:extraTxt(metadata.synopsis,6000),tags:extraTags(metadata.tags),genres:extraTags(metadata.genres),nuUrl:canonical},source:'Novel Updates (captured)',notice:'This is staged source metadata, not published catalogue content.'});
   }
   if(path==='/api/admin/nu/staging'&&method==='GET'){
    const q=String(url.searchParams.get('q')||'').trim().slice(0,100);

@@ -1017,7 +1017,7 @@ async function loadLiveEditorChanges(){
     for(const item of (content.edits||[])){
       const book=data.find(x=>x.id===Number(item.id));
       if(!book||!item.patch)continue;
-      for(const key of ['title','originalTitle','author','translator','synopsis','genres','tags','contentWarnings','cover','coverRights','metadataReview','metadataOrigin','translation','nuUrl','translatorUrl','translations']){
+      for(const key of ['title','originalTitle','author','translator','synopsis','genres','tags','contentWarnings','cover','coverRights','metadataReview','metadataSource','metadataOrigin','translation','nuUrl','translatorUrl','translations']){
         if(Object.prototype.hasOwnProperty.call(item.patch,key))book[key]=item.patch[key];
       }
     }

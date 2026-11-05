@@ -53,6 +53,8 @@ jobs:
         run: node tests/check_unified_submit_epub.js
       - name: Verify per-book Novel Updates corrections
         run: python tests/check_per_novel_nu_corrections.py
+      - name: Verify Novel Updates staged metadata imports into submitted books
+        run: python tests/check_submitted_nu_metadata_import.py
       - name: Check migration SQL offline
         run: |
           python - <<'PY'
