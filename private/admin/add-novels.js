@@ -60,11 +60,19 @@ function chooseTab(t){if(role!=='owner'&&role!=='editor')return;if(role==='edito
 for(const t of ['single','bulk','epubs','manage','review'])$('tab-'+t).addEventListener('click',()=>chooseTab(t));
 async function loadNovels(){try{const j=await call('/api/additional/books');novels=j.novels||[];const dl=$('additional-novel-list');dl.replaceChildren();for(const novel of novels){const op=document.createElement('option');op.value=`#${novel.id} · ${novel.title}`;dl.append(op);}}catch(e){show('epub-status',e.message,true)}}
 function selectedNovel(){const x=$('epub-novel').value.trim();const found=/^#(\d+)\b/.exec(x);if(found)return novels.find(b=>b.id===Number(found[1]))||null;return novels.find(b=>b.title.toLocaleLowerCase()===x.toLocaleLowerCase())||null;}
-$('create-form').addEventListener('submit',async(e)=>{e.preventDefault();const btn=$('create');btn.disabled=true;show('created','Creating novel…');try{const j=await post('/api/admin/additional/create',{...payload(),publish:$('publish').checked});lastCreated=j.id;
+$('create-form').addEventListener('submit',async(e)=>{e.preventDefault();const btn=$('create');btn.disabled=true;show('created','Creating novel…');try{const j=await post('/api/admin/additional/create',{...payload(),publish:$('publish').checked});lastCreated=j.id>=100000?j.id:null;
  const note=j.reused?(j.notUpdated?'Existing record reused without changing its metadata or publication status. ':('Matched an existing book and filled safe metadata gaps. '+(j.conflicts?.length?'Conflicting values were preserved for comparison. ':'')+'Undo is in Merge history. ')):'Created a new entry. ';
  const visibility=j.reused&&j.notUpdated?'Publication status was kept unchanged. ':'';
  show('created',note+'Novel #'+j.id+'. '+visibility+'You can open the existing entry or attach EPUB editions privately.');
- checkDuplicateBeforeSubmit().catch(()=>{});$('cover-after').hidden=false;await loadNovels();const b=novels.find(n=>n.id===j.id);$('epub-novel').value=b?`#${j.id} · ${b.title}`:`#${j.id}`;}catch(e){show('created',e.message+'. If two different records may match, use Merge duplicates to compare them first.',true);checkDuplicateBeforeSubmit().catch(()=>{})}finally{btn.disabled=false}});
+ checkDuplicateBeforeSubmit().catch(()=>{});
+ $('cover-after').hidden=j.id<100000;
+ await loadNovels();
+ if(j.id>=100000){
+  const found=novels.find(n=>n.id===j.id);
+  $('epub-novel').value=found?`#${j.id} · ${found.title}`:`#${j.id}`;
+ }else{
+  show('created',$('created').textContent+' This is one of the original 962 novels: use Catalogue editor for metadata and the main EPUB tools for its editions.');
+ }}catch(e){show('created',e.message+'. If two different records may match, use Merge duplicates to compare them first.',true);checkDuplicateBeforeSubmit().catch(()=>{})}finally{btn.disabled=false}});
 $('save-cover').addEventListener('click',async()=>{if(!lastCreated)return;const file=$('owner-cover').files[0];if(!file)return show('cover-status','Choose a cover image.',true);const fd=new FormData();fd.set('novel_id',lastCreated);fd.set('image',file);fd.set('source',$('owner-credit').value||'Owner-supplied edition cover');fd.set('replace','1');const btn=$('save-cover');btn.disabled=true;try{await call('/api/admin/additional/auto-cover',{method:'POST',body:fd});show('cover-status','Cover saved. It will display publicly only if the novel is published.')}catch(e){show('cover-status',e.message,true)}finally{btn.disabled=false}});
 // Conservative RFC 4180-compatible parser: quotes, escaped quotes, and embedded newlines.
 function parseCSV(t){const rows=[];let row=[],cell='',quote=false;const txt=String(t).replace(/^\uFEFF/,'');for(let i=0;i<txt.length;i++){const ch=txt[i];if(ch==='"'){if(quote&&txt[i+1]==='"'){cell+='"';i++;}else quote=!quote;}else if(ch===','&&!quote){row.push(cell);cell='';}else if((ch==='\n'||ch==='\r')&&!quote){row.push(cell);cell='';if(row.some(x=>x.trim()))rows.push(row);row=[];if(ch==='\r'&&txt[i+1]==='\n')i++;}else cell+=ch;}if(quote)throw Error('Unclosed CSV quote.');row.push(cell);if(row.some(x=>x.trim()))rows.push(row);const header=rows.shift()?.map(x=>x.trim());if(!header||!header.includes('title'))throw Error('CSV needs a “title” column.');return rows.map(r=>Object.fromEntries(header.map((h,i)=>[h,r[i]||''])))}
