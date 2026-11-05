@@ -11,7 +11,7 @@ mergejs=(root/'private/admin/resolve-duplicates.js').read_text(encoding='utf8')
 schema=(root/'database/CATALOGUE_MERGE_UNDO_MIGRATION.sql').read_text(encoding='utf8')
 
 assert "instr(lower(title),lower(?))>0" in private
-assert "args.push(q,q,q)" in private
+assert "args.push(needle,needle,needle)" in private
 assert "title LIKE ?" not in private[private.index("if(path==='/api/admin/nu/staging'"):private.index("if(path==='/api/admin/nu/stage-browser'")]
 
 for token in (
