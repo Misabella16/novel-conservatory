@@ -112,12 +112,12 @@ async function inspect(file){
     trim(x.getAttribute('name')||x.getAttribute('property')||'')))
     .map(x=>trim(x.getAttribute('content')||x.textContent))
   ];
-  const tags=[...new Set(tagFields.flatMap(x=>x.split(/\s*[,;|\n]\s*/))
+  let tags=[...new Set(tagFields.flatMap(x=>x.split(/\s*[,;|\n]\s*/))
    .map(x=>trim(x).slice(0,70)).filter(Boolean))].slice(0,100);
   // Genre is taken only from explicit embedded subject/type labels. Never
   // infer genre or tropes from chapter prose or the book's title.
   const candidateGenres=[...tags,...els(metadata,'type').map(x=>trim(x.textContent))];
-  const genres=[...new Set(candidateGenres.map(x=>x.replace(/\s+/g,' ').trim()).filter(
+  let genres=[...new Set(candidateGenres.map(x=>x.replace(/\s+/g,' ').trim()).filter(
    x=>genreNames.has(x.toLowerCase())))].slice(0,20);
   const possibleSources=[
    ...els(metadata,'identifier').map(x=>trim(x.textContent)),
@@ -126,9 +126,13 @@ async function inspect(file){
    ...els(metadata,'meta').flatMap(x=>[
     trim(x.getAttribute('content')),trim(x.textContent)])
   ];
-  const nuUrl=possibleSources.map(novelUpdatesUrl).find(Boolean)||'';
+  let nuUrl=possibleSources.map(novelUpdatesUrl).find(Boolean)||'';
+  const front=await structuredFrontMatter(zip,metadata,path);
+  tags=[...new Set([...tags,...front.tags])].slice(0,100);
+  genres=[...new Set([...genres,...front.genres])].slice(0,50);
+  nuUrl=nuUrl||front.nuUrl;
   return {title:value('title',210),author:value('creator',140),
-   synopsis:value('description',6000),tags,genres,nuUrl,language:value('language',40),
+   synopsis:value('description',6000)||front.synopsis,tags,genres,nuUrl,language:value('language',40),
    metadataFound:true};
  }catch{return fallback}
 }
