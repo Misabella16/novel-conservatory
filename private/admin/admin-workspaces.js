@@ -29,7 +29,7 @@ function setWorkspace(name,{updateHash=true,scroll=true}={}){
  }
  ownerOnly();
  if(updateHash)history.replaceState(null,'',location.pathname+location.search+'#'+name);
- if(scroll)window.scrollTo({top:0,behavior:'instant'});
+ if(scroll)window.scrollTo({top:0,behavior:'auto'});
 }
 for(const button of document.querySelectorAll('[data-workspace-target]')){
  button.addEventListener('click',()=>setWorkspace(button.dataset.workspaceTarget));
@@ -46,7 +46,7 @@ for(const button of document.querySelectorAll('[data-existing-pane]')){
   for(const e of document.querySelectorAll('[data-existing-pane]')){
    e.setAttribute('aria-selected',String(e.dataset.existingPane===pane));
   }
-  $('home-page')?.scrollIntoView({behavior:'smooth',block:'start'});
+  $(pane+'-page')?.scrollIntoView({behavior:'smooth',block:'start'});
  });
 }
 window.addEventListener('hashchange',()=>{
