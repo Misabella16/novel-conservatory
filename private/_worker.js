@@ -2162,10 +2162,19 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  const modified=computed.after;
  if(sourceRow&&sourceRow.visibility==='published'&&target.kind==='extra'&&target.row.visibility!=='published')
   throw Error('The duplicate is published but the selected destination is still private. Publish the destination first, or keep a published record, before hiding the duplicate.');
- if(sourceId&&sourceRow?.cover_key&&!target.data.cover&&!target.row?.cover_key&&target.kind==='extra'){
-  // Only carry cover references that already declare display permission.
-  const original=nuAdditionalData(sourceRow);
-  if(original.coverRights===true)modified.coverCredit=original.coverCredit||'Source record cover';
+ // Keep source cover assets intact. An editor-driven merge may reuse a
+ // licensed/authorized cover, but never deletes either original R2 object.
+ const sourceCoverData=sourceRow?nuAdditionalData(sourceRow):null;
+ const canShareCover=!!sourceRow?.cover_key&&sourceCoverData?.coverRights===true;
+ const canAdoptExtra=canShareCover&&target.kind==='extra'&&
+  !target.row.cover_key&&sourceRow.visibility===target.row.visibility;
+ const canAdoptSeed=canShareCover&&target.kind==='seed'&&
+  sourceRow.visibility==='published'&&!target.data.cover;
+ const adoptedCoverKey=canAdoptExtra?sourceRow.cover_key:'';
+ if(canAdoptExtra||canAdoptSeed){
+  modified.coverRights=true;
+  modified.coverCredit=sourceCoverData.coverCredit||'Source record cover';
+  if(canAdoptSeed)modified.cover='/api/additional/cover?id='+sourceId;
  }
  let resultRaw,previousPrivate=null,nextPrivate=null;
  if(target.kind==='seed'){
@@ -2195,7 +2204,9 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  const stageLinks=sourceId?(await env.COMMUNITY_DB.prepare('SELECT slug,published_id FROM nu_staged_series WHERE published_id=?').bind(sourceId).all()).results||[]:[];
  const snapshot={targetKind:target.kind,beforeTarget:target.beforeRaw,afterTarget:resultRaw,
   sourceId:sourceId||null,beforeSourceMarker:oldSourceMarker,afterSourceMarker,stageLinks,
-  beforePrivate:previousPrivate,afterPrivate:nextPrivate};
+  beforePrivate:previousPrivate,afterPrivate:nextPrivate,
+  beforeCoverKey:target.kind==='extra'?(target.row.cover_key||''):null,
+  afterCoverKey:target.kind==='extra'?(adoptedCoverKey||target.row.cover_key||''):null};
  if(resultRaw===target.beforeRaw&&!sourceRow)return {ok:true,alreadyUpToDate:true,id:target.id,conflicts:computed.conflicts,changed:[]};
  // Optimistic write rejects subsequent updates since preview was loaded.
  if(opts.expectedBefore!==undefined&&opts.expectedBefore!==target.beforeRaw)
@@ -2217,8 +2228,15 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
   ).bind(resultRaw,modified.title,nuStoredTitleKey(modified.title),target.id,target.beforeRaw).run();
  }
  if((write.meta?.changes||0)!==1)throw Error('The novel changed while saving. Refresh and retry.');
- let archiveDone=false;
+ let archiveDone=false,coverAdopted=false;
  try{
+  if(adoptedCoverKey){
+   const copied=await env.COMMUNITY_DB.prepare(
+    "UPDATE additional_catalogue_novels SET cover_key=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND COALESCE(cover_key,'')='' AND payload_json=?"
+   ).bind(adoptedCoverKey,target.id,resultRaw).run();
+   if((copied.meta?.changes||0)!==1)throw Error('The target cover changed while merging. Refresh to retry.');
+   coverAdopted=true;
+  }
   if(sourceRow){
    const arch=await env.COMMUNITY_DB.prepare(
     "UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND source_submission_id=?"
@@ -2233,6 +2251,9 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
   ).bind(eventId,sourceId?'merge':'metadata_sync',target.id,sourceId||null,JSON.stringify(snapshot),JSON.stringify({target:resultRaw,sourceMarker:afterSourceMarker}),nuCanon(source.nuUrl),email).run();
  }catch(err){
   // No edit should be left invisible if the audit journal cannot be written.
+  if(coverAdopted)await env.COMMUNITY_DB.prepare(
+   'UPDATE additional_catalogue_novels SET cover_key=? WHERE id=? AND cover_key=?'
+  ).bind(snapshot.beforeCoverKey,target.id,adoptedCoverKey).run().catch(()=>{});
   if(archiveDone){
    await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET source_submission_id=? WHERE id=? AND source_submission_id=?')
     .bind(oldSourceMarker,sourceId,afterSourceMarker).run().catch(()=>{});
@@ -2337,9 +2358,10 @@ async function nuUndoEdit(env,email,eventId){
   const current=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(targetId).first();
   if(current?.patch_json!==snap.afterTarget)throw Error('The book was edited again. Resolve those newer changes before undoing this one.');
  }else{
-  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,visibility FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
+  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,visibility,cover_key FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
   if(row?.payload_json!==snap.afterTarget||
-    snap.afterVisibility!==undefined&&row.visibility!==snap.afterVisibility)
+    snap.afterVisibility!==undefined&&row.visibility!==snap.afterVisibility||
+    snap.afterCoverKey!==undefined&&snap.afterCoverKey!==null&&(row.cover_key||'')!==snap.afterCoverKey)
    throw Error('The book was edited or published again. Undo the newer edit first.');
  }
  if(snap.sourceId){
@@ -2352,12 +2374,23 @@ async function nuUndoEdit(env,email,eventId){
  }else{
   const before=JSON.parse(snap.beforeTarget||'{}');
   let restored;
+  const coverChanged=snap.afterCoverKey!==undefined&&snap.afterCoverKey!==null&&snap.beforeCoverKey!==snap.afterCoverKey;
   if(snap.beforeVisibility!==undefined){
-   restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,visibility=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND visibility=?')
-    .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),snap.beforeVisibility,targetId,snap.afterTarget,snap.afterVisibility).run();
+   if(coverChanged){
+    restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,visibility=?,cover_key=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND visibility=? AND cover_key=?')
+     .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),snap.beforeVisibility,snap.beforeCoverKey,targetId,snap.afterTarget,snap.afterVisibility,snap.afterCoverKey).run();
+   }else{
+    restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,visibility=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND visibility=?')
+     .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),snap.beforeVisibility,targetId,snap.afterTarget,snap.afterVisibility).run();
+   }
   }else{
-   restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=?')
-    .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),targetId,snap.afterTarget).run();
+   if(coverChanged){
+    restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,cover_key=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND cover_key=?')
+     .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),snap.beforeCoverKey,targetId,snap.afterTarget,snap.afterCoverKey).run();
+   }else{
+    restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=?')
+     .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),targetId,snap.afterTarget).run();
+   }
   }
   if((restored.meta?.changes||0)!==1)throw Error('A newer edit changed the record while Undo was running.');
  }
