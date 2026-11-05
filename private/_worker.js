@@ -1872,8 +1872,11 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
    if(!owner||!extraOrigin(request))return extraJson({error:'Owner permission required'},403);
    const body=await request.json();if(!Array.isArray(body.novels)||body.novels.length===0||body.novels.length>100)return extraJson({error:'Import 1–100 novels per batch'},400);
    const results=[];
-   for(const raw of body.novels){try{const p=extraPayload(raw),id=await extraInsert(env,p,'',body.publish===true?'published':'private',email);results.push({title:p.title,id,ok:true});}
-    catch(e){results.push({title:extraTxt(raw?.title,100),error:String(e.message||e),ok:false});}}
+   for(const raw of body.novels){try{
+    const p=extraPayload(raw);
+    const result=await extraCreateOrReuse(env,new URL(request.url),email,p,body.publish===true?'published':'private');
+    results.push({title:p.title,...result});
+   }catch(e){results.push({title:extraTxt(raw?.title,100),error:String(e.message||e),ok:false});}}
    return extraJson({ok:true,results});
   }
   if(path==='/api/admin/additional/edit'&&method==='POST'){
