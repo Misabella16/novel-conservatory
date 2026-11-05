@@ -63,7 +63,7 @@ async function load(){
  const body=$('results');body.replaceChildren();
  for(const item of items){
   const row=document.createElement('tr'),check=document.createElement('td'),title=document.createElement('td'),author=document.createElement('td'),state=document.createElement('td'),actions=document.createElement('td');
-  if(item.state==='draft'){const cb=document.createElement('input');cb.type='checkbox';cb.className='selected';cb.dataset.slug=item.slug;cb.addEventListener('change',selectable);check.append(cb)}
+  if(item.state==='draft'||item.state==='published'){const cb=document.createElement('input');cb.type='checkbox';cb.className='selected';cb.dataset.slug=item.slug;cb.addEventListener('change',selectable);check.append(cb)}
   const b=document.createElement('b');b.textContent=item.title;title.append(b,document.createElement('br'));const a=document.createElement('a');a.href=item.nuUrl;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Novel Updates listing';title.append(a);
   author.textContent=item.author;state.textContent=item.state+(item.customLocked?' 🔒':'');
   if(item.state==='draft'){const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.addEventListener('click',()=>openEdit(item.slug));actions.append(btn)}
