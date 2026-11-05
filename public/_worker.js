@@ -11,6 +11,20 @@ async function activeBanner(env){
 }
 export default {async fetch(request,env){
  const url=new URL(request.url),path=url.pathname;
+ if(path==='/api/novel/resolve'&&request.method==='GET'){
+  if(!env.COMMUNITY_DB)return respond({error:'Catalogue unavailable'},503);
+  const id=await canonicalPublicResolve(env,url.searchParams.get('id'));
+  if(!id)return respond({error:'Unknown novel'},404);
+  if(id>962){
+   const row=await env.COMMUNITY_DB.prepare('SELECT visibility,source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(id).first();
+   if(!row||/^(?:merged-into:|reverted-create:)/.test(row.source_submission_id||''))return respond({error:'Unknown novel'},404);
+   if(row.visibility!=='published'){
+    const projection=await env.COMMUNITY_DB.prepare('SELECT novel_id FROM public_novel_projections WHERE novel_id=?').bind(id).first();
+    if(!projection)return respond({error:'Unknown novel'},404);
+   }
+  }
+  return respond({id,canonicalId:id});
+ }
  if(path.startsWith('/api/additional/'))return additionalRoutes(request,env,'public');
  if(path==='/api/site/config')return siteConfigRoute(request,env,'public');
  if(path==='/api/site/feedback')return siteFeedbackRoute(request,env,'public','');
@@ -484,6 +498,85 @@ const guestNu=x=>{
   return u.protocol==='https:'&&['www.novelupdates.com','novelupdates.com'].includes(u.hostname)&&!u.username&&!u.password&&!u.port&&!u.search&&!u.hash&&m?
    'https://www.novelupdates.com/series/'+m[1]+'/':'';}catch{return ''}
 };
+// Shared identity lives in COMMUNITY_DB. Public reads never access private DB/R2.
+const canonicalKeys=book=>{
+ const nu=guestNu(book?.nuUrl)||guestNu(book?.sourceUrl);
+ const title=guestKey(book?.title),author=guestKey(book?.author);
+ return nu?['nu:'+nu]:title&&author?['ta:'+title+'|'+author]:[];
+};
+async function canonicalEnsure(env){
+ await env.COMMUNITY_DB.prepare('CREATE TABLE IF NOT EXISTS canonical_novel_keys (identity_key TEXT PRIMARY KEY,novel_id INTEGER NOT NULL CHECK(novel_id >= 1),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run();
+ await env.COMMUNITY_DB.prepare('CREATE INDEX IF NOT EXISTS idx_canonical_novel_id ON canonical_novel_keys(novel_id)').run();
+ await env.COMMUNITY_DB.prepare('CREATE TABLE IF NOT EXISTS canonical_novel_aliases (source_id INTEGER PRIMARY KEY CHECK(source_id >= 100000),target_id INTEGER NOT NULL CHECK(target_id >= 1),event_id TEXT NOT NULL UNIQUE,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run();
+ await env.COMMUNITY_DB.prepare('CREATE TABLE IF NOT EXISTS public_novel_projections (novel_id INTEGER PRIMARY KEY CHECK(novel_id >= 100000),payload_json TEXT NOT NULL,cover_key TEXT NOT NULL DEFAULT \'\',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run();
+}
+async function canonicalPublicResolve(env,raw){
+ let id=Number(raw);
+ if(!Number.isSafeInteger(id)||id<1||id>9999999999)return null;
+ await canonicalEnsure(env);
+ for(let n=0;n<8;n++){
+  const alias=await env.COMMUNITY_DB.prepare('SELECT target_id FROM canonical_novel_aliases WHERE source_id=?').bind(id).first();
+  if(!alias)return id;
+  if(!Number.isSafeInteger(Number(alias.target_id))||Number(alias.target_id)===id)return null;
+  id=Number(alias.target_id);
+ }
+ return null;
+}
+async function canonicalOwner(env,book){
+ const keys=canonicalKeys(book);
+ if(!keys.length)return null;
+ await canonicalEnsure(env);
+ const q=keys.map(()=>'?').join(',');
+ const rows=await env.COMMUNITY_DB.prepare('SELECT identity_key,novel_id FROM canonical_novel_keys WHERE identity_key IN ('+q+')').bind(...keys).all();
+ const ids=[...new Set((rows.results||[]).map(row=>Number(row.novel_id)))];
+ return ids.length===1?canonicalPublicResolve(env,ids[0]):ids.length>1?-1:null;
+}
+async function canonicalClaim(env,book,id){
+ const keys=canonicalKeys(book);
+ if(!keys.length)return {ok:true,claimed:[]};
+ await canonicalEnsure(env);
+ const claimed=[];
+ for(const key of keys){
+  const result=await env.COMMUNITY_DB.prepare('INSERT INTO canonical_novel_keys(identity_key,novel_id) VALUES(?,?) ON CONFLICT DO NOTHING').bind(key,id).run();
+  if(result.meta?.changes===1)claimed.push(key);
+  const owner=await env.COMMUNITY_DB.prepare('SELECT novel_id FROM canonical_novel_keys WHERE identity_key=?').bind(key).first();
+  if(Number(owner?.novel_id)!==Number(id)){
+   for(const created of claimed)await env.COMMUNITY_DB.prepare('DELETE FROM canonical_novel_keys WHERE identity_key=? AND novel_id=?').bind(created,id).run().catch(()=>{});
+   return {ok:false,owner:Number(owner?.novel_id)||null};
+  }
+ }
+ return {ok:true,claimed};
+}
+async function canonicalPublicProjection(env,found,p,coverKey){
+ const id=found.id;
+ const old=await env.COMMUNITY_DB.prepare('SELECT payload_json,cover_key FROM public_novel_projections WHERE novel_id=?').bind(id).first();
+ const before=old?.payload_json??null;
+ let existing={};if(before)existing=JSON.parse(before);
+ const {result,changed}=guestMerge(existing,p);
+ const nextCover=old?.cover_key||coverKey||'';
+ if(!changed.length&&nextCover===(old?.cover_key||''))return {ok:true,novelId:id,reused:true,unchanged:true,usedCover:false};
+ const after=JSON.stringify(result),eventId=crypto.randomUUID();
+ let write;
+ if(!old){
+  write=await env.COMMUNITY_DB.prepare('INSERT INTO public_novel_projections(novel_id,payload_json,cover_key) VALUES(?,?,?) ON CONFLICT DO NOTHING').bind(id,after,nextCover).run();
+ }else{
+  write=await env.COMMUNITY_DB.prepare('UPDATE public_novel_projections SET payload_json=?,cover_key=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND payload_json=? AND cover_key=?')
+   .bind(after,nextCover,id,before,old.cover_key).run();
+ }
+ if((write.meta?.changes||0)!==1)throw Error('Another submission updated this novel. Retry to combine changes.');
+ const snap={targetKind:'public_projection',beforeTarget:before,afterTarget:after,
+  beforeCoverKey:old?.cover_key||'',afterCoverKey:nextCover};
+ try{
+  await env.COMMUNITY_DB.prepare('INSERT INTO catalogue_edit_events(id,operation,target_id,duplicate_id,before_json,after_json,source_url,actor_email) VALUES(?,?,?,?,?,?,?,?)')
+   .bind(eventId,'metadata_sync',id,null,JSON.stringify(snap),JSON.stringify({target:after}),guestNu(p.nuUrl),'public-contributor').run();
+ }catch(error){
+  if(!old)await env.COMMUNITY_DB.prepare('DELETE FROM public_novel_projections WHERE novel_id=? AND payload_json=? AND cover_key=?').bind(id,after,nextCover).run().catch(()=>{});
+  else await env.COMMUNITY_DB.prepare('UPDATE public_novel_projections SET payload_json=?,cover_key=? WHERE novel_id=? AND payload_json=? AND cover_key=?').bind(before,old.cover_key,id,after,nextCover).run().catch(()=>{});
+  throw error;
+ }
+ return {ok:true,novelId:id,reused:true,eventId,publicProjection:true,usedCover:!!coverKey&&nextCover===coverKey,changedFields:changed};
+}
+
 const guestMerge=(current,incoming)=>{
  const result={...current},changed=[];
  for(const field of ['title','author','originalTitle','synopsis','genres','tags','contentWarnings','nuUrl',
@@ -524,7 +617,7 @@ async function guestJournal(env){
 async function guestCandidates(env,request,p){
  const [seed,raw,overrides]=await Promise.all([
   guestSeed(env,request),
-  env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE visibility='published' AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at ASC LIMIT 5000").all(),
+  env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at ASC LIMIT 5000").all(),
   env.COMMUNITY_DB.prepare('SELECT novel_id,patch_json FROM published_catalogue_overrides LIMIT 1500').all()
  ]);
  const patches=new Map((overrides.results||[]).map(x=>{let data={};try{data=JSON.parse(x.patch_json)}catch{}return [Number(x.novel_id),data]}));
@@ -542,25 +635,40 @@ async function guestCandidates(env,request,p){
   if(!conflictingSources&&(sameSource||sameTitle&&sameAuthor))
    matches.push({item,rank:sameSource?3:2});
  }
- matches.sort((a,b)=>b.rank-a.rank||(a.item.kind==='seed'?-1:1)-(b.item.kind==='seed'?-1:1)||Number(a.item.id)-Number(b.item.id));
+ matches.sort((a,b)=>b.rank-a.rank||
+  (a.item.kind==='seed'?0:a.item.row?.visibility==='published'?1:2)-
+  (b.item.kind==='seed'?0:b.item.row?.visibility==='published'?1:2)||
+  Number(a.item.id)-Number(b.item.id));
  return matches.length?matches[0].item:null;
 }
 async function guestApply(env,request,p,coverKey,visitor){
  await guestJournal(env);
  const found=await guestCandidates(env,request,p);
+ if(found?.kind==='extra'&&found.row.visibility==='private'){
+  // Same novel ID on both sites; publish only public-supplied metadata, never
+  // the private master row, private cover, or any EPUB data.
+  return canonicalPublicProjection(env,found,p,coverKey);
+ }
  const who='public-contributor';
  const eventId=crypto.randomUUID();
  if(!found){
   // Same title can be a genuinely different novel. Identity checking above
   // avoids hiding independent works just because the titles are identical.
-  let id=null;
+  let id=null,claimed=[];
+  const registered=await canonicalOwner(env,p);
+  if(registered)throw Error('This novel identity was already registered as #'+registered+'. Retry the submission so it can update the existing entry.');
   for(let attempt=0;attempt<5;attempt++){
    const candidate=100000+crypto.getRandomValues(new Uint32Array(1))[0];
+   const reservation=await canonicalClaim(env,p,candidate);
+   if(!reservation.ok)throw Error('This novel identity already exists as #'+reservation.owner+'. Retry to update that entry instead.');
    try{
     await env.COMMUNITY_DB.prepare('INSERT INTO additional_catalogue_novels(id,normalized_title,title,payload_json,cover_key,visibility,source_submission_id,created_by) VALUES (?,?,?,?,?,?,?,?)')
      .bind(candidate,p.title.toLowerCase().replace(/\s+/g,' ').trim(),p.title,JSON.stringify(p),coverKey,'published','',who).run();
-    id=candidate;break;
-   }catch(error){if(!/unique|constraint.*id/i.test(String(error?.message||'')))throw error}
+    id=candidate;claimed=reservation.claimed;break;
+   }catch(error){
+    for(const key of reservation.claimed)await env.COMMUNITY_DB.prepare('DELETE FROM canonical_novel_keys WHERE identity_key=? AND novel_id=?').bind(key,candidate).run().catch(()=>{});
+    if(!/unique|constraint.*id/i.test(String(error?.message||'')))throw error;
+   }
   }
   if(!id)throw Error('Unable to create a unique novel ID. Please retry.');
   const snap={targetKind:'created',beforeTarget:null,afterTarget:JSON.stringify(p),sourceId:null,
@@ -571,6 +679,7 @@ async function guestApply(env,request,p,coverKey,visitor){
     .bind(eventId,'create',id,null,JSON.stringify(snap),JSON.stringify({target:JSON.stringify(p)}),guestNu(p.nuUrl),who).run();
   }catch(error){
    await env.COMMUNITY_DB.prepare("DELETE FROM additional_catalogue_novels WHERE id=? AND payload_json=? AND source_submission_id=''").bind(id,JSON.stringify(p)).run().catch(()=>{});
+   for(const key of claimed)await env.COMMUNITY_DB.prepare('DELETE FROM canonical_novel_keys WHERE identity_key=? AND novel_id=?').bind(key,id).run().catch(()=>{});
    throw error;
   }
   return {ok:true,novelId:id,created:true,eventId,usedCover:!!coverKey,changedFields:['new novel']};
@@ -651,13 +760,41 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
   if(path==='/api/additional/books'&&method==='GET'){
    const sql=scope==='public'?"SELECT * FROM additional_catalogue_novels WHERE visibility='published' AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000":"SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000";
    const rows=await env.COMMUNITY_DB.prepare(sql).all();
-   return extraJson({novels:(rows.results||[]).map(row=>extraDecorate(row,scope)),configured:true});
+   const visible=(rows.results||[]).map(row=>extraDecorate(row,scope));
+   if(scope==='public'){
+    await canonicalEnsure(env);
+    const projections=await env.COMMUNITY_DB.prepare(
+     "SELECT p.novel_id AS id,p.payload_json,p.cover_key FROM public_novel_projections p JOIN additional_catalogue_novels a ON a.id=p.novel_id WHERE a.visibility='private' AND a.source_submission_id NOT LIKE 'merged-into:%' AND a.source_submission_id NOT LIKE 'reverted-create:%' ORDER BY p.updated_at DESC LIMIT 5000"
+    ).all();
+    const ids=new Set(visible.map(x=>Number(x.id)));
+    for(const row of projections.results||[]){
+     if(ids.has(Number(row.id)))continue;
+     let data;try{data=JSON.parse(row.payload_json)}catch{continue}
+     visible.push(extraDecorate({...row,title:data.title},'public'));
+     ids.add(Number(row.id));
+    }
+   }
+   return extraJson({novels:visible,configured:true});
   }
   if(path==='/api/additional/cover'&&method==='GET'){
    const id=extraId(new URL(request.url).searchParams.get('id'));if(!id||!env.COMMUNITY_IMAGES)return new Response('Not found',{status:404});
-   const row=await env.COMMUNITY_DB.prepare('SELECT cover_key,visibility,source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(id).first();
-   if(!row||!row.cover_key||String(row.source_submission_id||'').startsWith('reverted-create:')||(scope==='public'&&row.visibility!=='published'))return new Response('Not found',{status:404});
-   const obj=await env.COMMUNITY_IMAGES.get(row.cover_key);if(!obj)return new Response('Not found',{status:404});
+   const row=await env.COMMUNITY_DB.prepare('SELECT cover_key,visibility,source_submission_id,payload_json FROM additional_catalogue_novels WHERE id=?').bind(id).first();
+   if(!row||String(row.source_submission_id||'').startsWith('reverted-create:'))return new Response('Not found',{status:404});
+   const merged=String(row.source_submission_id||'').startsWith('merged-into:');
+   // A formerly public, rights-confirmed cover may remain referenced by its
+   // canonical book after merging. Private archived artwork is never public.
+   if(scope==='public'&&merged){
+    let rights=false;try{rights=JSON.parse(row.payload_json||'{}').coverRights===true}catch{}
+    if(row.visibility!=='published'||!rights)return new Response('Not found',{status:404});
+   }
+   let coverKey=row.cover_key;
+   if(scope==='public'&&row.visibility!=='published'){
+    await canonicalEnsure(env);
+    const projected=await env.COMMUNITY_DB.prepare('SELECT cover_key FROM public_novel_projections WHERE novel_id=?').bind(id).first();
+    coverKey=projected?.cover_key||'';
+   }
+   if(!coverKey)return new Response('Not found',{status:404});
+   const obj=await env.COMMUNITY_IMAGES.get(coverKey);if(!obj)return new Response('Not found',{status:404});
    return new Response(obj.body,{headers:{'content-type':obj.httpMetadata?.contentType||'application/octet-stream','cache-control':scope==='public'?'public,max-age=300':'private,no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox"}});
   }
   if(path==='/api/additional/config'&&method==='GET')return extraJson({siteKey:scope==='public'?(env.TURNSTILE_SITE_KEY||''):'',enabled:scope==='private'||!!(env.TURNSTILE_SECRET&&env.TURNSTILE_SITE_KEY)});

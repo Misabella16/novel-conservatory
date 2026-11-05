@@ -22,7 +22,20 @@ function updateChapter(loc){const href=loc?.start?.href;if(!href)return;const i=
 const cfi=loc?.start?.cfi;if(cfi){lastCfi=cfi;try{localStorage.setItem(positionKey(),cfi)}catch{}}}
 function addNav(list,depth=0){for(const item of list||[]){toc.push({label:'  '.repeat(depth)+(item.label||'Chapter'),href:item.href||''});if(item.subitems?.length)addNav(item.subitems,depth+1)}}
 async function gotoChapter(i){if(!rendition||!toc[i])return;message('Opening '+toc[i].label.trim()+'…');await rendition.display(toc[i].href);message('Reading');}
-async function init(){if(!validId)return error('Invalid story link. Return to the catalogue and open the story again.');if(typeof ePub!=='function')return error('The reader library could not load. Check your internet connection or try again.');loadPrefs();setTheme();
+async function init(){
+ if(!validId)return error('Invalid story link. Return to the catalogue and open the story again.');
+ try{
+  const r=await fetch('/api/novel/resolve?id='+encodeURIComponent(id),{cache:'no-store'});
+  if(r.ok){
+   const canonical=await r.json();
+   if(canonical.id&&String(canonical.id)!==String(id)){
+    params.set('id',String(canonical.id));
+    location.replace('/read/?'+params.toString());
+    return;
+   }
+  }
+ }catch{}
+ if(typeof ePub!=='function')return error('The reader library could not load. Check your internet connection or try again.');loadPrefs();setTheme();
 try{
  const [infoResponse,catalogueResponse,profileResponse,editionsResponse]=await Promise.all([(Number(id)>962?Promise.resolve(new Response(JSON.stringify({name:'Additional novel'}),{status:200,headers:{'content-type':'application/json'}})):fetch('/api/private/epub/status?id='+id,{cache:'no-store'})),fetch('/api/content',{cache:'no-store'}),fetch('/api/me',{cache:'no-store'}),fetch('/api/private/edition/list?id='+id,{cache:'no-store'})]);
  if(!infoResponse.ok)throw Error('This account is not approved to read EPUBs, or library sharing is disabled.');

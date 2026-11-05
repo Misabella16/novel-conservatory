@@ -10,7 +10,8 @@ assert 'SELECT novel_id AS id FROM additional_epub_editions GROUP BY novel_id' i
 assert 'SELECT novel_id AS id FROM epub_editions GROUP BY novel_id' in part
 assert 'const sameIdentity' not in part or 'titleKey' in part
 assert "if(x.nuKey&&item.nuKey&&x.nuKey!==item.nuKey)continue" in part
-assert "source.hasEpub" in part and "source.coverKey" in part
+assert "await nuAssetPlan(env,source.id,target.id" in part
+assert "source.coverKey" in part
 assert "source.visibility!==target.visibility" in part
 assert "if(set.size>1)" in part
 assert "nuCanon(item.nuUrl)" in part and "nuIdentity(item.author)" in part
@@ -20,9 +21,9 @@ for path in ("/api/admin/nu/duplicates/scan","/api/admin/nu/duplicates/merge-saf
  assert path in worker
 assert "if(!sameOrigin(request))" in worker[worker.index("if(path==='/api/admin/nu/duplicates/merge-safe'"):][:150]
 assert "slice(0,12)" in worker
-assert "await nuSaveEdit(env,url,email,target.id,source.data,{sourceId:source.id,expectedBefore:target.beforeRaw})" in worker
+assert "await nuSaveEdit(env,url,email,target.id,source.data,{sourceId:source.id,expectedBefore:target.beforeRaw,transferAssets:true})" in worker
 assert "await nuFindCandidates(env,url,source.data,source.id)" in worker
-assert "if(await nuHasPrivateEpub(env,source.id)||source.row?.cover_key||" in worker
+assert "await nuAssetPlan(env,source.id,target.id,source.row)" in worker
 assert "if(check.length!==1||check[0].id!==target.id)" in worker
 assert "result.needsChoice" not in worker[worker.index("if(path==='/api/admin/nu/duplicates/merge-safe'"):worker.index("if(path==='/api/admin/nu/search-books'")]
 assert 'id="safe-merge"' in screen and 'id="safe-scan"' in screen
@@ -63,7 +64,11 @@ const env={
 const ctx={
  nuBaseCatalogue:async()=>base,nuAdditionalRows:async()=>added,
  nuAdditionalData:x=>({...x}),extraTags:x=>Array.isArray(x)?x:[],
- nuCanon:canon,nuIdentity:normalize
+ nuCanon:canon,nuIdentity:normalize,
+ nuAssetPlan:async (_env,sourceId,targetId,row)=>({
+  sourceId,targetId,editions:sourceId===100161?[{id:'file-id'}]:[],
+  coverKey:row?.cover_key||''
+ })
 };
 vm.createContext(ctx);
 vm.runInContext(code+';this.scan=nuSafeDuplicateScan;',ctx);
@@ -76,8 +81,9 @@ ctx.scan(env,{origin:'https://novel-conservatory.pages.dev'}).then(d=>{
  assert(pairs.includes('100161:100160'),JSON.stringify(pairs));
  assert(!pairs.includes('100141:100140'));
  assert(d.skipped.some(x=>x.reason.startsWith('Private/public visibility differs')));
- assert(d.skipped.some(x=>x.reason.includes('cover image')));
- assert(pairs.length===4,JSON.stringify(pairs));
+ assert(d.proposals.some(x=>x.assets?.coverPreserved));
+ assert(d.proposals.some(x=>x.assets?.editionCount===1));
+ assert(pairs.length===5,JSON.stringify(pairs));
  console.log('Safe duplicate discovery, metadata preference, EPUB and cover safeguards: OK');
 }).catch(e=>{console.error(e);process.exitCode=1});
 """
