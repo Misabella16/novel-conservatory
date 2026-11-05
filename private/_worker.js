@@ -1818,10 +1818,13 @@ async function extraRecordCreationUndo(env,email,id){
     nuCanon(JSON.parse(row.payload_json||'{}').nuUrl),email).run();
   return eventId;
  }catch(error){
-  if(row)await env.COMMUNITY_DB.prepare(
+  // Even if journal initialization failed before the SELECT, roll back the
+  // fresh row. A client must never receive "failed" for a live new duplicate.
+  if(!row)try{row=await env.COMMUNITY_DB.prepare('SELECT payload_json,visibility,source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(id).first()}catch{}
+  if(row?.source_submission_id==='')await env.COMMUNITY_DB.prepare(
    "DELETE FROM additional_catalogue_novels WHERE id=? AND payload_json=? AND visibility=? AND source_submission_id=''"
   ).bind(id,row.payload_json,row.visibility).run().catch(()=>{});
-  throw Error('Could not record Undo history for this new entry; creation was rolled back. '+String(error.message||error).slice(0,120));
+  throw Error('Could not record Undo history for this new entry; creation was not completed. '+String(error.message||error).slice(0,120));
  }
 }
 
