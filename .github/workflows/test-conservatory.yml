@@ -33,6 +33,12 @@ jobs:
           node --check private/admin/add-novels.js
           node tests/check_personal_hidden_epub_enrichment.js
           node tests/check_all_stored_epub_enrichment.js
+      - name: Verify EPUB Editions tab, private candidate cover library and deliberate public sync
+        run: |
+          node --check private/admin/epub-editions-workspace.js
+          node --check private/admin/epub-cover-library.js
+          node --check private/admin/editions.js
+          node tests/check_epub_cover_library.js
       - name: Verify one-step EPUB cataloguing, permanent novel pages and Undo
         run: |
           node --check private/admin/epub-auto-match.js
