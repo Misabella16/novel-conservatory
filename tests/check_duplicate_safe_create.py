@@ -28,6 +28,7 @@ assert "if(path==='/api/admin/nu/undo'&&method==='POST')" in worker
 assert "source_submission_id NOT LIKE 'merged-into:%'" in worker
 # Ensure the helper uses multiple identifiers; title alone must not trigger a silent overwrite.
 assert 'sameTitle&&sameAuthor' in part
+assert 'conflictingUrls=!!sourceA&&!!sourceB&&sourceA!==sourceB' in part
 assert 'if(sameTitle.length)return' in part
 assert part.index('if(safe.length>1)') < part.index("await extraInsert(env,p,")
 subprocess.run(['node','--check',str(root/'private/_worker.js')],check=True)
@@ -64,6 +65,9 @@ async function run(){
  assert.equal(r.needsChoice,true);assert.equal(context.created,0);
  context.candidates=[{id:12}];
  context.books[12]={id:12,kind:'extra',row:{visibility:'private'},data:{title:name,author:'Different Author'}};
+ r=await context.execute({},new URL('https://novel-conservatory.pages.dev/'),'editor',p,'private');
+ assert.equal(r.needsChoice,true);assert.equal(context.created,0);
+ context.books[12].data={title:name,author:p.author,nuUrl:'https://www.novelupdates.com/series/different-work/'};
  r=await context.execute({},new URL('https://novel-conservatory.pages.dev/'),'editor',p,'private');
  assert.equal(r.needsChoice,true);assert.equal(context.created,0);
  context.candidates=[];
