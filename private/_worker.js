@@ -3647,13 +3647,22 @@ async function privateEpubAutoCoverRoute(request,env,email,role){
   await env.IMAGES.put(objectKey,bytes,{httpMetadata:{contentType:'image/jpeg'}});
   const cover={cover:'/media/'+objectKey,scope:'private',extractedFrom: textField(fd.get('source'),130),
    coverCredit:'Private EPUB embedded cover',privateCover:true,publicPublished:false,createdAt:new Date().toISOString()};
+  const after=JSON.stringify(cover),eventId=crypto.randomUUID();
   try{
-   const inserted=await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO NOTHING').bind(key,JSON.stringify(cover)).run();
+   await env.DB.prepare('CREATE TABLE IF NOT EXISTS epub_metadata_import_events (id TEXT PRIMARY KEY,novel_id INTEGER NOT NULL,setting_key TEXT NOT NULL,before_value TEXT,after_value TEXT NOT NULL,actor_email TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,undone_at TEXT)').run();
+   const inserted=await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO NOTHING').bind(key,after).run();
    if((inserted.meta?.changes||0)!==1){
     await env.IMAGES.delete(objectKey);return respond({ok:true,stored:false,skipped:true,reason:'Another cover was stored first'});
    }
+   try{
+    await env.DB.prepare('INSERT INTO epub_metadata_import_events (id,novel_id,setting_key,before_value,after_value,actor_email) VALUES (?,?,?,?,?,?)')
+     .bind(eventId,id,key,null,after,email).run();
+   }catch(error){
+    await env.DB.prepare('DELETE FROM site_settings WHERE key=? AND value=?').bind(key,after).run().catch(()=>{});
+    throw Error('Could not record Undo history for the private cover.');
+   }
   }catch(error){await env.IMAGES.delete(objectKey).catch(()=>{});throw error}
-  return respond({ok:true,stored:true,cover:cover.cover,privateOnly:true,publicPublished:false});
+  return respond({ok:true,stored:true,cover:cover.cover,privateOnly:true,publicPublished:false,eventId});
  }catch(error){return respond({error:textField(error?.message||'Could not import private cover',200)},400)}
 }
 
