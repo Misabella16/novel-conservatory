@@ -129,7 +129,7 @@ button.addEventListener('click',async()=>{
       if(saved.changed.includes('genres'))stats.genreUpdates++;
       if(saved.changed.includes('synopsis'))stats.synopsisUpdates++;
      }
-     const cover=await tools.cover({file:epub,bookId:id});
+     const cover=await tools.cover({file:epub,bookId:id,editionId});
      if(cover.published)stats.coversStored++;
      else if(/no cover|not found|unavailable/i.test(cover.detail||''))stats.noCoverFound++;
     }
