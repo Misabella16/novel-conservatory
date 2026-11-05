@@ -1800,6 +1800,31 @@ async function extraEditWithUndo(env,email,row,patch,visibility){
  return {ok:true,id,eventId,changed:true,visibility};
 }
 
+// Save one reversible creation event before returning the new entry to a
+// client. A failed history write also removes the not-yet-used entry.
+async function extraRecordCreationUndo(env,email,id){
+ let row=null;
+ try{
+  await nuEnsureJournal(env);
+  row=await env.COMMUNITY_DB.prepare('SELECT payload_json,visibility,source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(id).first();
+  if(!row||row.source_submission_id!=='')throw Error('The new novel was changed before history was recorded.');
+  const eventId=crypto.randomUUID(),snap={
+   targetKind:'created',beforeTarget:null,afterTarget:row.payload_json,
+   sourceId:null,beforeSourceMarker:'',afterSourceMarker:'reverted-create:'+id,
+   beforePrivate:null,afterPrivate:null,beforeVisibility:null,afterVisibility:row.visibility
+  };
+  await env.COMMUNITY_DB.prepare('INSERT INTO catalogue_edit_events(id,operation,target_id,duplicate_id,before_json,after_json,source_url,actor_email) VALUES(?,?,?,?,?,?,?,?)')
+   .bind(eventId,'create',id,null,JSON.stringify(snap),JSON.stringify({target:row.payload_json}),
+    nuCanon(JSON.parse(row.payload_json||'{}').nuUrl),email).run();
+  return eventId;
+ }catch(error){
+  if(row)await env.COMMUNITY_DB.prepare(
+   "DELETE FROM additional_catalogue_novels WHERE id=? AND payload_json=? AND visibility=? AND source_submission_id=''"
+  ).bind(id,row.payload_json,row.visibility).run().catch(()=>{});
+  throw Error('Could not record Undo history for this new entry; creation was rolled back. '+String(error.message||error).slice(0,120));
+ }
+}
+
 async function extraCreateOrReuse(env,url,email,p,visibility){
  const found=await nuFindCandidates(env,url,p,null);
  const safe=[],uncertain=[];
@@ -1908,6 +1933,7 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
    if(!editor||!extraOrigin(request))return extraJson({error:'Editor permission required'},403);
    const b=await request.json(),p=extraPayload(b),visibility=b.publish===true?'published':'private';
    const result=await extraCreateOrReuse(env,new URL(request.url),email,p,visibility);
+   if(result.ok&&!result.reused)result.eventId=await extraRecordCreationUndo(env,email,result.id);
    return extraJson(result,result.ok?200:409);
   }
   if(path==='/api/admin/additional/bulk'&&method==='POST'){
@@ -1917,6 +1943,7 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
    for(const raw of body.novels){try{
     const p=extraPayload(raw);
     const result=await extraCreateOrReuse(env,new URL(request.url),email,p,body.publish===true?'published':'private');
+    if(result.ok&&!result.reused)result.eventId=await extraRecordCreationUndo(env,email,result.id);
     results.push({title:p.title,...result});
    }catch(e){results.push({title:extraTxt(raw?.title,100),error:String(e.message||e),ok:false});}}
    return extraJson({ok:results.every(x=>x.ok),results});
@@ -2271,11 +2298,12 @@ async function nuUndoEdit(env,email,eventId){
  if(event.undone_at)throw Error('This change has already been undone');
  const snap=JSON.parse(event.before_json),targetId=Number(event.target_id);
  if(snap.targetKind==='created'){
-  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,source_submission_id,visibility FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
+  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,source_submission_id,visibility,cover_key FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
   if(row?.payload_json!==snap.afterTarget||row.source_submission_id!==''||
      snap.afterVisibility!==undefined&&row.visibility!==snap.afterVisibility)
    throw Error('The new book changed or was published since creation. Undo any later edits first.');
   if(await nuHasPrivateEpub(env,targetId))throw Error('This book now has EPUBs. Unlink or transfer them safely before undoing creation.');
+  if(row.cover_key)throw Error('This book has a cover image attached. Move or remove the cover before undoing creation.');
   const result=await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND source_submission_id=''")
    .bind('reverted-create:'+targetId,targetId,snap.afterTarget).run();
   if((result.meta?.changes||0)!==1)throw Error('Creation changed while undoing; refresh first.');
