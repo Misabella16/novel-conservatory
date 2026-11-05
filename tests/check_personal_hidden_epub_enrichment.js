@@ -71,7 +71,10 @@ async function test(){
  assert(helper.includes("private-epub-metadata:"));
  assert(helper.includes("private-epub-cover:"));
  assert(helper.includes("publicPublished:false"));
- assert(helper.includes("if(tags.length&&!source.metadataReview)"));
+ assert(helper.includes("if(tags.length){"));
+ assert(helper.includes("if(genres.length){"));
+ assert(!helper.includes("if(tags.length&&!source.metadataReview)"),
+  'Explicit EPUB subjects may enrich reviewed books without replacing manual fields');
  assert(worker.includes("env.DB.prepare(\"SELECT key,value FROM site_settings WHERE key LIKE 'private-epub-metadata:%'"));
  assert(worker.includes("if(!item.metadataReview&&imported.tags?.length)"));
  assert(!helper.includes('env.COMMUNITY_IMAGES.put'),'Private cover must not write to public image storage');
