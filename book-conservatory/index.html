@@ -5,91 +5,106 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
 <meta name="robots" content="noindex,nofollow,noarchive">
-<title>The Book Conservatory · Private Library Preview</title>
-<style>
-:root{--forest:#293f35;--olive:#59715e;--cream:#f7f5ef;--paper:#fffdf8;--ink:#28382e;--muted:#718074;--gold:#b99a65;--line:#e4e4d8;--sage:#edf1e7}
-*{box-sizing:border-box}body{margin:0;background:var(--cream);color:var(--ink);font:14px/1.6 system-ui,-apple-system,Segoe UI,sans-serif}
-button,input,select{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
-.top{background:var(--paper);border-bottom:1px solid var(--line);padding:15px max(20px,calc((100vw - 1300px)/2));display:flex;align-items:center;justify-content:space-between;gap:14px}
-.brand{display:flex;align-items:center;gap:12px}.mark{width:41px;height:41px;border:1px solid var(--gold);border-radius:50%;display:grid;place-items:center;color:var(--gold);font-size:22px}.brand strong{display:block;font:24px Georgia,serif;letter-spacing:-.7px}.brand small{display:block;letter-spacing:1.7px;font-size:9px;color:var(--olive);text-transform:uppercase}
-.preview{background:#f0e3c9;color:#72582d;border-radius:20px;font-size:11px;font-weight:700;padding:6px 11px}.hero{background:radial-gradient(ellipse at 85% 0,#55725d 0,transparent 38%),var(--forest);color:#f8f1df;padding:54px max(20px,calc((100vw - 1300px)/2))}
-.eyebrow{text-transform:uppercase;letter-spacing:2.4px;font-size:11px;color:#dbca9c;font-weight:700}h1,h2,h3{font-family:Georgia,serif;font-weight:400}h1{font-size:clamp(34px,5vw,58px);margin:10px 0 14px;line-height:1.1}h1 em{color:#d3bb86}.hero p{max-width:630px;color:#e1e7db;line-height:1.7}
-.main{max-width:1300px;margin:auto;padding:26px 20px 80px}.nav{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:22px}.tab{border:1px solid #cbd6c9;color:var(--olive);background:var(--paper);border-radius:7px;padding:9px 14px;font-weight:700;font-size:12px}.tab[aria-selected="true"]{background:var(--forest);color:white;border-color:var(--forest)}
-.panel{display:none}.panel.active{display:block}.column{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(290px,.8fr);gap:20px;align-items:start}
-.box{border:1px solid var(--line);border-radius:12px;background:var(--paper);padding:24px;box-shadow:0 6px 24px #26392c07}.box h2{font-size:30px;margin:0 0 4px}.muted{color:var(--muted)}.tiny{font-size:11px}.book-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin-top:17px}
-.book{padding:0;text-align:left;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff;transition:box-shadow .15s}.book:hover{box-shadow:0 8px 25px #26392c20}.book.active{outline:2px solid var(--gold)}
-.cover{aspect-ratio:3/4;background:linear-gradient(145deg,#516b59,#192d2c);color:#eee1c5;display:flex;align-items:center;justify-content:center;text-align:center;padding:18px;position:relative;font:22px/1.2 Georgia,serif}.cover:before{content:'';position:absolute;inset:12px;border:1px solid #d1b98a77;pointer-events:none}.cover.rose{background:linear-gradient(145deg,#8d6d74,#3a3547)}.cover.blue{background:linear-gradient(145deg,#587c80,#243948)}.book-meta{padding:11px}.book-meta strong{display:block;font-family:Georgia,serif;font-size:16px;font-weight:500}.book-meta small{display:block;color:var(--muted)}
-.search{width:100%;padding:13px 15px;border:1px solid #ced8cb;border-radius:8px;background:white;margin-top:14px;color:var(--ink)}
-.detail-head{display:flex;gap:14px;align-items:center}.detail-icon{font:35px Georgia,serif;color:var(--gold)}.detail-head h2{font-size:26px;margin:0}
-.badges{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 22px}.badge{display:inline-block;background:var(--sage);color:var(--forest);padding:4px 9px;border-radius:30px;font-size:11px;font-weight:600}
-hr{border:0;border-top:1px solid var(--line);margin:20px 0}.section-title{font:19px Georgia,serif;margin:16px 0 6px}.section{margin-top:18px}
-details{border-top:1px solid var(--line);padding:12px 0}details>summary{cursor:pointer;font-weight:700;list-style-position:outside;color:var(--forest);padding:3px 0}details p{margin:6px 0}.nested{margin:8px 0 0 15px;border-left:2px solid #dce6d8;padding:1px 0 1px 12px}.nested details{border:0}
-.note{background:#f4f1e9;border-left:3px solid var(--gold);padding:12px 14px;border-radius:5px;color:#70654e;font-size:12px}.upload{border:2px dashed #a6b9a7;border-radius:10px;background:#f6f9f3;padding:28px;text-align:center}.upload input{max-width:100%}.photos{display:flex;flex-wrap:wrap;gap:10px;margin-top:15px}.photos figure{width:150px;margin:0}.photos img{width:100%;height:130px;object-fit:cover;border-radius:8px}.photos figcaption{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
-.form-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0}.form-row label{font-size:12px;font-weight:700}.form-row input{width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;display:block}
-.empty{padding:25px;background:var(--sage);border-radius:8px;color:#546d56;margin-top:15px}.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.footer{text-align:center;color:var(--muted);font-size:11px;padding:30px}
-@media(max-width:820px){.column{grid-template-columns:1fr}.book-list{grid-template-columns:repeat(3,minmax(0,1fr))}.box{padding:18px}}
-@media(max-width:540px){.brand strong{font-size:17px}.top{padding:12px}.book-list{grid-template-columns:repeat(2,minmax(0,1fr))}.cover{font-size:18px}.form-row,.two{grid-template-columns:1fr}.hero{padding:35px 18px}.main{padding:17px 12px}}
-</style>
+<meta name="referrer" content="no-referrer">
+<title>The Book Conservatory · Your private library</title>
+<link rel="stylesheet" href="/library.css">
+<script type="module" src="/library.js"></script>
 </head>
 <body>
-<header class="top"><div class="brand"><span class="mark" aria-hidden="true">✦</span><div><strong>The Book Conservatory</strong><small>A sister to Novel Conservatory</small></div></div><span class="preview">Development preview</span></header>
-<section class="hero"><div class="eyebrow">My library · All my editions</div><h1>For books, <em>and every version of them.</em></h1><p>A private home for your reading history, collectible editions, physical shelves, and digital library. Built in small, reversible steps.</p></section>
+<header class="top">
+  <a class="brand" href="/" aria-label="The Book Conservatory home"><span class="brand-mark" aria-hidden="true">✦</span>
+    <span><strong>The Book Conservatory</strong><small>A sister to Novel Conservatory</small></span></a>
+  <span class="privacy">Private library</span>
+</header>
+<section class="hero">
+  <div class="hero-inner">
+    <p class="eyebrow">My library · My reading life</p>
+    <h1>For books, <em>and every version of them.</em></h1>
+    <p class="hero-sub">A home for what you read, collect, own, annotate, and keep on your shelves.</p>
+    <p class="hero-status" id="connection-status" role="status">Connecting to your private library…</p>
+  </div>
+</section>
 <main class="main">
-<div class="nav" role="tablist" aria-label="Library sections">
-<button class="tab" role="tab" aria-selected="true" data-tab="library">Library</button>
-<button class="tab" role="tab" aria-selected="false" data-tab="shelves">My Shelves</button>
-<button class="tab" role="tab" aria-selected="false" data-tab="photos">Shelf Photos</button>
-<button class="tab" role="tab" aria-selected="false" data-tab="imports">Imports & Undo</button>
-</div>
-<section class="panel active" id="library" role="tabpanel">
-<div class="column">
-<div class="box"><h2>Library Explorer</h2><p class="muted">Browse titles, summaries, tags and your own editions.</p><div class="note">These three titles are illustrative demo entries, not books imported from your Goodreads account.</div><input class="search" id="search" placeholder="Search example titles, authors or tags" aria-label="Search books"><div class="book-list" id="book-list"></div></div>
-<div class="box" id="details" aria-live="polite"></div>
-</div></section>
-<section class="panel" id="shelves" role="tabpanel"><div class="box"><h2>My Physical Shelves</h2><p class="muted">Organize copies by Room → Bookcase → Shelf → Position. Location stays private even when you eventually share a photo.</p><div class="two"><div class="empty"><strong>Room and shelf locations</strong><p>Each physical copy has its own location, collapsible on the book page.</p></div><div class="empty"><strong>Bookcase gallery</strong><p>Shelf photos will become a visual map of the books you own, with cover and spine recognition added in Phase 6.</p></div></div></div></section>
-<section class="panel" id="photos" role="tabpanel"><div class="box"><h2>Scan My Shelves</h2><p class="muted">Upload photographs of book covers, book spines or whole shelves. You can associate photos with a room and shelf. Multiple books can be matched from a single image.</p><div class="note"><strong>Phase 1 preview only:</strong> Selected photos are displayed locally in your browser. Nothing is uploaded, analyzed, matched, saved or shared yet. Private storage and book recognition will be implemented in Phase 6.</div>
-<div class="form-row"><label>Room<input placeholder="Living room"></label><label>Bookcase<input placeholder="Bookcase A"></label><label>Shelf<input placeholder="Shelf 3"></label></div>
-<div class="upload"><p><strong>Choose one or more shelf photos</strong></p><input type="file" id="photo-files" accept="image/jpeg,image/png,image/webp" multiple aria-label="Select shelf images"><p class="tiny muted">Covers, spines, and mixed bookshelf pictures.</p></div><div id="photo-preview" class="photos" aria-live="polite"></div>
-<hr><h3>Planned automatic matching</h3><p>A photo will be analyzed into individual book regions. For each region, the importer will propose an existing book, an edition or a new entry. High-confidence matches will update safe fields; uncertain ones will appear in a report. Undo will preserve the earlier values.</p>
-</div></section>
-<section class="panel" id="imports" role="tabpanel"><div class="box"><h2>Imports & Undo</h2><p class="muted">Goodreads CSV, bulk EPUBs, and shelf-photo scans will use the same canonical book identity.</p><div class="two"><div class="empty"><strong>Goodreads CSV</strong><p>Keep custom shelves, dates, ratings, and reviews.</p></div><div class="empty"><strong>Bulk EPUBs</strong><p>Remove filename clutter such as z-library without modifying your original files.</p></div><div class="empty"><strong>Special-edition covers</strong><p>Fetch exact-edition artwork when permitted and available; never substitute a generic cover without warning.</p></div><div class="empty"><strong>Reversible updates</strong><p>Separate books, editions, and individual copies. Never erase a second physical copy simply because the title matches.</p></div></div></div></section>
+  <nav class="tabs" aria-label="Library sections">
+    <button class="tab active" type="button" data-tab="library" aria-current="page">Library</button>
+    <button class="tab" type="button" data-tab="shelves">My Shelves</button>
+    <button class="tab" type="button" data-tab="photos">Shelf Photos</button>
+    <button class="tab" type="button" data-tab="imports">Imports & Undo</button>
+  </nav>
+  <div class="notice" id="notice" role="status" hidden></div>
+  <section class="tab-panel active" id="library">
+    <div class="library-header">
+      <div><p class="section-kicker">The collection</p><h2>Library Explorer</h2><p class="muted" id="count">Your books will appear here.</p></div>
+      <button class="btn" type="button" id="add-book">+ Add Book</button>
+    </div>
+    <div class="toolbar">
+      <label class="search-label"><span class="visually-hidden">Search library</span><input id="search" type="search" placeholder="Search books or authors…" autocomplete="off" maxlength="150"></label>
+      <button class="btn subtle" type="button" id="refresh">Refresh</button>
+    </div>
+    <div class="layout">
+      <div class="book-grid" id="book-grid" aria-live="polite">
+        <div class="empty">Loading your private books…</div>
+      </div>
+      <article class="detail" id="book-detail" aria-label="Selected book"><div class="empty"><h3>Choose a book</h3><p>Its synopsis, tags, editions and your notes will appear here.</p></div></article>
+    </div>
+    <div class="loadmore"><button class="btn subtle" id="load-more" type="button" hidden>Load more books</button></div>
+  </section>
+  <section class="tab-panel" id="shelves" hidden>
+    <div class="surface"><h2>My Shelves</h2><p>Give every physical copy a room, bookcase, shelf and optional position. Manage those locations on each book page, under <strong>My Editions & Copies</strong>.</p><div class="tip">Want to organize by genre, favorites, reading challenge or anything else? Add a personal shelf on the book page. You can also store a physical bookcase and shelf for every individual copy.</div></div>
+  </section>
+  <section class="tab-panel" id="photos" hidden>
+    <div class="surface"><h2>Shelf Photos</h2><p>In Phase 6, this space will let you upload pictures of whole shelves, covers or spines, identify the individual books, and match them to existing records or add a separate physical copy.</p>
+      <div class="tip"><strong>Preview only:</strong> You can select and inspect local shelf pictures here, but nothing is uploaded, analyzed, matched, saved or shared yet. The private scanning service will be a separate, tested feature.</div>
+      <label class="upload">Choose shelf photos <input id="photo-files" type="file" accept="image/png,image/jpeg,image/webp" multiple></label>
+      <div id="photo-preview" class="preview-pictures"></div>
+    </div>
+  </section>
+  <section class="tab-panel" id="imports" hidden>
+    <div class="surface"><h2>Imports & Undo</h2><p>The next stages will introduce Goodreads CSV, bulk EPUB imports, automatic cover extraction, duplicate cleanup, and reversible import batches.</p>
+      <div class="two-columns"><div class="tip"><strong>Goodreads</strong><p>Preserve shelves, ratings, reviews and dates read.</p></div><div class="tip"><strong>EPUBs</strong><p>Clean noisy filenames, match titles and authors, store private covers and preserve originals.</p></div><div class="tip"><strong>Special editions</strong><p>Edition-specific FairyLoot, Illumicrate, OwlCrate and other covers.</p></div><div class="tip"><strong>Undo</strong><p>Import and merge safety is a future stage. Do not delete copies to consolidate titles.</p></div></div>
+    </div>
+  </section>
 </main>
-<footer class="footer">The Book Conservatory · Unpublished development preview · No personal book data included</footer>
-<script>
-'use strict';
-const books=[
-{id:'a',title:'The Glass Orchard',author:'Demo Author',tone:'',status:'Read',rating:5,
- synopsis:'A sample fantasy novel entry showing how the synopsis will sit above the collectible-edition details.',tags:['Fantasy','My Favorites','Book Club'],editions:[
- {name:'FairyLoot Special Edition',detail:'Signed · Sprayed edges · Hardcover',copies:[{state:'Owned',room:'Living room',bookcase:'Bookcase A',shelf:'Shelf 3',position:'Left'}]},
- {name:'Digital EPUB',detail:'Private EPUB · Embedded cover',copies:[{state:'Owned',room:'Private digital library',bookcase:'',shelf:'',position:''}]}]},
-{id:'b',title:'The Midnight Archive',author:'Demo Author',tone:'rose',status:'Reading',rating:null,synopsis:'An illustrative book record for testing separate editions, summaries and tags.',tags:['Dark Academia','Mystery'],editions:[
- {name:'Standard Hardcover',detail:'Unsigned · Standard cover',copies:[{state:'Owned',room:'Bedroom',bookcase:'Bookcase B',shelf:'Shelf 1',position:''}]}]},
-{id:'c',title:'The Starbound Garden',author:'Demo Author',tone:'blue',status:'Want to read',rating:null,synopsis:'A demonstration of edition-level ARC and preordered-copy tracking.',tags:['Romantasy','ARC'],editions:[
- {name:'Advance Reader Copy',detail:'ARC · Paperback',copies:[{state:'Owned',room:'Office',bookcase:'ARC shelf',shelf:'Shelf 2',position:''}]},
- {name:'Illumicrate Special Edition',detail:'Preordered · Exclusive cover',copies:[{state:'Preordered',room:'',bookcase:'',shelf:'',position:''}]}]}];
-let selected='a';
-function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function render(){
- const q=document.getElementById('search').value.toLowerCase().trim();
- const found=books.filter(b=>[b.title,b.author,...b.tags].join(' ').toLowerCase().includes(q));
- document.getElementById('book-list').innerHTML=found.length?found.map(b=>'<button type="button" class="book '+(b.id===selected?'active':'')+'" data-book="'+esc(b.id)+'"><div class="cover '+esc(b.tone)+'">'+esc(b.title)+'</div><div class="book-meta"><strong>'+esc(b.title)+'</strong><small>'+esc(b.author)+' · '+esc(b.status)+'</small></div></button>').join(''):'<p>No sample matches.</p>';
- const b=books.find(x=>x.id===selected)||books[0];
- let sections=b.editions.map(e=>'<details><summary>'+esc(e.name)+' <span class="tiny muted">('+esc(e.copies.length)+' copy)</span></summary><div class="nested"><p class="tiny muted">'+esc(e.detail)+'</p>'+e.copies.map(c=>'<p><strong>'+esc(c.state)+'</strong></p><details><summary>Physical location / storage</summary><p class="muted">'+esc([c.room,c.bookcase,c.shelf,c.position].filter(Boolean).join(' → ')||'Not assigned')+'</p></details>').join('')+'</div></details>').join('');
- document.getElementById('details').innerHTML='<div class="detail-head"><div class="detail-icon" aria-hidden="true">✧</div><div><h2>'+esc(b.title)+'</h2><span class="muted">'+esc(b.author)+'</span></div></div><div class="badges"><span class="badge">'+esc(b.status)+'</span>'+(b.rating?'<span class="badge">'+esc(b.rating)+' ★</span>':'')+'</div><div class="section-title">Synopsis</div><p>'+esc(b.synopsis)+'</p><div class="section-title">Genres & personal tags</div><div class="badges">'+b.tags.map(t=>'<span class="badge">'+esc(t)+'</span>').join('')+'</div><hr><details><summary>My Editions & Copies ('+b.editions.length+' editions)</summary>'+sections+'</details><details><summary>My Review & Private Notes</summary><p class="muted">Editable notes, personal reviews and favorite quotes will be enabled in the next phase.</p></details>';
-}
-document.getElementById('search').addEventListener('input',render);
-document.getElementById('book-list').addEventListener('click',e=>{const btn=e.target.closest('[data-book]');if(btn){selected=btn.dataset.book;render();}});
-document.querySelectorAll('[data-tab]').forEach(btn=>btn.addEventListener('click',()=>{
- document.querySelectorAll('[data-tab]').forEach(x=>x.setAttribute('aria-selected',String(x===btn)));
- document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===btn.dataset.tab));
-}));
-let urls=[];
-document.getElementById('photo-files').addEventListener('change',e=>{
- urls.forEach(URL.revokeObjectURL);urls=[];
- const files=[...e.target.files].filter(f=>['image/jpeg','image/png','image/webp'].includes(f.type));
- document.getElementById('photo-preview').innerHTML=files.map(f=>{const url=URL.createObjectURL(f);urls.push(url);return '<figure><img src="'+esc(url)+'" alt="Selected shelf photo preview"><figcaption>'+esc(f.name)+'</figcaption></figure>';}).join('');
-});
-render();
-</script>
+<footer>Private by design · Book Conservatory Phase 2 · No personal book data included in the source</footer>
+<dialog id="add-book-dialog" aria-labelledby="add-book-title">
+  <form id="add-book-form" class="form">
+    <div class="modal-head"><h2 id="add-book-title">Add a Book</h2><button class="close" type="button" data-close-dialog aria-label="Close">×</button></div>
+    <label>Title <input name="title" required maxlength="300" autocomplete="off"></label>
+    <label>Author <input name="author" maxlength="400" autocomplete="off"></label>
+    <label>Synopsis <textarea name="synopsis" rows="4" maxlength="25000"></textarea></label>
+    <label>Reading status <select name="reading_status"><option value="unread">Want to read</option><option value="reading">Reading</option><option value="read">Read</option><option value="paused">Paused</option><option value="dnf">Did not finish</option></select></label>
+    <label>Private notes (optional) <textarea name="private_notes" rows="3" maxlength="120000"></textarea></label>
+    <div class="actions"><button class="btn subtle" type="button" data-close-dialog>Cancel</button><button class="btn" type="submit">Add to library</button></div>
+  </form>
+</dialog>
+<dialog id="add-edition-dialog" aria-labelledby="add-edition-title">
+  <form id="add-edition-form" class="form">
+    <div class="modal-head"><h2 id="add-edition-title">Add an Edition</h2><button class="close" type="button" data-close-dialog aria-label="Close">×</button></div>
+    <label>Edition name <input name="edition_name" placeholder="FairyLoot exclusive hardcover" maxlength="240" required></label>
+    <div class="two-columns"><label>Publisher <input name="publisher" maxlength="200"></label><label>Special-edition vendor <input name="vendor" placeholder="FairyLoot, Illumicrate…" maxlength="120"></label></div>
+    <label>ISBN (optional) <input name="isbn" maxlength="32"></label>
+    <label>Format <select name="format"><option value="hardcover">Hardcover</option><option value="paperback">Paperback</option><option value="ebook">Ebook</option><option value="audiobook">Audiobook</option><option value="other">Other</option></select></label>
+    <label class="check"><input name="is_special" type="checkbox"> Special or collector's edition</label>
+    <label>Details <textarea name="details" rows="3" maxlength="15000" placeholder="Exclusive artwork, sprayed edges, ribbon bookmark…"></textarea></label>
+    <div class="actions"><button class="btn subtle" type="button" data-close-dialog>Cancel</button><button class="btn" type="submit">Add edition</button></div>
+  </form>
+</dialog>
+<dialog id="add-copy-dialog" aria-labelledby="add-copy-title">
+  <form id="add-copy-form" class="form">
+    <div class="modal-head"><h2 id="add-copy-title">Add a Copy</h2><button class="close" type="button" data-close-dialog aria-label="Close">×</button></div>
+    <div class="two-columns">
+      <label>Medium <select name="medium"><option value="physical">Physical</option><option value="digital">Digital</option></select></label>
+      <label>Ownership <select name="ownership"><option value="owned">Owned</option><option value="preordered">Preordered</option><option value="wishlist">Wishlist</option><option value="borrowed">Borrowed</option><option value="sold">Sold</option><option value="donated">Donated</option></select></label>
+      <label>Signature <select name="signature"><option value="unsigned">Unsigned</option><option value="signed">Signed</option><option value="personalized">Personalized</option><option value="signed_bookplate">Signed bookplate</option></select></label>
+      <label class="check"><input type="checkbox" name="is_arc"> ARC / advance reader copy</label>
+      <label>Room <input name="room" maxlength="150"></label>
+      <label>Bookcase <input name="bookcase" maxlength="150"></label>
+      <label>Shelf <input name="shelf" maxlength="150"></label>
+      <label>Position <input name="shelf_position" maxlength="100"></label>
+    </div>
+    <label>Copy notes <textarea name="notes" rows="3" maxlength="25000"></textarea></label>
+    <div class="actions"><button class="btn subtle" type="button" data-close-dialog>Cancel</button><button class="btn" type="submit">Add copy</button></div>
+  </form>
+</dialog>
 </body>
 </html>
