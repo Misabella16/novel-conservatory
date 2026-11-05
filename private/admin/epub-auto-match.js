@@ -35,6 +35,61 @@ function novelUpdatesUrl(value){
   return match?'https://www.novelupdates.com/series/'+match[1].toLowerCase()+'/':'';
  }catch{return ''}
 }
+// Some EPUBs package tags on an "About", "Metadata" or title page
+// instead of in OPF dc:subject. Read only small, explicitly named
+// front-matter XHTML files and only LABELLED fields, never story chapters.
+async function structuredFrontMatter(zip,opf,packagePath){
+ const result={tags:[],genres:[],nuUrl:'',synopsis:''};
+ const parent=packagePath.includes('/')?packagePath.slice(0,packagePath.lastIndexOf('/')+1):'';
+ const items=els(opf,'item').filter(node=>{
+  const href=trim(node.getAttribute('href'));
+  return /(?:\.xhtml|\.html)$/i.test(href)&&
+   /(?:^|[/_.-])(?:title|about|metadata|meta|info|introduction|intro|frontmatter|front-matter|description|summary|credits)(?:[/_.-]|$)/i.test(href)&&
+   !href.includes('..')&&!href.startsWith('/');
+ }).slice(0,4);
+ const split=value=>trim(value).split(/\s*[,;|\n]\s*/).map(x=>trim(x).slice(0,70))
+  .filter(x=>x.length>=2&&x.length<=70);
+ const add=(field,value)=>{
+  if(field==='tags')result.tags.push(...split(value));
+  if(field==='genres')result.genres.push(...split(value));
+  if(field==='nuUrl'&&!result.nuUrl){
+   const raw=trim(value).match(/https:\/\/(?:www\.)?novelupdates\.com\/series\/[a-z0-9-]+\/?/i)?.[0];
+   if(raw)result.nuUrl=novelUpdatesUrl(raw);
+  }
+  if(field==='synopsis'&&!result.synopsis)result.synopsis=trim(value).slice(0,6000);
+ };
+ const fieldOf=label=>{
+  const key=trim(label).replace(/[:：\s-]+$/,'').toLowerCase();
+  return /^(?:tags?|tropes?|subjects?|keywords?)$/.test(key)?'tags':
+   /^(?:genres?|categories)$/.test(key)?'genres':
+   /^(?:novel updates|novelupdates|nu link|series url)$/.test(key)?'nuUrl':
+   /^(?:synopsis|summary|description)$/.test(key)?'synopsis':'';
+ };
+ for(const item of items){
+  const href=trim(item.getAttribute('href'));
+  const entry=zip.file(parent+href);
+  if(!entry||entry.dir||Number(entry._data?.uncompressedSize||0)>200000)continue;
+  try{
+   const dom=new DOMParser().parseFromString(await entry.async('text'),'text/html');
+   const rows=[...dom.querySelectorAll('tr')].slice(0,70);
+   for(const row of rows){
+    const cells=[...row.querySelectorAll('th,td')];
+    if(cells.length>=2){
+     const field=fieldOf(cells[0].textContent);
+     if(field)add(field,cells.slice(1).map(x=>x.textContent).join(', '));
+    }
+   }
+   for(const node of [...dom.querySelectorAll('p,li,dd,dt')].slice(0,140)){
+    const line=trim(node.textContent).replace(/\s+/g,' ').slice(0,4000);
+    const match=/^([^:：]{2,28})\s*[:：]\s*(.+)$/.exec(line);
+    if(match){const field=fieldOf(match[1]);if(field)add(field,match[2]);}
+   }
+  }catch{/* A broken optional front-matter page must not fail the EPUB upload. */}
+ }
+ result.tags=[...new Set(result.tags)].slice(0,100);
+ result.genres=[...new Set(result.genres)].slice(0,50);
+ return result;
+}
 async function inspect(file){
  const fallback={title:'',author:'',synopsis:'',tags:[],genres:[],nuUrl:'',language:'',metadataFound:false};
  if(!file||file.size>250*1048576||typeof JSZip==='undefined')return fallback;
