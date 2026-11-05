@@ -484,6 +484,72 @@ const guestNu=x=>{
   return u.protocol==='https:'&&['www.novelupdates.com','novelupdates.com'].includes(u.hostname)&&!u.username&&!u.password&&!u.port&&!u.search&&!u.hash&&m?
    'https://www.novelupdates.com/series/'+m[1]+'/':'';}catch{return ''}
 };
+// Shared identity lives in COMMUNITY_DB. Public reads never access private DB/R2.
+const canonicalKeys=book=>{
+ const nu=guestNu(book?.nuUrl)||guestNu(book?.sourceUrl);
+ const title=guestKey(book?.title),author=guestKey(book?.author);
+ return nu?['nu:'+nu]:title&&author?['ta:'+title+'|'+author]:[];
+};
+async function canonicalEnsure(env){
+ await env.COMMUNITY_DB.prepare('CREATE TABLE IF NOT EXISTS canonical_novel_keys (identity_key TEXT PRIMARY KEY,novel_id INTEGER NOT NULL CHECK(novel_id >= 1),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run();
+ await env.COMMUNITY_DB.prepare('CREATE INDEX IF NOT EXISTS idx_canonical_novel_id ON canonical_novel_keys(novel_id)').run();
+ await env.COMMUNITY_DB.prepare('CREATE TABLE IF NOT EXISTS public_novel_projections (novel_id INTEGER PRIMARY KEY CHECK(novel_id >= 100000),payload_json TEXT NOT NULL,cover_key TEXT NOT NULL DEFAULT \'\',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)').run();
+}
+async function canonicalOwner(env,book){
+ const keys=canonicalKeys(book);
+ if(!keys.length)return null;
+ await canonicalEnsure(env);
+ const q=keys.map(()=>'?').join(',');
+ const rows=await env.COMMUNITY_DB.prepare('SELECT identity_key,novel_id FROM canonical_novel_keys WHERE identity_key IN ('+q+')').bind(...keys).all();
+ const ids=[...new Set((rows.results||[]).map(row=>Number(row.novel_id)))];
+ return ids.length===1?ids[0]:ids.length>1?-1:null;
+}
+async function canonicalClaim(env,book,id){
+ const keys=canonicalKeys(book);
+ if(!keys.length)return {ok:true,claimed:[]};
+ await canonicalEnsure(env);
+ const claimed=[];
+ for(const key of keys){
+  const result=await env.COMMUNITY_DB.prepare('INSERT INTO canonical_novel_keys(identity_key,novel_id) VALUES(?,?) ON CONFLICT DO NOTHING').bind(key,id).run();
+  if(result.meta?.changes===1)claimed.push(key);
+  const owner=await env.COMMUNITY_DB.prepare('SELECT novel_id FROM canonical_novel_keys WHERE identity_key=?').bind(key).first();
+  if(Number(owner?.novel_id)!==Number(id)){
+   for(const created of claimed)await env.COMMUNITY_DB.prepare('DELETE FROM canonical_novel_keys WHERE identity_key=? AND novel_id=?').bind(created,id).run().catch(()=>{});
+   return {ok:false,owner:Number(owner?.novel_id)||null};
+  }
+ }
+ return {ok:true,claimed};
+}
+async function canonicalPublicProjection(env,found,p,coverKey){
+ const id=found.id;
+ const old=await env.COMMUNITY_DB.prepare('SELECT payload_json,cover_key FROM public_novel_projections WHERE novel_id=?').bind(id).first();
+ const before=old?.payload_json??null;
+ let existing={};if(before)existing=JSON.parse(before);
+ const {result,changed}=guestMerge(existing,p);
+ const nextCover=old?.cover_key||coverKey||'';
+ if(!changed.length&&nextCover===(old?.cover_key||''))return {ok:true,novelId:id,reused:true,unchanged:true,usedCover:false};
+ const after=JSON.stringify(result),eventId=crypto.randomUUID();
+ let write;
+ if(!old){
+  write=await env.COMMUNITY_DB.prepare('INSERT INTO public_novel_projections(novel_id,payload_json,cover_key) VALUES(?,?,?) ON CONFLICT DO NOTHING').bind(id,after,nextCover).run();
+ }else{
+  write=await env.COMMUNITY_DB.prepare('UPDATE public_novel_projections SET payload_json=?,cover_key=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND payload_json=? AND cover_key=?')
+   .bind(after,nextCover,id,before,old.cover_key).run();
+ }
+ if((write.meta?.changes||0)!==1)throw Error('Another submission updated this novel. Retry to combine changes.');
+ const snap={targetKind:'public_projection',beforeTarget:before,afterTarget:after,
+  beforeCoverKey:old?.cover_key||'',afterCoverKey:nextCover};
+ try{
+  await env.COMMUNITY_DB.prepare('INSERT INTO catalogue_edit_events(id,operation,target_id,duplicate_id,before_json,after_json,source_url,actor_email) VALUES(?,?,?,?,?,?,?,?)')
+   .bind(eventId,'metadata_sync',id,null,JSON.stringify(snap),JSON.stringify({target:after}),guestNu(p.nuUrl),'public-contributor').run();
+ }catch(error){
+  if(!old)await env.COMMUNITY_DB.prepare('DELETE FROM public_novel_projections WHERE novel_id=? AND payload_json=? AND cover_key=?').bind(id,after,nextCover).run().catch(()=>{});
+  else await env.COMMUNITY_DB.prepare('UPDATE public_novel_projections SET payload_json=?,cover_key=? WHERE novel_id=? AND payload_json=? AND cover_key=?').bind(before,old.cover_key,id,after,nextCover).run().catch(()=>{});
+  throw error;
+ }
+ return {ok:true,novelId:id,reused:true,eventId,publicProjection:true,usedCover:!!coverKey&&nextCover===coverKey,changedFields:changed};
+}
+
 const guestMerge=(current,incoming)=>{
  const result={...current},changed=[];
  for(const field of ['title','author','originalTitle','synopsis','genres','tags','contentWarnings','nuUrl',
