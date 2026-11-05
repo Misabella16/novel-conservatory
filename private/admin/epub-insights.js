@@ -178,13 +178,18 @@ $('scan-existing').addEventListener('click',async()=>{
    examined.add(item.novelId);
    try{
     const existing=await api('/api/admin/epub-insights/draft?id='+item.novelId);
-    if(existing.draft){stats.skipped++;continue}
-    const file=await storedEpubFile(item),d=await inspectBook(file);
+    const file=await storedEpubFile(item);
     stats.scanned++;
     if(window.CoverExtractor){
      try{const cover=await CoverExtractor.detectCover(file);
       if(cover.image)displayScannedCover(item,cover.image);
      }catch(e){if(stats.errors.length<8)stats.errors.push(label+' (cover): '+e.message)}
+    }
+    if(existing.draft){stats.skipped++;continue}
+    let d;
+    try{d=await inspectBook(file)}catch(error){
+     stats.skipped++;if(stats.errors.length<8)stats.errors.push(label+' (metadata): '+error.message);
+     continue
     }
     const synopsis=String(d.synopsis||'').slice(0,2000),tags=d.tags||[];
     if(!synopsis&&!tags.length){stats.skipped++;continue}
@@ -279,9 +284,10 @@ $('inspect').addEventListener('click',async()=>{
   const base=selected.editionId==='legacy'?'/api/private/epub/file?id='+selected.novelId:
     '/api/private/edition/file?id='+selected.novelId+'&edition='+encodeURIComponent(selected.editionId);
   const r=await fetch(base,{credentials:'same-origin',cache:'no-store'});if(!r.ok)throw Error('Unable to read stored EPUB ('+r.status+').');
-  const file=await r.blob(),data=await inspectBook(file);
-  epubInspected=true;
+  const file=await r.blob();
   await inspectCover(file);
+  const data=await inspectBook(file);
+  epubInspected=true;
 
   applyMissing('title',data.title,'EPUB');
   applyMissing('synopsis',data.synopsis,'EPUB');
