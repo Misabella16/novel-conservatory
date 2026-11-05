@@ -2292,6 +2292,14 @@ const nuAssetSignature=row=>JSON.stringify(Object.fromEntries(
  ['id','label','translator','language','filename','object_key','bytes','uploaded_by','created_at'].map(k=>[k,row[k]])));
 async function nuAssetPlan(env,sourceId,targetId,sourceRow){
  if(!sourceId||sourceId<100000||!editionBook(targetId))throw Error('Invalid asset merge IDs');
+ await canonicalEnsurePrivate(env);
+ // A public projection is distinct from the private source payload.
+ // Do not archive its owner until the projected public metadata can be moved
+ // with its own Undo history; otherwise the public title would disappear.
+ const publicProjection=await env.COMMUNITY_DB.prepare(
+  'SELECT novel_id FROM public_novel_projections WHERE novel_id=?'
+ ).bind(sourceId).first();
+ if(publicProjection)throw Error('This novel has its own public metadata projection. Reconcile the public contribution before archiving its private record.');
  const active=await env.DB.prepare('SELECT id FROM additional_epub_upload_sessions WHERE novel_id=? LIMIT 1').bind(sourceId).first();
  if(active)throw Error('An EPUB upload is still in progress for this duplicate. Finish or cancel it before merging.');
  const legacy=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+sourceId).first();
