@@ -86,7 +86,8 @@ async function scanFiles(){if(busy||!approved)return;if(!files.length)return tex
     if(i%10===0){$('counts').textContent=`Inspected ${i+1} of ${files.length}`;await new Promise(resolve=>setTimeout(resolve,0));}
   }
   text(`Matched EPUB titles automatically. ${rows.filter(r=>r.matchKind==='new').length} missing books will be created privately; ${rows.filter(r=>r.matchKind==='ambiguous').length} ambiguous titles need a choice.`);
- }catch(e){text(e.message,true)}finally{busy=false;$('scan').disabled=false;draw()}
+ }catch(e){rows=[];text('Unable to inspect EPUBs: '+e.message,true);return null}
+ finally{busy=false;$('scan').disabled=false;draw()}
  return rows;
 }
 $('scan').addEventListener('click',scanFiles);
@@ -121,7 +122,7 @@ async function tryAutoCover(r){
   const endpoint='/api/admin/epub-artwork/private-auto';
   const response=await fetch(endpoint,{method:'POST',body:data,credentials:'same-origin'});
   const j=await response.json().catch(()=>({}));if(!response.ok)return {published:false,detail:j.error||'Cover publishing failed'};
-  return {published:!!j.stored,
+  return {published:!!j.stored,eventId:j.eventId||null,
    detail:j.stored?'Private cover extracted, never public':j.reason||'Existing cover retained'};
 }
 async function uploadReady(){if(busy||!approved)return;const work=rows.filter(r=>['Ready','Ready · create private novel'].includes(rowState(r)));if(!work.length)return;
@@ -157,6 +158,7 @@ function renderImportReport(){
   importedFields:r.enrichment?.changed||[],
   stagedNovelUpdates:!!r.enrichment?.stagedSourceUsed,
   privateCoverSaved:!!r.coverImport?.published,
+  privateCoverUndoEvent:r.coverImport?.eventId||null,
   metadataError:r.metadataError||'',coverError:r.coverError||''
  }));
  const counts={
@@ -187,17 +189,18 @@ function renderImportReport(){
   if(row.privateCoverSaved)container.append(document.createTextNode(' · Private cover saved'));
   for(const message of [row.metadataError,row.coverError])if(message)
    container.append(document.createTextNode(' · '+message));
-  if(row.metadataUndoEvent){
+  for(const [eventKey,label] of [['metadataUndoEvent','Undo metadata import'],['privateCoverUndoEvent','Undo private cover']]){
+   if(!row[eventKey])continue;
    const undo=document.createElement('button');
    undo.type='button';undo.className='secondary';undo.style.marginLeft='8px';
-   undo.textContent='Undo metadata import';
+   undo.textContent=label;
    undo.addEventListener('click',async()=>{
     undo.disabled=true;
     try{
      await json(await fetch('/api/admin/epub/undo-metadata',{
       method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},
-      body:JSON.stringify({eventId:row.metadataUndoEvent})}));
-     undo.textContent='Metadata reverted';row.metadataUndoEvent=null;
+      body:JSON.stringify({eventId:row[eventKey]})}));
+     undo.textContent=eventKey==='privateCoverUndoEvent'?'Private cover restored':'Metadata reverted';row[eventKey]=null;
     }catch(error){undo.disabled=false;undo.textContent='Retry Undo';container.append(document.createTextNode(error.message))}
    });
    container.append(undo);
@@ -216,7 +219,8 @@ $('auto-import').addEventListener('click',async()=>{
  if(busy||!approved)return;
  const button=$('auto-import');button.disabled=true;
  try{
-  await scanFiles();
+  const reviewed=await scanFiles();
+  if(!Array.isArray(reviewed))return;
   // Unsafe title matches remain unresolved; all reliable entries upload now.
   await uploadReady();renderImportReport();
  }catch(error){text('Automatic catalogue import stopped: '+error.message,true)}
