@@ -617,20 +617,28 @@ async function routes(request,env,ctx,email,role){
          const patch=entry.patch;
          if(!patch.synopsis&&imported.synopsis)patch.synopsis=imported.synopsis;
          if(!patch.author&&imported.author)patch.author=imported.author;
-         if(!patch.metadataReview&&imported.tags?.length){
+         // Add explicit source labels to reviewed books without removing
+         // manually curated tags, genres, summaries or warnings.
+         if(imported.tags?.length){
           patch.tags=mergeEpubTags(patch.tags,imported.tags);
+          patch.tagsCombinedFromEpub=true;
+         }
+         if(imported.genres?.length){
+          patch.genres=mergeEpubTags(patch.genres,imported.genres);
+          patch.genresCombinedFromEpub=true;
+         }
+         if(!patch.metadataReview&&(imported.tags?.length||imported.genres?.length||imported.synopsis)){
           patch.metadataOrigin='epub';patch.metadataSource=imported.metadataSource;
          }
-         if(!patch.metadataReview&&patch.synopsis&&imported.synopsis)patch.metadataOrigin='epub';
         }else{
          const item=extras.get(id);if(!item)continue;
          if(!item.synopsis&&imported.synopsis)item.synopsis=imported.synopsis;
          if(!item.author&&imported.author)item.author=imported.author;
-         if(!item.metadataReview&&imported.tags?.length){
-          item.tags=mergeEpubTags(item.tags,imported.tags);
+         if(imported.tags?.length)item.tags=mergeEpubTags(item.tags,imported.tags);
+         if(imported.genres?.length)item.genres=mergeEpubTags(item.genres,imported.genres);
+         if(!item.metadataReview&&(imported.tags?.length||imported.genres?.length||imported.synopsis)){
           item.metadataOrigin='epub';item.metadataSource=imported.metadataSource;
          }
-         if(!item.metadataReview&&item.synopsis&&imported.synopsis)item.metadataOrigin='epub';
         }
        }
       }
@@ -1818,7 +1826,7 @@ const extraTxt=(x,n=200)=>String(x??'').normalize('NFKC').trim().slice(0,n);
 const extraId=x=>Number.isSafeInteger(Number(x))&&Number(x)>=100000?Number(x):null;
 const extraOrigin=r=>r.headers.get('Origin')===new URL(r.url).origin;
 const extraUrl=x=>{try{const u=new URL(extraTxt(x,700));return u.protocol==='https:'&&!u.username&&!u.password?u.href.slice(0,700):'';}catch{return '';}};
-const extraTags=x=>[...new Set((Array.isArray(x)?x:String(x||'').split(/[,;\n]/)).map(t=>extraTxt(t,65)).filter(Boolean))].slice(0,35);
+const extraTags=x=>[...new Set((Array.isArray(x)?x:String(x||'').split(/[,;\n]/)).map(t=>extraTxt(t,65)).filter(Boolean))].slice(0,100);
 function extraPayload(input){
  const x=input&&typeof input==='object'?input:{};
  return {
@@ -2174,7 +2182,7 @@ function nuMergeData(before,source,prefer=[]){
   if(nuBlank(incoming))continue;
   if(NU_LIST_FIELDS.has(key)){
    const a=extraTags(old),b=extraTags(incoming);
-   const combined=[...a,...b.filter(y=>!a.some(x=>nuIdentity(x)===nuIdentity(y)))].slice(0,35);
+   const combined=[...a,...b.filter(y=>!a.some(x=>nuIdentity(x)===nuIdentity(y)))].slice(0,100);
    if(JSON.stringify(a)!==JSON.stringify(combined)){after[key]=combined;changed.push(key)}
    continue;
   }
@@ -3501,12 +3509,12 @@ async function privateEpubLinked(env,id,uuid){
  const row=await env.DB.prepare('SELECT id FROM '+editionTable(bookId)+' WHERE novel_id=? AND id=?').bind(bookId,edition).first();
  return !!row;
 }
-const epubSubjects=value=>Array.isArray(value)?[...new Set(value.filter(x=>typeof x==='string').map(x=>textField(x,70)).filter(Boolean))].slice(0,35):[];
+const epubSubjects=value=>Array.isArray(value)?[...new Set(value.filter(x=>typeof x==='string').map(x=>textField(x,70)).filter(Boolean))].slice(0,100):[];
 const mergeEpubTags=(a,b)=>{const result=epubSubjects(a),known=new Set(result.map(x=>x.normalize('NFKD').toLowerCase()));
  for(const tag of epubSubjects(b)){
   const key=tag.normalize('NFKD').toLowerCase();
   if(!known.has(key)){result.push(tag);known.add(key)}
-  if(result.length>=35)break;
+  if(result.length>=100)break;
  }
  return result;
 };
@@ -3574,13 +3582,13 @@ async function privateEpubIngestRoute(request,env,email,role){
   const full={...source,...saved},delta={...saved},changed=[];
   if(synopsis&&!full.synopsis){delta.synopsis=synopsis;changed.push('synopsis')}
   if(author&&!full.author){delta.author=author;changed.push('author')}
-  if(tags.length&&!source.metadataReview){
+  if(tags.length){
    const combined=mergeEpubTags(full.tags,tags);
    if(combined.length>mergeEpubTags([],full.tags).length){
     delta.tags=combined;changed.push('tags');
    }
   }
-  if(genres.length&&!source.metadataReview){
+  if(genres.length){
    const combined=mergeEpubTags(full.genres,genres);
    if(combined.length>mergeEpubTags([],full.genres).length){
     delta.genres=combined;changed.push('genres');
