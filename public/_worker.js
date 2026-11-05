@@ -590,7 +590,7 @@ async function guestJournal(env){
 async function guestCandidates(env,request,p){
  const [seed,raw,overrides]=await Promise.all([
   guestSeed(env,request),
-  env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE visibility='published' AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at ASC LIMIT 5000").all(),
+  env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at ASC LIMIT 5000").all(),
   env.COMMUNITY_DB.prepare('SELECT novel_id,patch_json FROM published_catalogue_overrides LIMIT 1500').all()
  ]);
  const patches=new Map((overrides.results||[]).map(x=>{let data={};try{data=JSON.parse(x.patch_json)}catch{}return [Number(x.novel_id),data]}));
@@ -608,25 +608,40 @@ async function guestCandidates(env,request,p){
   if(!conflictingSources&&(sameSource||sameTitle&&sameAuthor))
    matches.push({item,rank:sameSource?3:2});
  }
- matches.sort((a,b)=>b.rank-a.rank||(a.item.kind==='seed'?-1:1)-(b.item.kind==='seed'?-1:1)||Number(a.item.id)-Number(b.item.id));
+ matches.sort((a,b)=>b.rank-a.rank||
+  (a.item.kind==='seed'?0:a.item.row?.visibility==='published'?1:2)-
+  (b.item.kind==='seed'?0:b.item.row?.visibility==='published'?1:2)||
+  Number(a.item.id)-Number(b.item.id));
  return matches.length?matches[0].item:null;
 }
 async function guestApply(env,request,p,coverKey,visitor){
  await guestJournal(env);
  const found=await guestCandidates(env,request,p);
+ if(found?.kind==='extra'&&found.row.visibility==='private'){
+  // Same novel ID on both sites; publish only public-supplied metadata, never
+  // the private master row, private cover, or any EPUB data.
+  return canonicalPublicProjection(env,found,p,coverKey);
+ }
  const who='public-contributor';
  const eventId=crypto.randomUUID();
  if(!found){
   // Same title can be a genuinely different novel. Identity checking above
   // avoids hiding independent works just because the titles are identical.
-  let id=null;
+  let id=null,claimed=[];
+  const registered=await canonicalOwner(env,p);
+  if(registered)throw Error('This novel identity was already registered as #'+registered+'. Retry the submission so it can update the existing entry.');
   for(let attempt=0;attempt<5;attempt++){
    const candidate=100000+crypto.getRandomValues(new Uint32Array(1))[0];
+   const reservation=await canonicalClaim(env,p,candidate);
+   if(!reservation.ok)throw Error('This novel identity already exists as #'+reservation.owner+'. Retry to update that entry instead.');
    try{
     await env.COMMUNITY_DB.prepare('INSERT INTO additional_catalogue_novels(id,normalized_title,title,payload_json,cover_key,visibility,source_submission_id,created_by) VALUES (?,?,?,?,?,?,?,?)')
      .bind(candidate,p.title.toLowerCase().replace(/\s+/g,' ').trim(),p.title,JSON.stringify(p),coverKey,'published','',who).run();
-    id=candidate;break;
-   }catch(error){if(!/unique|constraint.*id/i.test(String(error?.message||'')))throw error}
+    id=candidate;claimed=reservation.claimed;break;
+   }catch(error){
+    for(const key of reservation.claimed)await env.COMMUNITY_DB.prepare('DELETE FROM canonical_novel_keys WHERE identity_key=? AND novel_id=?').bind(key,candidate).run().catch(()=>{});
+    if(!/unique|constraint.*id/i.test(String(error?.message||'')))throw error;
+   }
   }
   if(!id)throw Error('Unable to create a unique novel ID. Please retry.');
   const snap={targetKind:'created',beforeTarget:null,afterTarget:JSON.stringify(p),sourceId:null,
@@ -637,6 +652,7 @@ async function guestApply(env,request,p,coverKey,visitor){
     .bind(eventId,'create',id,null,JSON.stringify(snap),JSON.stringify({target:JSON.stringify(p)}),guestNu(p.nuUrl),who).run();
   }catch(error){
    await env.COMMUNITY_DB.prepare("DELETE FROM additional_catalogue_novels WHERE id=? AND payload_json=? AND source_submission_id=''").bind(id,JSON.stringify(p)).run().catch(()=>{});
+   for(const key of claimed)await env.COMMUNITY_DB.prepare('DELETE FROM canonical_novel_keys WHERE identity_key=? AND novel_id=?').bind(key,id).run().catch(()=>{});
    throw error;
   }
   return {ok:true,novelId:id,created:true,eventId,usedCover:!!coverKey,changedFields:['new novel']};
