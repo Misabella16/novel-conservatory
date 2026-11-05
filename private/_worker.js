@@ -2502,9 +2502,15 @@ async function nuAdminRoutes(request,env,email,role){
    const offset=Math.max(0,Math.min(500000,Number(url.searchParams.get('offset'))||0));
    const where=[],args=[];
    if(state!=='all'){where.push('state=?');args.push(state);}
-   // Literal substring search. A book title containing SQL wildcard characters
-   // must never become a LIKE pattern (which can trigger SQLITE_ERROR).
-   if(q){where.push('(instr(lower(title),lower(?))>0 OR instr(lower(author),lower(?))>0 OR instr(lower(slug),lower(?))>0)');args.push(q,q,q);}
+   // Literal substring search. The longest term also tolerates punctuation
+   // and curly-apostrophe differences in very long source titles, without using
+   // a SQL LIKE/GLOB pattern (which triggered the reported D1_ERROR).
+   if(q){
+    const terms=q.normalize('NFKD').replace(/\p{M}/gu,'').split(/[^\p{L}\p{N}]+/u).filter(x=>x.length>1);
+    const needle=terms.sort((a,b)=>b.length-a.length)[0]||q;
+    where.push('(instr(lower(title),lower(?))>0 OR instr(lower(author),lower(?))>0 OR instr(lower(slug),lower(?))>0)');
+    args.push(needle,needle,needle);
+   }
    const sql=where.length?' WHERE '+where.join(' AND '):'';
    const [total,rows]=await Promise.all([
     env.COMMUNITY_DB.prepare('SELECT COUNT(*) AS n FROM nu_staged_series'+sql).bind(...args).first(),
