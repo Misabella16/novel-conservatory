@@ -2492,6 +2492,24 @@ async function nuAdminRoutes(request,env,email,role){
  try{
 
 
+  // Inline Novel Updates link editor for the selected book. Reuse the
+  // reversible shared edit journal instead of an untracked private-only save.
+  if(path==='/api/admin/nu/link-inline'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   const b=await getJson(request),id=editionBook(b.id),series=nuCanon(b.nuUrl);
+   if(!id)return respond({error:'Select a valid existing novel first'},400);
+   if(!series)return respond({error:'Use an individual Novel Updates series URL (https://www.novelupdates.com/series/...)'},400);
+   const matches=await nuFindCandidates(env,url,{title:'',nuUrl:series},null);
+   const conflict=matches.find(x=>x.id!==id&&x.matchedBy==='Novel Updates URL');
+   if(conflict)return respond({error:'This Novel Updates URL is already attached to novel #'+conflict.id+
+    '. Open that novel or compare duplicates before linking it to another book.'},409);
+   const target=await nuGetExisting(env,url,id);
+   const result=await nuSaveEdit(env,url,email,id,
+    {nuUrl:series,metadataSource:'Novel Updates link · editor',title:''},
+    {preferSourceFields:['nuUrl']});
+   return respond({...result,displayTitle:target.title,note:'Novel Updates link saved with Undo history.'});
+  }
+
   if(path==='/api/admin/nu/duplicates/scan'&&method==='GET'){
    const scan=await nuSafeDuplicateScan(env,url);
    return respond({ok:true,...scan,count:scan.proposals.length});

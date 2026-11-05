@@ -3,6 +3,53 @@ const call=async(path,options={})=>{const r=await fetch(path,{credentials:'same-
 const post=(path,data)=>call(path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data)});
 const fields=['title','originalTitle','author','originalLanguage','language','translator','translation','novelOrigin','originalUrl','nuUrl','translatorUrl','sourceUrl','genres','tags','contentWarnings','totalChapters','chaptersTranslated','metadataSource','synopsis'];
 function payload(){const p={};for(const field of fields){const v=$(field).value.trim();p[field]=['totalChapters','chaptersTranslated'].includes(field)?(v?Number(v):null):v;}return p;}
+// Novel Updates capture stays in Add Novel, so contributors never need
+// to leave the form for metadata they already collected from the source.
+$('nu-import-new')?.addEventListener('click',()=>{
+ const state=$('nu-new-status'),raw=$('nu-paste-new').value.trim();
+ try{
+  const capture=JSON.parse(raw);
+  if(capture?.source!=='novelupdates-browser-v1'||!capture.novel||
+     typeof capture.novel!=='object')throw Error('Paste metadata copied by Capture Novel Updates.');
+  const x=capture.novel,u=new URL(x.nuUrl||'');
+  if(u.protocol!=='https:'||!['novelupdates.com','www.novelupdates.com'].includes(u.hostname)||
+     !/^\/series\/[a-z0-9-]+\/?$/i.test(u.pathname)||u.search||u.hash)
+   throw Error('The captured URL must be an individual Novel Updates series page.');
+  if(typeof x.title!=='string'||!x.title.trim())
+   throw Error('The captured Novel Updates page did not contain a title.');
+  const newUrl='https://www.novelupdates.com/series/'+u.pathname.split('/')[2].toLowerCase()+'/';
+  const existing=$('nuUrl').value.trim();
+  if(existing&&existing.replace(/\/?$/,'/')!==newUrl)
+   throw Error('The copied series URL differs from the URL already entered. Check that both point to the same novel.');
+  const setIfEmpty=(key,value)=>{
+   const input=$(key);
+   if(input&&!input.value.trim()&&typeof value==='string'&&value.trim()){
+    input.value=value.trim();
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+   }
+  };
+  for(const key of ['title','author','originalTitle','synopsis'])setIfEmpty(key,x[key]);
+  for(const key of ['genres','tags']){
+   const field=$(key),old=field.value.split(',').map(v=>v.trim()).filter(Boolean);
+   const incoming=Array.isArray(x[key])?x[key].filter(y=>typeof y==='string'):[];
+   const merged=[...old];
+   for(const value of incoming){
+    const v=value.trim();
+    if(v&&!merged.some(y=>y.toLowerCase()===v.toLowerCase()))merged.push(v);
+   }
+   field.value=merged.join(', ');
+  }
+  $('nuUrl').value=newUrl;
+  $('nuUrl').dispatchEvent(new Event('input',{bubbles:true}));
+  setIfEmpty('metadataSource','Novel Updates (browser capture)');
+  state.textContent='Source metadata filled into the form. Missing fields stay blank; existing values were preserved. Save the novel normally.';
+  state.classList.remove('error');
+ }catch(error){
+  state.textContent=error.message||'Could not read the Novel Updates capture.';
+  state.classList.add('error');
+ }
+});
+
 // Show likely matches before saving, not after somebody has created two cards.
 let duplicateLookupSequence=0;
 let duplicateTimer=null;
