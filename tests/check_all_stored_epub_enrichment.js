@@ -69,14 +69,14 @@ async function run(){
  await scan();
  assert.equal(ingested,3,'Pause should finish the current EPUB without starting the next');
  assert.equal(extracted,3);
- const saved=JSON.parse(cache.get('conservatory:stored-epub-enrichment:v2'));
+ const saved=JSON.parse(cache.get('conservatory:stored-epub-enrichment:v3'));
  assert.equal(saved.completed.length,3,'Progress must be stored per edition');
  stopOnce=false;
  await scan();
  assert.equal(ingested,29,'Single restart should process ALL remaining 26 editions, not 12');
  assert.equal(downloaded,29);
  assert.equal(extracted,29);
- const final=JSON.parse(cache.get('conservatory:stored-epub-enrichment:v2'));
+ const final=JSON.parse(cache.get('conservatory:stored-epub-enrichment:v3'));
  assert.equal(final.completed.length,29);
  assert.equal(final.finished,true);
  assert.equal(final.stats.tagUpdates,29);
