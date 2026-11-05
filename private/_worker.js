@@ -508,6 +508,24 @@ async function routes(request,env,ctx,email,role){
       // Private-only, explicitly approved embedded EPUB covers. The public
       // project has no route to this private R2 bucket or site_settings table.
       const edits=(novels.results||[]).map(x=>({id:x.id,patch:JSON.parse(x.patch)}));
+      // Community contributions to original books are shared with the private
+      // browser too. Keep private editorial overrides as the final authority.
+      if(env.COMMUNITY_DB){
+       try{
+        const shared=await env.COMMUNITY_DB.prepare('SELECT novel_id,patch_json FROM published_catalogue_overrides WHERE novel_id BETWEEN 1 AND 962 LIMIT 1000').all();
+        const byId=new Map(edits.map(x=>[Number(x.id),x]));
+        const fields=new Set(['title','originalTitle','author','translator','synopsis','genres','tags','contentWarnings','cover','coverRights','coverCredit','metadataReview','metadataSource','translation','nuUrl','translatorUrl']);
+        for(const record of shared.results||[]){
+         let pub={};try{pub=JSON.parse(record.patch_json||'{}')}catch{continue}
+         const id=Number(record.novel_id);
+         let saved=byId.get(id);
+         if(!saved){saved={id,patch:{}};edits.push(saved);byId.set(id,saved)}
+         const incoming={};
+         for(const [key,val] of Object.entries(pub))if(fields.has(key))incoming[key]=val;
+         saved.patch={...incoming,...saved.patch};
+        }
+       }catch(e){console.warn('Could not sync public community edits into private view',e)}
+      }
       if(await canReadEpubs(email,role,env)){
        const covers=await env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-epub-cover:%' LIMIT 5000").all();
        const byId=new Map(edits.map(x=>[Number(x.id),x]));
