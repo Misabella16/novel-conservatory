@@ -152,9 +152,9 @@ async function coverFromEPUB(file,id){
   fd.set('source',file.name.slice(0,130));
   // Keep newly created and other additional-novel covers private until the
   // entry is explicitly published. Original catalogue covers use its route.
-  const path=id>=100000?'/api/admin/additional/auto-cover':'/api/admin/epub-artwork/auto';
+  const path='/api/admin/epub-artwork/private-auto';
   const j=await call(path,{method:'POST',body:fd});
-  return j.published?(id>=100000?'Cover stored with novel':'Cover processed'):'Existing cover kept';
+  return j.stored?'Private cover extracted (never published)':'Existing cover kept';
  }catch(e){return 'Cover could not be extracted: '+e.message}
 }
 async function completeCatalogue(){
@@ -196,11 +196,14 @@ $('upload-epubs').addEventListener('click',async()=>{
      errors.push(file.name+': '+(match.reason||'Ambiguous title')+'. Choose a novel manually or rename the EPUB.');
      continue;
     }
-    await uploadOne(file,id,$('epub-label').value||'Translation edition',
+    const edition=await uploadOne(file,id,$('epub-label').value||'Translation edition',
      $('epub-translator').value||meta.author||'',fraction=>{
       $('epub-progress').value=100*(i+fraction)/files.length;
      });
     successes++;
+    try{
+     await post('/api/admin/epub/ingest-metadata',{id,editionId:edition.id,metadata:meta});
+    }catch(e){errors.push(file.name+': private metadata import failed, EPUB remains uploaded ('+e.message+')')}
     const c=await coverFromEPUB(file,id);if(c&&c.startsWith('Cover could'))errors.push(file.name+': '+c);
    }catch(e){failures++;errors.push(file.name+': '+e.message)}
   }
