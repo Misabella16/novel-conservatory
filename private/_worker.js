@@ -592,12 +592,14 @@ async function routes(request,env,ctx,email,role){
         if(!/^\/media\/[a-f0-9-]{36}\.jpg$/.test(cover))continue;
         if(id<=962){
          let edit=byId.get(id);if(!edit){edit={id,patch:{}};edits.push(edit);byId.set(id,edit)}
-         if(!edit.patch.cover)edit.patch={...edit.patch,cover,privateCover:true,
-          coverCredit:'Private EPUB cover · not publicly published'};
+         if(!edit.patch.cover||value.selectedByOwner===true)edit.patch={...edit.patch,cover,privateCover:true,
+          ...(value.selectedByOwner===true?{coverRights:false}:{}),
+          coverCredit:value.selectedByOwner===true?'Owner-selected private EPUB cover · not publicly published':'Private EPUB cover · not publicly published'};
         }else{
          const extra=extras.get(id);
-         if(extra&&!extra.cover){extra.cover=cover;extra.privateCover=true;
-          extra.coverCredit='Private EPUB cover · not publicly published'}
+         if(extra&&(!extra.cover||value.selectedByOwner===true)){extra.cover=cover;extra.privateCover=true;
+          if(value.selectedByOwner===true)extra.coverRights=false;
+          extra.coverCredit=value.selectedByOwner===true?'Owner-selected private EPUB cover · not publicly published':'Private EPUB cover · not publicly published'}
         }
        }
       }
