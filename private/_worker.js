@@ -508,6 +508,24 @@ async function routes(request,env,ctx,email,role){
       // Private-only, explicitly approved embedded EPUB covers. The public
       // project has no route to this private R2 bucket or site_settings table.
       const edits=(novels.results||[]).map(x=>({id:x.id,patch:JSON.parse(x.patch)}));
+      // Community contributions to original books are shared with the private
+      // browser too. Keep private editorial overrides as the final authority.
+      if(env.COMMUNITY_DB){
+       try{
+        const shared=await env.COMMUNITY_DB.prepare('SELECT novel_id,patch_json FROM published_catalogue_overrides WHERE novel_id BETWEEN 1 AND 962 LIMIT 1000').all();
+        const byId=new Map(edits.map(x=>[Number(x.id),x]));
+        const fields=new Set(['title','originalTitle','author','translator','synopsis','genres','tags','contentWarnings','cover','coverRights','coverCredit','metadataReview','metadataSource','translation','nuUrl','translatorUrl']);
+        for(const record of shared.results||[]){
+         let pub={};try{pub=JSON.parse(record.patch_json||'{}')}catch{continue}
+         const id=Number(record.novel_id);
+         let saved=byId.get(id);
+         if(!saved){saved={id,patch:{}};edits.push(saved);byId.set(id,saved)}
+         const incoming={};
+         for(const [key,val] of Object.entries(pub))if(fields.has(key))incoming[key]=val;
+         saved.patch={...incoming,...saved.patch};
+        }
+       }catch(e){console.warn('Could not sync public community edits into private view',e)}
+      }
       if(await canReadEpubs(email,role,env)){
        const covers=await env.DB.prepare("SELECT key,value FROM site_settings WHERE key LIKE 'private-epub-cover:%' LIMIT 5000").all();
        const byId=new Map(edits.map(x=>[Number(x.id),x]));
@@ -1881,8 +1899,8 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
   }
   if(path==='/api/additional/cover'&&method==='GET'){
    const id=extraId(new URL(request.url).searchParams.get('id'));if(!id||!env.COMMUNITY_IMAGES)return new Response('Not found',{status:404});
-   const row=await env.COMMUNITY_DB.prepare('SELECT cover_key,visibility FROM additional_catalogue_novels WHERE id=?').bind(id).first();
-   if(!row||!row.cover_key||(scope==='public'&&row.visibility!=='published'))return new Response('Not found',{status:404});
+   const row=await env.COMMUNITY_DB.prepare('SELECT cover_key,visibility,source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(id).first();
+   if(!row||!row.cover_key||String(row.source_submission_id||'').startsWith('reverted-create:')||(scope==='public'&&row.visibility!=='published'))return new Response('Not found',{status:404});
    const obj=await env.COMMUNITY_IMAGES.get(row.cover_key);if(!obj)return new Response('Not found',{status:404});
    return new Response(obj.body,{headers:{'content-type':obj.httpMetadata?.contentType||'application/octet-stream','cache-control':scope==='public'?'public,max-age=300':'private,no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox"}});
   }
@@ -2370,7 +2388,11 @@ async function nuUndoEdit(env,email,eventId){
      snap.afterVisibility!==undefined&&row.visibility!==snap.afterVisibility)
    throw Error('The new book changed or was published since creation. Undo any later edits first.');
   if(await nuHasPrivateEpub(env,targetId))throw Error('This book now has EPUBs. Unlink or transfer them safely before undoing creation.');
-  if(row.cover_key)throw Error('This book has a cover image attached. Move or remove the cover before undoing creation.');
+  // The cover originally submitted with this newly created book belongs
+  // to the same reversible creation event. Hide the book without deleting the
+  // cover object; only block Undo if the cover was subsequently replaced.
+  if(row.cover_key&&row.cover_key!==(snap.afterCoverKey||''))
+   throw Error('This book has a newer cover. Undo the later cover change first.');
   const result=await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND source_submission_id=''")
    .bind('reverted-create:'+targetId,targetId,snap.afterTarget).run();
   if((result.meta?.changes||0)!==1)throw Error('Creation changed while undoing; refresh first.');
@@ -2426,6 +2448,20 @@ async function nuUndoEdit(env,email,eventId){
   ).bind(stage.published_id,stage.slug,targetId).run();
  }
  await env.COMMUNITY_DB.prepare("UPDATE catalogue_edit_events SET undone_at=CURRENT_TIMESTAMP,undone_by=? WHERE id=? AND undone_at IS NULL").bind(email,id).run();
+ // A public contribution may introduce an image reference. Undo revokes its
+ // public image endpoint while keeping R2 bytes available for recovery.
+ if(snap.targetKind==='seed'){
+  try{
+   const after=JSON.parse(snap.afterTarget||'{}');
+   const before=JSON.parse(snap.beforeTarget||'{}');
+   const match=/^\/api\/community\/image\?id=([a-f0-9-]{36})$/.exec(String(after.cover||''));
+   if(match&&before.cover!==after.cover){
+    await env.COMMUNITY_DB.prepare(
+     "UPDATE community_entries SET status='rejected',moderated_by=?,moderated_at=CURRENT_TIMESTAMP WHERE id=? AND scope='public' AND kind='image' AND status='approved'"
+    ).bind(email,match[1]).run();
+   }
+  }catch(e){console.warn('A community cover needs manual access review after Undo',e)}
+ }
  let privateSynced=true;
  if(snap.targetKind==='seed'&&snap.afterPrivate!==snap.beforePrivate){
   try{
