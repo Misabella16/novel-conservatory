@@ -1,0 +1,50 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title>Merge duplicate novels & Undo · Novel Conservatory</title>
+<style>
+:root{font:15px/1.55 system-ui,-apple-system,sans-serif;color:#263f33;background:#f6f4ec}*{box-sizing:border-box}
+header{background:#214a3b;color:white;padding:25px max(18px,calc((100% - 1000px)/2))}
+header a{color:#dff0e2}h1,h2,h3{font-family:Georgia,serif;font-weight:500}
+h1{font-size:33px;line-height:1.2;margin:7px 0}h2{font-size:23px}
+main{max-width:1000px;margin:auto;padding:22px 18px 100px}.panel{background:#fffdfa;border:1px solid #d8e1d5;padding:20px;border-radius:13px;margin-bottom:18px}
+button{background:#285f48;color:#fff;border:0;border-radius:8px;padding:11px 15px;cursor:pointer;font:inherit;font-weight:650}
+button:disabled{opacity:.5;cursor:default}button.secondary{background:#e7eee6;color:#285341;border:1px solid #c6d5c7}button.danger{background:#fff3ed;color:#9e4434;border:1px solid #edc8bb}
+input,select{width:100%;font:inherit;border:1px solid #b7cab7;background:white;color:#283e32;border-radius:8px;padding:10px}
+label{display:block;font-weight:650;font-size:13px;margin:10px 0 4px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+.row{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.note{color:#627366;font-size:13px;line-height:1.6}.status{padding:12px;background:#eaf2e8;border-radius:9px;white-space:pre-wrap;overflow-wrap:anywhere;margin:15px 0;font-size:13px}.status.error{color:#914734;background:#fff0e8}
+.result{padding:11px 12px;border-top:1px solid #e6ece3;display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap}
+.result strong{font-size:13px}.result small{color:#65796a}.result button{font-size:12px;padding:7px 9px}
+.conflict{padding:11px 0;border-top:1px solid #e0e6dc}.conflict .compare{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:7px}.compare div{background:#f2f6ef;padding:9px;border-radius:7px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:145px;overflow:auto}
+.conflict label{display:flex;align-items:center;gap:8px}.conflict input{width:auto}
+.history-row{padding:13px 0;border-top:1px solid #e1e8df;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.history-row strong{font-size:13px}.history-row small{display:block;color:#617568}
+@media(max-width:650px){h1{font-size:27px}.grid,.conflict .compare{grid-template-columns:1fr}.panel{padding:14px}.result{align-items:start}}
+</style></head><body>
+<header><a href="/admin/novel-updates.html">← Novel Updates tools</a> · <a href="/admin/">Editorial dashboard</a><h1>Merge duplicates & Undo</h1>
+<p>Editors can combine duplicate catalogue entries, resolve conflicting fields, and undo saved changes without waiting for approval.</p></header>
+<main>
+<section class="panel"><h2>Find your novels</h2><p class="note">Search by title or catalogue ID. When you find two copies, choose the <strong>duplicate to hide</strong> and the <strong>original to keep</strong>. No book files will be deleted.</p>
+<div class="row"><input id="find-q" style="flex:1;min-width:180px" type="search" placeholder="Search a novel title or ID"><button id="find-books" type="button">Find</button></div>
+<div id="find-results" aria-live="polite"></div>
+</section>
+<section class="panel"><h2>Merge two existing entries</h2>
+<div class="grid">
+<div><label for="source-id">Duplicate to merge (added novel ID, 100000+)</label><input id="source-id" inputmode="numeric" placeholder="e.g. 100123456"></div>
+<div><label for="target-id">Keep this novel (original or added ID)</label><input id="target-id" inputmode="numeric" placeholder="e.g. 328 or 100987654"></div>
+</div>
+<div class="row"><button id="preview-merge" type="button">Compare information</button></div>
+<div id="merge-preview" hidden>
+<h3 id="merge-head">Compare two records</h3>
+<p id="merge-summary" class="note"></p>
+<div id="merge-conflicts"></div>
+<p class="note">Empty fields are filled. Genre and story-tag lists are combined without repeats. If both entries contain different information, the original wins unless you explicitly choose the duplicate's value. Cover art and EPUB files never move automatically.</p>
+<button id="merge-go" type="button">Merge into original · Undo available</button>
+</div>
+<p id="merge-status" class="status" role="status">No merge started. An editor can undo changes below.</p>
+</section>
+<section class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Recent changes & Undo</h2><button id="refresh-history" type="button" class="secondary">Refresh history</button></div>
+<p class="note">Undo restores the previous metadata and reappears the duplicate. If newer edits were made, Undo stops instead of overwriting them. Book/EPUB IDs are preserved.</p>
+<div id="undo-history"></div><p id="history-status" class="status" role="status">Loading recent changes…</p>
+</section>
+</main><script src="/admin/resolve-duplicates.js" defer></script></body></html>

@@ -480,7 +480,7 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
  const editor=scope==='private'&&['owner','editor'].includes(role),owner=scope==='private'&&role==='owner';
  try{
   if(path==='/api/additional/books'&&method==='GET'){
-   const sql=scope==='public'?"SELECT * FROM additional_catalogue_novels WHERE visibility='published' ORDER BY created_at DESC LIMIT 5000":"SELECT * FROM additional_catalogue_novels ORDER BY created_at DESC LIMIT 5000";
+   const sql=scope==='public'?"SELECT * FROM additional_catalogue_novels WHERE visibility='published' AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000":"SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000";
    const rows=await env.COMMUNITY_DB.prepare(sql).all();
    return extraJson({novels:(rows.results||[]).map(row=>extraDecorate(row,scope)),configured:true});
   }

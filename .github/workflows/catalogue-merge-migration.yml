@@ -1,0 +1,35 @@
+name: Conservatory — Prepare Duplicate Merge & Undo Database
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type APPLY MERGE MIGRATION (shared COMMUNITY_DB only)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  migrate-community:
+    if: ${{ inputs.confirmation == 'APPLY MERGE MIGRATION' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm target and deployment credentials
+        env:
+          CF_API: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CF_API" ] || [ -z "$CF_ACCOUNT" ]; then
+            echo "::error::Cloudflare credentials missing"; exit 1
+          fi
+          test -f database/CATALOGUE_MERGE_UNDO_MIGRATION.sql
+          echo "Preparing idempotent schema tables in community D1. This does not delete or merge any books."
+      - name: Create merge history table in shared community D1
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 execute novel-conservatory-community --remote --file=database/CATALOGUE_MERGE_UNDO_MIGRATION.sql

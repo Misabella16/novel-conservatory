@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Novel Updates Staging | Conservatory</title><style>
 :root{font-family:system-ui;color:#263b33;background:#f8f6f0}body{margin:0}header{background:#263b33;color:white;padding:25px 5%}header a{color:#e5cfac}main{max-width:1100px;margin:auto;padding:24px}h1,h2{font-family:Georgia,serif;font-weight:400}.panel{background:white;border:1px solid #ddd;border-radius:12px;margin:15px 0;padding:20px}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}input,select,textarea,button{padding:10px;border-radius:6px;border:1px solid #b9c8bb;font:inherit}input[type=search]{flex:1}button{background:#315b47;color:white;cursor:pointer}button:disabled{opacity:.45}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px;border-bottom:1px solid #eee}a{color:#426e51}#status{white-space:pre-wrap}dialog{width:min(700px,92vw);border:1px solid #ccc;border-radius:12px}label{display:block;margin:12px 0 4px;font-weight:bold}dialog input,dialog textarea{width:100%;box-sizing:border-box}dialog textarea{min-height:100px}.muted{color:#697b70}
-.capture-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.capture-grid label{display:block;min-width:0}.capture-grid input,.capture-grid textarea{display:block;width:100%;margin-top:5px}.capture-grid .wide{grid-column:1/-1}.capture-grid textarea{min-height:105px}.bookmarklet{display:inline-block;padding:10px 15px;background:#375e4b;color:white!important;border-radius:7px;text-decoration:none;font-weight:700}.import-steps{line-height:1.7;margin:8px 0 15px;padding-left:22px}@media(max-width:650px){.capture-grid{grid-template-columns:1fr}.capture-grid .wide{grid-column:auto}}</style></head><body><header><a href="/admin/">← Editorial dashboard</a><h1>Novel Updates master catalogue</h1><p>Imported titles remain unpublished until you choose to publish them.</p></header>
+.capture-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.capture-grid label{display:block;min-width:0}.capture-grid input,.capture-grid textarea{display:block;width:100%;margin-top:5px}.capture-grid .wide{grid-column:1/-1}.capture-grid textarea{min-height:105px}.bookmarklet{display:inline-block;padding:10px 15px;background:#375e4b;color:white!important;border-radius:7px;text-decoration:none;font-weight:700}.import-steps{line-height:1.7;margin:8px 0 15px;padding-left:22px}@media(max-width:650px){.capture-grid{grid-template-columns:1fr}.capture-grid .wide{grid-column:auto}}.nu-merge-control{background:#edf5e9;border:1px solid #cddfca;padding:14px;margin:12px 0;border-radius:10px}.nu-merge-control label{font-weight:600;display:block;font-size:13px;margin:5px 0}.nu-merge-control select{width:100%;padding:10px;margin:7px 0;border:1px solid #bdd0bc;border-radius:8px}.nu-merge-control .nu-conflict{padding:8px 0;border-bottom:1px solid #dce8d8;font-size:12px;overflow-wrap:anywhere}.nu-conflict label{display:flex;gap:9px;align-items:center}.nu-merge-control input[type=checkbox]{width:auto}.nu-merge-control p{font-size:13px}.nu-merge-control button{margin-top:7px}</style></head><body><header><a href="/admin/">← Editorial dashboard</a><h1>Novel Updates master catalogue</h1><p>Imported titles remain unpublished until you choose to publish them.</p></header>
 <main><section class="panel" style="background:#f0f7ed;border-color:#c9dfc8"><h2>🌿 Reader-submitted Novel Updates links</h2><p>Public readers can now submit a series URL without filling out the whole novel form. The owner reviews those requests here and can attempt direct source retrieval, then stage the exact metadata as an unpublished draft.</p><p><a href="/admin/novel-updates-submissions/" style="font-weight:750">Open Novel Updates link submissions ↗</a></p></section><section class="panel"><div class="controls"><p><b id="draft">…</b> unpublished</p><p><b id="published">…</b> published</p><p>Import position: <b id="cursor">…</b></p></div>
 <p class="muted">Changes to staged metadata are locked against future automatic overwrites.</p></section>
 <section class="panel" id="nu-browser-import">
@@ -9,7 +9,7 @@
 <ol class="import-steps">
 <li>On a computer, drag <a id="nu-capture-bookmarklet" class="bookmarklet" href="#">Capture Novel Updates</a> to your browser bookmarks bar, or use <button type="button" id="nu-copy-bookmarklet">Copy bookmarklet code</button> and paste it into the address/URL of a new bookmark.</li>
 <li>Open a specific Novel Updates series page normally. Once its genres, tags and synopsis appear, click the <strong>Capture Novel Updates</strong> bookmark.</li>
-<li>Return here, paste the copied JSON metadata, then review and save it as <strong>unpublished</strong>.</li>
+<li>Return here, paste the captured source metadata, and choose <strong>Save to catalogue</strong>. Matching novels are updated directly; no separate publishing approval. Undo is available.</li>
 </ol>
 <label for="nu-import-json">Copied metadata</label>
 <textarea id="nu-import-json" style="display:block;width:100%;min-height:112px;margin:7px 0 10px" spellcheck="false" placeholder="Paste the JSON copied from a Novel Updates page"></textarea>
@@ -26,15 +26,26 @@
 <label>Tags, comma-separated <textarea id="nu-import-tags"></textarea></label>
 <label class="wide">Cover source URL (optional) <input id="nu-import-cover" type="url"></label>
 </div>
-<button type="button" id="nu-stage-capture" disabled>Save as unpublished draft</button>
+<button type="button" id="nu-stage-capture" disabled>Save to catalogue · Undo available</button>
+<div id="nu-choice" hidden class="nu-merge-control">
+<label for="nu-choice-select">More than one book matches. Which existing novel should receive this information?</label>
+<select id="nu-choice-select"></select>
+<button id="nu-choice-confirm" type="button">Use selected existing novel</button>
+</div>
+<div id="nu-conflict-panel" hidden class="nu-merge-control"><strong>Conflicting fields kept unchanged</strong>
+<p class="muted">No information was lost. To use the newly retrieved value for specific fields, select them below. Those replacements are also undoable.</p>
+<div id="nu-conflict-fields"></div><button id="nu-save-conflicts" type="button">Use selected source values</button>
+</div>
+<div class="controls" style="margin-top:12px"><button id="nu-undo-last" type="button" disabled hidden>↶ Undo last saved change</button>
+<a href="/admin/resolve-duplicates.html" class="button">Merge duplicates &amp; view Undo history ↗</a></div>
 </div>
 <p id="nu-browser-status" role="status" style="white-space:pre-wrap">Nothing imported yet. Existing protected drafts will never be overwritten by this tool.</p>
 <p class="muted">This bookmarklet captures one series at a time and never contacts Novel Conservatory from Novel Updates. Large-scale automatic importing still requires an approved source feed or a server connection that Novel Updates permits.</p>
 </section>
-<section class="panel"><div class="controls"><input type="search" id="q" placeholder="Search title, author or series slug"><select id="state"><option value="draft">Unpublished</option><option value="published">Published</option><option value="all">All</option></select><button id="find">Search</button></div></section>
-<section class="panel"><div class="controls"><label><input type="checkbox" id="all"> Select page</label><button id="publish" disabled>Publish selected</button><button id="prev">Previous</button><button id="next">Next</button><span id="range"></span></div>
+<section class="panel"><p class="muted"><strong>Existing entries are edited directly.</strong> Saving a matching Novel Updates series merges missing fields and unique tags into the original entry without creating a duplicate. You can resolve conflicting descriptions or Undo a change from <a href="/admin/resolve-duplicates.html">Merge duplicates &amp; Undo</a>. Covers and EPUB files are never moved automatically.</p><div class="controls"><input type="search" id="q" placeholder="Search title, author or series slug"><select id="state"><option value="draft">Ready to sync</option><option value="published">Published</option><option value="all">All</option></select><button id="find">Search</button></div></section>
+<section class="panel"><div class="controls"><label><input type="checkbox" id="all"> Select page</label><button id="publish" disabled>Sync selected to catalogue</button><button id="prev">Previous</button><button id="next">Next</button><span id="range"></span></div>
 <div style="overflow-x:auto"><table><thead><tr><th></th><th>Title and source</th><th>Author</th><th>State</th><th>Action</th></tr></thead><tbody id="results"></tbody></table></div><p id="status" role="status">Loading…</p></section></main>
-<dialog id="dialog"><form method="dialog"><button>Close</button></form><h2 id="editing-heading">Edit metadata</h2><form id="editform"><label>Title<input id="title" maxlength="210"></label><label>Author<input id="author" maxlength="140"></label><label>Synopsis<textarea id="synopsis" maxlength="6000"></textarea></label><label>Genres (commas)<input id="genres"></label><label>Tags (commas)<textarea id="tags"></textarea></label><button type="submit">Save without publishing</button></form></dialog>
+<dialog id="dialog"><form method="dialog"><button>Close</button></form><h2 id="editing-heading">Edit metadata</h2><form id="editform"><label>Title<input id="title" maxlength="210"></label><label>Author<input id="author" maxlength="140"></label><label>Synopsis<textarea id="synopsis" maxlength="6000"></textarea></label><label>Genres (commas)<input id="genres"></label><label>Tags (commas)<textarea id="tags"></textarea></label><button type="submit">Save source edits</button></form></dialog>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
@@ -52,14 +63,14 @@ async function load(){
  const body=$('results');body.replaceChildren();
  for(const item of items){
   const row=document.createElement('tr'),check=document.createElement('td'),title=document.createElement('td'),author=document.createElement('td'),state=document.createElement('td'),actions=document.createElement('td');
-  if(item.state==='draft'){const cb=document.createElement('input');cb.type='checkbox';cb.className='selected';cb.dataset.slug=item.slug;cb.addEventListener('change',selectable);check.append(cb)}
+  if(item.state==='draft'||item.state==='published'){const cb=document.createElement('input');cb.type='checkbox';cb.className='selected';cb.dataset.slug=item.slug;cb.addEventListener('change',selectable);check.append(cb)}
   const b=document.createElement('b');b.textContent=item.title;title.append(b,document.createElement('br'));const a=document.createElement('a');a.href=item.nuUrl;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Novel Updates listing';title.append(a);
   author.textContent=item.author;state.textContent=item.state+(item.customLocked?' 🔒':'');
   if(item.state==='draft'){const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.addEventListener('click',()=>openEdit(item.slug));actions.append(btn)}
   row.append(check,title,author,state,actions);body.append(row);
  }
  $('all').checked=false;$('publish').disabled=true;$('prev').disabled=offset===0;$('next').disabled=offset+items.length>=total;
- status('Select up to 20 titles to publish, or edit staged metadata.');
+ status('Select titles to sync directly into the catalogue. Existing entries are updated, and every change is undoable.');
  }catch(e){status(e.message)}
 }
 function openEdit(slug){const x=items.find(a=>a.slug===slug);if(!x)return;editSlug=slug;
@@ -68,8 +79,8 @@ function openEdit(slug){const x=items.find(a=>a.slug===slug);if(!x)return;editSl
  $('editing-heading').textContent='Edit '+x.title;$('dialog').showModal()}
 $('editform').addEventListener('submit',async e=>{e.preventDefault();const patch={title:$('title').value,author:$('author').value,synopsis:$('synopsis').value,genres:$('genres').value.split(',').map(x=>x.trim()).filter(Boolean),tags:$('tags').value.split(',').map(x=>x.trim()).filter(Boolean)};
  try{await api('/api/admin/nu/update',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({slug:editSlug,patch})});$('dialog').close();await load();status('Saved. Automatic imports will preserve your changes.')}catch(err){status(err.message)}});
-$('publish').addEventListener('click',async()=>{const slugs=chosen();if(!slugs.length)return;if(slugs.length>20)return status('Limit: 20 per batch');if(!confirm('Publish '+slugs.length+' novels to the public site?'))return;
- try{const r=await api('/api/admin/nu/publish',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({slugs})});await Promise.all([stats(),load()]);status(r.results.map(x=>x.slug+': '+(x.ok?'Published or linked':x.error)).join('\n'))}catch(e){status(e.message)}});
+$('publish').addEventListener('click',async()=>{const slugs=chosen();if(!slugs.length)return;if(slugs.length>20)return status('Limit: 20 per batch');
+ try{const r=await api('/api/admin/nu/publish',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({slugs})});await Promise.all([stats(),load()]);status(r.results.map(x=>x.slug+': '+(x.ok?'Updated novel #'+x.id+' (Undo available)':x.error)).join('\n'))}catch(e){status(e.message)}});
 $('all').addEventListener('change',e=>{document.querySelectorAll('.selected').forEach(x=>x.checked=e.target.checked);selectable()});
 $('find').addEventListener('click',()=>{offset=0;load()});$('state').addEventListener('change',()=>{offset=0;load()});$('q').addEventListener('keydown',e=>{if(e.key==='Enter'){offset=0;load()}});
 $('prev').addEventListener('click',()=>{offset=Math.max(0,offset-30);load()});$('next').addEventListener('click',()=>{offset+=30;load()});

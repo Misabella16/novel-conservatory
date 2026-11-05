@@ -54,20 +54,104 @@ $("nu-review-capture").addEventListener("click",()=>{
   }
   for(const k of ["tags","genres"])$("nu-import-"+k).value=Array.isArray(item[k])?item[k].join(", "):"";
   $("nu-capture-review").hidden=false;$("nu-stage-capture").disabled=false;
-  status("Captured from "+u.pathname+". Review the title, synopsis, genres and tags below. Saving creates an unpublished draft only.");
+  status("Captured from "+u.pathname+". Review actual source fields, then save directly into the correct novel. Changes are undoable, and matching entries will not be duplicated.");
  }catch(err){$("nu-capture-review").hidden=true;$("nu-stage-capture").disabled=true;status(err.message)}
 });
-$("nu-stage-capture").addEventListener("click",async()=>{
+let selectedTargetId=null,lastUndoId=null,latestTarget=null;
+const shorten=value=>{
+ const raw=Array.isArray(value)?value.join(', '):String(value??'');
+ return raw.length>250?raw.slice(0,250)+'…':raw;
+};
+function renderConflicts(conflicts,target){
+ const panel=$("nu-conflict-panel"),host=$("nu-conflict-fields");
+ host.replaceChildren();latestTarget=target;
+ const values=(conflicts||[]).filter(c=>c&&c.field&&String(c.current)!==String(c.incoming));
+ panel.hidden=!values.length;
+ for(const item of values){
+  const row=document.createElement('div');row.className='nu-conflict';
+  const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.value=item.field;
+  const words=document.createElement('span');
+  words.textContent=item.field+': current “'+shorten(item.current)+'”; source “'+shorten(item.incoming)+'”. Use source instead.';
+  label.append(check,words);row.append(label);host.append(row);
+ }
+}
+function saveResult(result){
+ $("nu-choice").hidden=true;
+ if(!result.ok)return status(result.message||'No change was saved');
+ const created=result.created?'Created new novel':'Updated existing novel';
+ status(created+' #'+result.id+'. '+(result.changed?.length?'Merged: '+result.changed.join(', ')+'. ':'')+
+  (result.conflicts?.length?'Existing conflicting values were preserved until you choose them below. ':'')+
+  'You can Undo from this page or the full change history.'+
+  (result.privateSynced===false?' Private catalogue synchronization needs review.':''));
+ lastUndoId=result.eventId||null;
+ $("nu-undo-last").hidden=!lastUndoId;
+ $("nu-undo-last").disabled=!lastUndoId;
+ renderConflicts(result.conflicts,result.id);
+ $("q").value=String(result.id);
+ $("state").value='all';
+ $("find").click();
+}
+async function syncCaptured(options={}){
  const data=out();
- if(!data.novel.title||(!data.novel.synopsis&&!data.novel.tags.length&&!data.novel.genres.length))return status("Nothing usable found. Check the source page before saving.");
- if(!confirm("Save this retrieved Novel Updates metadata as an UNPUBLISHED draft?"))return;
+ if(!data.novel.title||(!data.novel.synopsis&&!data.novel.tags.length&&!data.novel.genres.length))
+  return status("Nothing usable found in the Novel Updates page. No catalogue changes were made.");
  const button=$("nu-stage-capture");button.disabled=true;
  try{
-  const response=await fetch("/api/admin/nu/stage-browser",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+  const r=await fetch('/api/admin/nu/sync-capture',{
+   method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},
+   body:JSON.stringify({capture:data,targetId:options.targetId??selectedTargetId,
+    confirmDifferent:!!options.confirmDifferent,preferSourceFields:options.preferSourceFields||[]})
+  });
+  const result=await r.json().catch(()=>({}));
+  if(!r.ok)throw Error(result.error||'Could not save the source information');
+  if(result.needsChoice){
+   const select=$("nu-choice-select");select.replaceChildren();
+   const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose the correct existing novel';select.append(placeholder);
+   for(const candidate of result.candidates||[]){
+    const option=document.createElement('option');option.value=String(candidate.id);
+    option.textContent='#'+candidate.id+' · '+candidate.title+' ('+candidate.matchedBy+')';select.append(option);
+   }
+   $("nu-choice").hidden=false;
+   status('Several matching novels were found. Choose the correct existing book before saving. No new duplicate was created.');
+   return;
+  }
+  if(result.needsIdentityConfirmation){
+   if(!confirm('This catalogue record does not match the captured Novel Updates title or URL. Are you certain they are the same novel?'))
+    return status('No changes saved.');
+   return syncCaptured({...options,confirmDifferent:true});
+  }
+  saveResult(result);
+ }catch(err){status(err.message)}
+ finally{button.disabled=false}
+}
+$("nu-stage-capture").addEventListener("click",()=>syncCaptured());
+$("nu-choice-confirm").addEventListener("click",()=>{
+ const id=Number($("nu-choice-select").value);
+ if(!Number.isSafeInteger(id)||id<1)return status('Select one of the matching novels.');
+ selectedTargetId=id;
+ syncCaptured({targetId:id});
+});
+$("nu-save-conflicts").addEventListener("click",()=>{
+ if(!latestTarget)return;
+ const fields=[...$("nu-conflict-fields").querySelectorAll('input:checked')].map(x=>x.value);
+ if(!fields.length)return status('Select at least one field to replace.');
+ selectedTargetId=latestTarget;
+ syncCaptured({targetId:latestTarget,preferSourceFields:fields});
+});
+$("nu-undo-last").addEventListener("click",async()=>{
+ if(!lastUndoId)return;
+ const button=$("nu-undo-last");button.disabled=true;
+ try{
+  const response=await fetch('/api/admin/nu/undo',{method:'POST',credentials:'same-origin',
+   headers:{'content-type':'application/json'},body:JSON.stringify({eventId:lastUndoId})});
   const result=await response.json().catch(()=>({}));
-  if(!response.ok)throw Error(result.error||"Could not stage metadata");
-  status("Saved “"+result.title+"” privately. No public changes were made. Find the novel in the Unpublished list below.");
-  $("q").value=result.title;$("state").value="draft";$("find").click();
- }catch(err){status(err.message)}finally{button.disabled=false}
+  if(!response.ok)throw Error(result.error||'Could not undo change');
+  status('↶ Restored the previous catalogue state for novel #'+result.targetId+
+   '. The record can be edited again. '+(result.privateSynced===false?'Newer private edits need manual review.':''));
+  lastUndoId=null;latestTarget=null;selectedTargetId=null;
+  button.hidden=true;
+  $("nu-conflict-panel").hidden=true;
+  $("find").click();
+ }catch(error){status('Undo stopped: '+error.message);button.disabled=false}
 });
 })();

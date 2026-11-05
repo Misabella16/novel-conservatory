@@ -490,7 +490,7 @@ async function routes(request,env,ctx,email,role){
    const response=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',url.origin)));
    if(!response.ok)return respond({error:'Catalogue unavailable'},503);
    const original=await response.json(),base=Array.isArray(original)?original:(original.books||[]);
-   if(env.COMMUNITY_DB){try{const additions=await env.COMMUNITY_DB.prepare('SELECT * FROM additional_catalogue_novels ORDER BY created_at DESC LIMIT 5000').all();base.push(...(additions.results||[]).map(r=>extraDecorate(r,'private')));}catch{}}
+   if(env.COMMUNITY_DB){try{const additions=await env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000").all();base.push(...(additions.results||[]).map(r=>extraDecorate(r,'private')));}catch{}}
    return respond(base);
   }
   if(path.startsWith('/api/shelves'))return shelfRoutes(request,env,email);
@@ -504,7 +504,7 @@ async function routes(request,env,ctx,email,role){
         env.DB.prepare('SELECT id,patch FROM novel_edits').all(),
         env.DB.prepare("SELECT value FROM site_settings WHERE key='homepage'").first()
       ]);
-      let additional=[];if(env.COMMUNITY_DB){try{const r=await env.COMMUNITY_DB.prepare('SELECT * FROM additional_catalogue_novels ORDER BY created_at DESC LIMIT 5000').all();additional=(r.results||[]).map(x=>extraDecorate(x,'private'));}catch{}}
+      let additional=[];if(env.COMMUNITY_DB){try{const r=await env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000").all();additional=(r.results||[]).map(x=>extraDecorate(x,'private'));}catch{}}
       // Private-only, explicitly approved embedded EPUB covers. The public
       // project has no route to this private R2 bucket or site_settings table.
       const edits=(novels.results||[]).map(x=>({id:x.id,patch:JSON.parse(x.patch)}));
@@ -1762,7 +1762,7 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
  const editor=scope==='private'&&['owner','editor'].includes(role),owner=scope==='private'&&role==='owner';
  try{
   if(path==='/api/additional/books'&&method==='GET'){
-   const sql=scope==='public'?"SELECT * FROM additional_catalogue_novels WHERE visibility='published' ORDER BY created_at DESC LIMIT 5000":"SELECT * FROM additional_catalogue_novels ORDER BY created_at DESC LIMIT 5000";
+   const sql=scope==='public'?"SELECT * FROM additional_catalogue_novels WHERE visibility='published' AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000":"SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000";
    const rows=await env.COMMUNITY_DB.prepare(sql).all();
    return extraJson({novels:(rows.results||[]).map(row=>extraDecorate(row,scope)),configured:true});
   }
@@ -1861,6 +1861,306 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
 }
 
 
+
+// Reversible editor reconciliation. Only attached to the authenticated private
+// API. Never delete an EPUB-bearing book or publish an extracted EPUB.
+const NU_EDITABLE=['title','author','originalTitle','synopsis','genres','tags','contentWarnings','nuUrl','translator','translatorUrl','originalLanguage','translation'];
+const NU_LIST_FIELDS=new Set(['genres','tags','contentWarnings']);
+const nuIdentity=x=>String(x||'').normalize('NFKD').toLocaleLowerCase()
+ .replace(/\p{M}/gu,'').replace(/[^\p{L}\p{N}]/gu,'');
+const nuStoredTitleKey=x=>String(x||'').toLocaleLowerCase().replace(/\s+/g,' ').trim();
+const nuCanon=x=>{
+ try{const u=new URL(String(x||''));
+  if(u.protocol!=='https:'||u.hostname!=='www.novelupdates.com'||u.port||u.username||u.password||u.search||u.hash)return '';
+  const m=/^\/series\/([a-z0-9][a-z0-9-]{0,190})\/?$/.exec(u.pathname);
+  return m?'https://www.novelupdates.com/series/'+m[1]+'/':'';
+ }catch{return ''}
+};
+const nuBlank=x=>x===undefined||x===null||x===''||(Array.isArray(x)&&!x.length);
+function nuMergeData(before,source,prefer=[]){
+ const choice=new Set(prefer),after={...before},conflicts=[],changed=[];
+ for(const key of NU_EDITABLE){
+  const incoming=source[key],old=before[key];
+  if(nuBlank(incoming))continue;
+  if(NU_LIST_FIELDS.has(key)){
+   const a=extraTags(old),b=extraTags(incoming);
+   const combined=[...a,...b.filter(y=>!a.some(x=>nuIdentity(x)===nuIdentity(y)))].slice(0,35);
+   if(JSON.stringify(a)!==JSON.stringify(combined)){after[key]=combined;changed.push(key)}
+   continue;
+  }
+  if(nuBlank(old)||key==='translation'&&old==='unconfirmed'){
+   after[key]=incoming;changed.push(key);continue;
+  }
+  if(String(old)===String(incoming))continue;
+  conflicts.push({field:key,current:old,incoming});
+  if(choice.has(key)){after[key]=incoming;changed.push(key)}
+ }
+ if(changed.length){after.metadataReview=true;after.metadataSource=source.metadataSource||'Editorial metadata merge';}
+ return {after,conflicts,changed};
+}
+async function nuBaseCatalogue(env,url){
+ const res=await env.ASSETS.fetch(new Request(new URL('/admin/catalogue.json',url.origin)));
+ if(!res.ok)throw Error('Original catalogue unavailable');
+ const raw=await res.json();return Array.isArray(raw)?raw:(raw.books||[]);
+}
+async function nuAdditionalRows(env){
+ const list=await env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000").all();
+ return list.results||[];
+}
+function nuAdditionalData(row){
+ try{return {...JSON.parse(row.payload_json||'{}'),title:row.title,id:row.id}}catch{return {id:row.id,title:row.title}}
+}
+async function nuGetExisting(env,url,id){
+ const bookId=editionBook(id);
+ if(!bookId)throw Error('Choose a valid catalogue ID');
+ if(bookId<=962){
+  const base=(await nuBaseCatalogue(env,url)).find(x=>x.id===bookId);
+  if(!base)throw Error('Original novel not found');
+  const row=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(bookId).first();
+  let patch={};try{patch=JSON.parse(row?.patch_json||'{}')}catch{throw Error('Published metadata is invalid')}
+  return {id:bookId,kind:'seed',base,beforeRaw:row?.patch_json??null,data:{...base,...patch},title:base.title};
+ }
+ const row=await env.COMMUNITY_DB.prepare('SELECT * FROM additional_catalogue_novels WHERE id=?').bind(bookId).first();
+ if(!row)throw Error('Additional novel not found');
+ if(String(row.source_submission_id||'').startsWith('merged-into:'))
+  throw Error('This is an already-merged duplicate. Undo that merge to edit it separately.');
+ return {id:bookId,kind:'extra',row,beforeRaw:row.payload_json,data:nuAdditionalData(row),title:row.title};
+}
+async function nuFindCandidates(env,url,source,excludedId){
+ const key=nuIdentity(source.title),canonical=nuCanon(source.nuUrl),matches=[];
+ const base=await nuBaseCatalogue(env,url),added=await nuAdditionalRows(env);
+ // Include existing published editorial changes; a novel's source URL or
+ // displayed title may differ from its original static catalogue snapshot.
+ const overrides=await env.COMMUNITY_DB.prepare('SELECT novel_id,patch_json FROM published_catalogue_overrides LIMIT 2500').all();
+ const edits=new Map();
+ for(const row of overrides.results||[]){try{edits.set(Number(row.novel_id),JSON.parse(row.patch_json||'{}'))}catch{}}
+ const baseWithEdits=base.map(b=>({...b,...(edits.get(Number(b.id))||{})}));
+ const originalKey=nuIdentity(source.originalTitle);
+ for(const x of [...baseWithEdits,...added.map(nuAdditionalData)]){
+  if(x.id===excludedId)continue;
+  const exactTitle=!!key&&(nuIdentity(x.title)===key||nuIdentity(x.originalTitle)===key)
+   ||!!originalKey&&(nuIdentity(x.title)===originalKey||nuIdentity(x.originalTitle)===originalKey);
+  const exactUrl=!!canonical&&nuCanon(x.nuUrl)===canonical;
+  if(exactTitle||exactUrl)matches.push({id:x.id,title:x.title,matchedBy:exactUrl?'Novel Updates URL':'Exact normalized title',kind:x.id<=962?'original':'added'});
+ }
+ return matches;
+}
+async function nuHasPrivateEpub(env,sourceId){
+ if(!env.DB)return true; // Do not hide a duplicate when we cannot inspect files.
+ const a=await env.DB.prepare('SELECT id FROM additional_epub_editions WHERE novel_id=? LIMIT 1').bind(sourceId).first();
+ const b=await env.DB.prepare('SELECT id FROM epub_editions WHERE novel_id=? LIMIT 1').bind(sourceId).first();
+ return !!(a||b);
+}
+async function nuSaveEdit(env,url,email,targetId,source,opts={}){
+ if(!env.COMMUNITY_DB||!env.DB)throw Error('Private and shared databases are required');
+ const target=await nuGetExisting(env,url,targetId),sourceId=extraId(opts.sourceId);
+ if(sourceId===target.id)throw Error('A novel cannot be merged into itself');
+ let sourceRow=null;
+ if(sourceId){
+  sourceRow=await env.COMMUNITY_DB.prepare('SELECT * FROM additional_catalogue_novels WHERE id=?').bind(sourceId).first();
+  if(!sourceRow)throw Error('Duplicate entry not found');
+  if(String(sourceRow.source_submission_id||'').startsWith('merged-into:'))throw Error('This duplicate was already merged');
+  if(await nuHasPrivateEpub(env,sourceId))throw Error('This duplicate has linked EPUB editions. Ask the Owner to move those edition references before hiding it; nothing was merged.');
+ }
+ const computed=nuMergeData(target.data,source,opts.preferSourceFields||[]);
+ const modified=computed.after;
+ if(sourceRow&&sourceRow.visibility==='published'&&target.kind==='extra'&&target.row.visibility!=='published')
+  throw Error('The duplicate is published but the selected destination is still private. Publish the destination first, or keep a published record, before hiding the duplicate.');
+ if(sourceId&&sourceRow?.cover_key&&!target.data.cover&&!target.row?.cover_key&&target.kind==='extra'){
+  // Only carry cover references that already declare display permission.
+  const original=nuAdditionalData(sourceRow);
+  if(original.coverRights===true)modified.coverCredit=original.coverCredit||'Source record cover';
+ }
+ let resultRaw,previousPrivate=null,nextPrivate=null;
+ if(target.kind==='seed'){
+  const patch={};for(const k of Object.keys(modified)){
+   if(k==='id'||k==='visibility')continue;
+   if(JSON.stringify(modified[k])!==JSON.stringify(target.base[k])||k==='metadataReview'||k==='metadataSource')
+    patch[k]=modified[k];
+  }
+  resultRaw=JSON.stringify(patch);
+  // Keep separately-curated private fields unless they are missing.
+  const row=await env.DB.prepare('SELECT patch FROM novel_edits WHERE id=?').bind(target.id).first();
+  previousPrivate=row?.patch??null;
+  let privateOld={};try{privateOld=JSON.parse(previousPrivate||'{}')}catch{throw Error('Private edit patch invalid')}
+  const privateMerged=nuMergeData({...target.base,...privateOld},source,opts.preferSourceFields||[]).after;
+  const privatePatch={...privateOld};
+  for(const key of [...NU_EDITABLE,'metadataReview','metadataSource'])
+   if(Object.prototype.hasOwnProperty.call(privateMerged,key)
+     &&(JSON.stringify(privateMerged[key])!==JSON.stringify(target.base[key])||key==='metadataReview'||key==='metadataSource'))
+    privatePatch[key]=privateMerged[key];
+  nextPrivate=JSON.stringify(privatePatch);
+ }else{
+  // A source sync must never silently promote a private novel to public.
+  resultRaw=JSON.stringify({...target.data,...extraPayload(modified)});
+ }
+ const eventId=crypto.randomUUID(),oldSourceMarker=sourceRow?.source_submission_id??null;
+ const afterSourceMarker=sourceRow?'merged-into:'+target.id:null;
+ const stageLinks=sourceId?(await env.COMMUNITY_DB.prepare('SELECT slug,published_id FROM nu_staged_series WHERE published_id=?').bind(sourceId).all()).results||[]:[];
+ const snapshot={targetKind:target.kind,beforeTarget:target.beforeRaw,afterTarget:resultRaw,
+  sourceId:sourceId||null,beforeSourceMarker:oldSourceMarker,afterSourceMarker,stageLinks,
+  beforePrivate:previousPrivate,afterPrivate:nextPrivate};
+ if(resultRaw===target.beforeRaw&&!sourceRow)return {ok:true,alreadyUpToDate:true,id:target.id,conflicts:computed.conflicts,changed:[]};
+ // Optimistic write rejects subsequent updates since preview was loaded.
+ if(opts.expectedBefore!==undefined&&opts.expectedBefore!==target.beforeRaw)
+  throw Error('Another editor changed this book. Refresh the preview to resolve the latest conflict.');
+ let write;
+ if(target.kind==='seed'){
+  if(target.beforeRaw===null){
+   write=await env.COMMUNITY_DB.prepare(
+    'INSERT INTO published_catalogue_overrides(novel_id,patch_json,source_entry_id,published_by) VALUES(?,?,?,?) ON CONFLICT DO NOTHING'
+   ).bind(target.id,resultRaw,eventId,email).run();
+  }else{
+   write=await env.COMMUNITY_DB.prepare(
+    'UPDATE published_catalogue_overrides SET patch_json=?,source_entry_id=?,published_by=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND patch_json=?'
+   ).bind(resultRaw,eventId,email,target.id,target.beforeRaw).run();
+  }
+ }else{
+  write=await env.COMMUNITY_DB.prepare(
+   "UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%'"
+  ).bind(resultRaw,modified.title,nuStoredTitleKey(modified.title),target.id,target.beforeRaw).run();
+ }
+ if((write.meta?.changes||0)!==1)throw Error('The novel changed while saving. Refresh and retry.');
+ let archiveDone=false;
+ try{
+  if(sourceRow){
+   const arch=await env.COMMUNITY_DB.prepare(
+    "UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND source_submission_id=?"
+   ).bind(afterSourceMarker,sourceId,oldSourceMarker).run();
+   if((arch.meta?.changes||0)!==1)throw Error('Duplicate was changed by another editor. Retry after refresh.');
+   archiveDone=true;
+   if(stageLinks.length)await env.COMMUNITY_DB.prepare('UPDATE nu_staged_series SET published_id=?,updated_at=CURRENT_TIMESTAMP WHERE published_id=?')
+    .bind(target.id,sourceId).run();
+  }
+  await env.COMMUNITY_DB.prepare(
+   'INSERT INTO catalogue_edit_events(id,operation,target_id,duplicate_id,before_json,after_json,source_url,actor_email) VALUES(?,?,?,?,?,?,?,?)'
+  ).bind(eventId,sourceId?'merge':'metadata_sync',target.id,sourceId||null,JSON.stringify(snapshot),JSON.stringify({target:resultRaw,sourceMarker:afterSourceMarker}),nuCanon(source.nuUrl),email).run();
+ }catch(err){
+  // No edit should be left invisible if the audit journal cannot be written.
+  if(archiveDone){
+   await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET source_submission_id=? WHERE id=? AND source_submission_id=?')
+    .bind(oldSourceMarker,sourceId,afterSourceMarker).run().catch(()=>{});
+   for(const stage of stageLinks)await env.COMMUNITY_DB.prepare(
+    'UPDATE nu_staged_series SET published_id=? WHERE slug=? AND published_id=?'
+   ).bind(stage.published_id,stage.slug,target.id).run().catch(()=>{});
+  }
+  if(target.kind==='seed'){
+   if(target.beforeRaw===null)await env.COMMUNITY_DB.prepare('DELETE FROM published_catalogue_overrides WHERE novel_id=? AND patch_json=?').bind(target.id,resultRaw).run().catch(()=>{});
+   else await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=? WHERE novel_id=? AND patch_json=?').bind(target.beforeRaw,target.id,resultRaw).run().catch(()=>{});
+  }else await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=? WHERE id=? AND payload_json=?').bind(target.beforeRaw,target.title,nuStoredTitleKey(target.title),target.id,resultRaw).run().catch(()=>{});
+  throw err;
+ }
+ let privateSynced=true;
+ if(target.kind==='seed'&&nextPrivate!==previousPrivate){
+  try{
+   await env.DB.prepare('INSERT INTO novel_edits(id,patch) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET patch=excluded.patch,updated_at=CURRENT_TIMESTAMP').bind(target.id,nextPrivate).run();
+  }catch{privateSynced=false}
+ }
+ try{await audit(env,email,sourceId?'nu.duplicate.merge':'nu.metadata.sync',target.id,eventId)}catch{}
+ return {ok:true,id:target.id,eventId,mergedFrom:sourceId||null,conflicts:computed.conflicts,changed:computed.changed,privateSynced};
+}
+async function nuSyncSource(env,url,email,source,options={}){
+ const safe=extraPayload({...source,metadataReview:true,metadataSource:source.metadataSource||'Novel Updates source'});
+ safe.nuUrl=nuCanon(source.nuUrl);
+ if(!safe.nuUrl||safe.title.length<2)throw Error('Use a valid Novel Updates series URL and a title.');
+ if(!safe.synopsis&&!safe.genres.length&&!safe.tags.length)
+  throw Error('No actual synopsis, genres or tags were retrieved. Nothing was saved.');
+ const candidates=await nuFindCandidates(env,url,safe,null);
+ const chosen=editionBook(options.targetId),exact=candidates.find(x=>x.id===chosen);
+ if(chosen&&!exact&&options.confirmDifferent!==true)
+  return {ok:false,needsIdentityConfirmation:true,candidates,selected:chosen,
+   message:'The chosen novel does not match the source URL or normalized title. Confirm its identity before merging.'};
+ if(!chosen&&candidates.length>1)
+  return {ok:false,needsChoice:true,candidates,
+   message:'Several catalogue entries match this source. Choose the correct novel instead of making another copy.'};
+ const targetId=chosen||(candidates.length===1?candidates[0].id:null);
+ if(targetId){
+  const result=await nuSaveEdit(env,url,email,targetId,safe,{
+   preferSourceFields:options.preferSourceFields||[],expectedBefore:options.expectedBefore
+  });
+  return {...result,matchedExisting:true,candidates};
+ }
+ const created=await nuCreateEdited(env,email,safe);
+ return {...created,matchedExisting:false,candidates:[]};
+}
+async function nuCreateEdited(env,email,source){
+ const data=extraPayload({...source,metadataReview:true,metadataSource:source.metadataSource||'Novel Updates source'});
+ if(data.title.length<2)throw Error('A title is required');
+ if(!data.nuUrl)throw Error('Use a canonical Novel Updates series URL');
+ const id=await extraInsert(env,data,'','published',email);
+ const eventId=crypto.randomUUID(),row=await env.COMMUNITY_DB.prepare('SELECT payload_json FROM additional_catalogue_novels WHERE id=?').bind(id).first();
+ const snap={targetKind:'created',beforeTarget:null,afterTarget:row.payload_json,
+  sourceId:null,beforeSourceMarker:'',afterSourceMarker:'reverted-create:'+id,
+  beforePrivate:null,afterPrivate:null};
+ try{
+  await env.COMMUNITY_DB.prepare('INSERT INTO catalogue_edit_events(id,operation,target_id,duplicate_id,before_json,after_json,source_url,actor_email) VALUES(?,?,?,?,?,?,?,?)')
+   .bind(eventId,'create',id,null,JSON.stringify(snap),JSON.stringify({target:row.payload_json}),data.nuUrl,email).run();
+ }catch(e){
+  await env.COMMUNITY_DB.prepare("DELETE FROM additional_catalogue_novels WHERE id=? AND payload_json=? AND source_submission_id=''").bind(id,row.payload_json).run().catch(()=>{});
+  throw e;
+ }
+ try{await audit(env,email,'nu.direct.create',id,eventId)}catch{}
+ return {ok:true,id,eventId,created:true,changed:NU_EDITABLE.filter(k=>!nuBlank(data[k])),privateSynced:true};
+}
+async function nuUndoEdit(env,email,eventId){
+ const id=String(eventId||'');
+ if(!/^[a-f0-9-]{36}$/.test(id))throw Error('Choose a valid change to undo');
+ const event=await env.COMMUNITY_DB.prepare('SELECT * FROM catalogue_edit_events WHERE id=?').bind(id).first();
+ if(!event)throw Error('Change history entry not found');
+ if(event.undone_at)throw Error('This change has already been undone');
+ const snap=JSON.parse(event.before_json),targetId=Number(event.target_id);
+ if(snap.targetKind==='created'){
+  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
+  if(row?.payload_json!==snap.afterTarget||row.source_submission_id!=='')
+   throw Error('The new book changed since creation. Undo any later edits first.');
+  if(await nuHasPrivateEpub(env,targetId))throw Error('This book now has EPUBs. Unlink or transfer them safely before undoing creation.');
+  const result=await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND source_submission_id=''")
+   .bind('reverted-create:'+targetId,targetId,snap.afterTarget).run();
+  if((result.meta?.changes||0)!==1)throw Error('Creation changed while undoing; refresh first.');
+  await env.COMMUNITY_DB.prepare("UPDATE catalogue_edit_events SET undone_at=CURRENT_TIMESTAMP,undone_by=? WHERE id=? AND undone_at IS NULL").bind(email,id).run();
+  try{await audit(env,email,'nu.create.undo',targetId,id)}catch{}
+  return {ok:true,undone:true,eventId:id,targetId,hiddenCreated:true,privateSynced:true};
+ }
+ if(snap.targetKind==='seed'){
+  const current=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(targetId).first();
+  if(current?.patch_json!==snap.afterTarget)throw Error('The book was edited again. Resolve those newer changes before undoing this one.');
+ }else{
+  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
+  if(row?.payload_json!==snap.afterTarget)throw Error('The book was edited again. Undo the newer edit first.');
+ }
+ if(snap.sourceId){
+  const extra=await env.COMMUNITY_DB.prepare('SELECT source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(snap.sourceId).first();
+  if(extra?.source_submission_id!==snap.afterSourceMarker)throw Error('The duplicate changed since merging. Undo the newer change first.');
+ }
+ if(snap.targetKind==='seed'){
+  if(snap.beforeTarget===null)await env.COMMUNITY_DB.prepare('DELETE FROM published_catalogue_overrides WHERE novel_id=? AND patch_json=?').bind(targetId,snap.afterTarget).run();
+  else await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND patch_json=?').bind(snap.beforeTarget,targetId,snap.afterTarget).run();
+ }else{
+  const before=JSON.parse(snap.beforeTarget||'{}');
+  await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=?').bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),targetId,snap.afterTarget).run();
+ }
+ if(snap.sourceId){
+  await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND source_submission_id=?')
+   .bind(snap.beforeSourceMarker,snap.sourceId,snap.afterSourceMarker).run();
+  for(const stage of snap.stageLinks||[])await env.COMMUNITY_DB.prepare(
+   'UPDATE nu_staged_series SET published_id=?,updated_at=CURRENT_TIMESTAMP WHERE slug=? AND published_id=?'
+  ).bind(stage.published_id,stage.slug,targetId).run();
+ }
+ await env.COMMUNITY_DB.prepare("UPDATE catalogue_edit_events SET undone_at=CURRENT_TIMESTAMP,undone_by=? WHERE id=? AND undone_at IS NULL").bind(email,id).run();
+ let privateSynced=true;
+ if(snap.targetKind==='seed'&&snap.afterPrivate!==snap.beforePrivate){
+  try{
+   const curr=await env.DB.prepare('SELECT patch FROM novel_edits WHERE id=?').bind(targetId).first();
+   // Only restore private metadata if no subsequent private editor has changed it.
+   if(curr?.patch!==snap.afterPrivate)privateSynced=false;
+   else if(snap.beforePrivate===null)await env.DB.prepare('DELETE FROM novel_edits WHERE id=? AND patch=?').bind(targetId,snap.afterPrivate).run();
+   else await env.DB.prepare('UPDATE novel_edits SET patch=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND patch=?').bind(snap.beforePrivate,targetId,snap.afterPrivate).run();
+  }catch{privateSynced=false}
+ }
+ try{await audit(env,email,'nu.edit.undo',targetId,id)}catch{}
+ return {ok:true,undone:true,eventId:id,targetId,restoredDuplicateId:snap.sourceId||null,privateSynced};
+}
+
 // Novel Updates master staging: always private. No staging routes are registered on public Worker.
 // Run database/NU_STAGING_MIGRATION.sql in COMMUNITY_DB before enabling.
 function nuValidSlug(value){const s=String(value||'');return /^[a-z0-9][a-z0-9-]{0,190}$/.test(s)?s:'';}
@@ -1876,6 +2176,108 @@ async function nuAdminRoutes(request,env,email,role){
  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
  try{
 
+
+  if(path==='/api/admin/nu/search-books'&&method==='GET'){
+   const q=String(url.searchParams.get('q')||'').trim().slice(0,120);
+   if(q.length<2&&!/^[1-9]\d*$/.test(q))return respond({items:[],note:'Enter at least two characters or an ID'});
+   const key=nuIdentity(q);
+   const original=await nuBaseCatalogue(env,url),added=await nuAdditionalRows(env);
+   const matches=[...original.map(x=>({...x,kind:'original'})),...added.map(x=>({...nuAdditionalData(x),kind:'added'}))]
+    .filter(x=>String(x.id)===q||nuIdentity(x.title).includes(key)||nuIdentity(x.originalTitle).includes(key))
+    .slice(0,50).map(x=>({id:x.id,title:x.title,kind:x.kind,nuUrl:x.nuUrl||'',
+     tags:(x.tags||[]).length,genres:(x.genres||[]).length,hasSynopsis:!!x.synopsis}));
+   return respond({items:matches});
+  }
+  if(path==='/api/admin/nu/merge-history'&&method==='GET'){
+   const rows=await env.COMMUNITY_DB.prepare(
+    'SELECT id,operation,target_id,duplicate_id,source_url,actor_email,created_at,undone_at FROM catalogue_edit_events ORDER BY created_at DESC LIMIT 40'
+   ).all();
+   return respond({items:rows.results||[]});
+  }
+  if(path==='/api/admin/nu/merge-preview'&&method==='GET'){
+   const sourceId=extraId(url.searchParams.get('sourceId')),targetId=editionBook(url.searchParams.get('targetId'));
+   if(!sourceId||!targetId||sourceId===targetId)return respond({error:'Select different source and destination novel IDs'},400);
+   const sourceRow=await env.COMMUNITY_DB.prepare('SELECT * FROM additional_catalogue_novels WHERE id=?').bind(sourceId).first();
+   if(!sourceRow)return respond({error:'Source duplicate not found'},404);
+   const target=await nuGetExisting(env,url,targetId),data=nuAdditionalData(sourceRow),preview=nuMergeData(target.data,data,[]);
+   return respond({source:{id:sourceId,title:data.title,visibility:sourceRow.visibility,fields:data},
+    target:{id:target.id,title:target.title,kind:target.kind,fields:target.data},
+    alreadyMerged:String(sourceRow.source_submission_id||'').startsWith('merged-into:'),
+    blockedByEpub:await nuHasPrivateEpub(env,sourceId),changed:preview.changed,conflicts:preview.conflicts,
+    expectedBefore:target.beforeRaw});
+  }
+  if(path==='/api/admin/nu/merge-apply'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   const b=await getJson(request),sourceId=extraId(b.sourceId),targetId=editionBook(b.targetId);
+   if(!sourceId||!targetId||sourceId===targetId)return respond({error:'Select two different existing books'},400);
+   const sourceRow=await env.COMMUNITY_DB.prepare('SELECT * FROM additional_catalogue_novels WHERE id=?').bind(sourceId).first();
+   if(!sourceRow)return respond({error:'Source book not found'},404);
+   const fields=Array.isArray(b.preferSourceFields)?b.preferSourceFields.filter(x=>NU_EDITABLE.includes(x)):[];
+   const result=await nuSaveEdit(env,url,email,targetId,nuAdditionalData(sourceRow),{
+    sourceId,preferSourceFields:fields,expectedBefore:b.expectedBefore
+   });
+   return respond(result);
+  }
+  if(path==='/api/admin/nu/undo'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   const b=await getJson(request);
+   return respond(await nuUndoEdit(env,email,b.eventId));
+  }
+  if(path==='/api/admin/nu/sync-capture'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   const b=await getJson(request),raw=b.capture?.novel;
+   if(b.capture?.source!=='novelupdates-browser-v1'||!raw||typeof raw!=='object'||Array.isArray(raw))
+    return respond({error:'Paste the original captured Novel Updates metadata'},400);
+   if(raw.tags!==undefined&&!Array.isArray(raw.tags)||raw.genres!==undefined&&!Array.isArray(raw.genres))
+    return respond({error:'Source tags and genres must be lists'},400);
+   const source={...raw,metadataSource:'Novel Updates (browser capture)'};
+   const result=await nuSyncSource(env,url,email,source,{
+    targetId:b.targetId,confirmDifferent:b.confirmDifferent===true,
+    preferSourceFields:Array.isArray(b.preferSourceFields)?b.preferSourceFields.filter(x=>NU_EDITABLE.includes(x)):[]});
+   return respond(result);
+  }
+  // Keep older Publish-selected clients safe: use the same reversible merge
+  // algorithm instead of making a new record beside an existing one.
+  if(path==='/api/admin/nu/publish'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   const b=await getJson(request),slugs=Array.isArray(b.slugs)?[...new Set(b.slugs.map(nuValidSlug).filter(Boolean))]:[];
+   if(!slugs.length||slugs.length>20)return respond({error:'Choose 1–20 valid staged series'},400);
+   const results=[];
+   for(const slug of slugs){
+    try{
+     const row=await env.COMMUNITY_DB.prepare('SELECT * FROM nu_staged_series WHERE slug=?').bind(slug).first();
+     if(!row)throw Error('Staged series not found');
+     const source=JSON.parse(row.payload_json||'{}');
+     const result=await nuSyncSource(env,url,email,{...source,title:row.title,author:row.author,nuUrl:row.nu_url,
+      metadataSource:'Novel Updates (editor sync)'},{});
+     if(result.needsChoice||result.needsIdentityConfirmation){
+      results.push({slug,error:'Multiple matching novels. Select a destination in Resolve duplicates before syncing.',candidates:result.candidates||[]});
+      continue;
+     }
+     if(!result.ok)throw Error(result.message||'Sync failed');
+     await env.COMMUNITY_DB.prepare("UPDATE nu_staged_series SET state='published',published_id=?,published_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE slug=?")
+      .bind(result.id,slug).run();
+     results.push({slug,ok:true,id:result.id,linkedExisting:!!result.matchedExisting,eventId:result.eventId||null});
+    }catch(e){results.push({slug,error:String(e.message||'Sync failed').slice(0,190)})}
+   }
+   return respond({ok:true,results});
+  }
+  if(path==='/api/admin/nu/sync-staged'&&method==='POST'){
+   if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+   const b=await getJson(request),slug=nuValidSlug(b.slug);
+   if(!slug)return respond({error:'Choose a staged Novel Updates series'},400);
+   const row=await env.COMMUNITY_DB.prepare('SELECT * FROM nu_staged_series WHERE slug=?').bind(slug).first();
+   if(!row)return respond({error:'Staged series not found'},404);
+   const data=JSON.parse(row.payload_json||'{}');
+   const result=await nuSyncSource(env,url,email,{...data,title:row.title,author:row.author,nuUrl:row.nu_url,metadataSource:'Novel Updates (editor sync)'},{
+    targetId:b.targetId,confirmDifferent:b.confirmDifferent===true,
+    preferSourceFields:Array.isArray(b.preferSourceFields)?b.preferSourceFields.filter(x=>NU_EDITABLE.includes(x)):[]});
+   if(result.ok&&result.id){
+    await env.COMMUNITY_DB.prepare("UPDATE nu_staged_series SET state='published',published_id=?,published_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE slug=?")
+     .bind(result.id,slug).run();
+   }
+   return respond(result);
+  }
 
   // An editor can import ONLY metadata previously captured from the submitted
   // Novel Updates URL. The guest supplies a URL, never the fields to publish.
@@ -2101,7 +2503,15 @@ async function nuAdminRoutes(request,env,email,role){
    const offset=Math.max(0,Math.min(500000,Number(url.searchParams.get('offset'))||0));
    const where=[],args=[];
    if(state!=='all'){where.push('state=?');args.push(state);}
-   if(q){where.push('(title LIKE ? OR author LIKE ? OR slug LIKE ?)');args.push('%'+q+'%','%'+q+'%','%'+q+'%');}
+   // Literal substring search. The longest term also tolerates punctuation
+   // and curly-apostrophe differences in very long source titles, without using
+   // a SQL LIKE/GLOB pattern (which triggered the reported D1_ERROR).
+   if(q){
+    const terms=q.normalize('NFKD').replace(/\p{M}/gu,'').split(/[^\p{L}\p{N}]+/u).filter(x=>x.length>1);
+    const needle=terms.sort((a,b)=>b.length-a.length)[0]||q;
+    where.push('(instr(lower(title),lower(?))>0 OR instr(lower(author),lower(?))>0 OR instr(lower(slug),lower(?))>0)');
+    args.push(needle,needle,needle);
+   }
    const sql=where.length?' WHERE '+where.join(' AND '):'';
    const [total,rows]=await Promise.all([
     env.COMMUNITY_DB.prepare('SELECT COUNT(*) AS n FROM nu_staged_series'+sql).bind(...args).first(),
@@ -2229,7 +2639,8 @@ async function nuAdminRoutes(request,env,email,role){
   return respond({ok:true,results});
  }catch(e){
   const msg=String(e?.message||'Staging unavailable');
-  if(/no such table/i.test(msg))return respond({error:'Run database/NU_STAGING_MIGRATION.sql in the community D1 database first.'},503);
+  if(/no such table.*catalogue_edit_events/i.test(msg))return respond({error:'Run database/CATALOGUE_MERGE_UNDO_MIGRATION.sql in the community D1 database before using Undo.'},503);
+  if(/no such table/i.test(msg))return respond({error:'Run the relevant community D1 database migration first: '+msg.slice(0,120)},503);
   return respond({error:msg.slice(0,240)},400);
  }
 }
