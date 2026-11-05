@@ -74,7 +74,7 @@ for(const id of ['title','originalTitle','author','nuUrl','sourceUrl']){
 function chooseTab(t){if(role!=='owner'&&role!=='editor')return;if(role==='editor'&&['bulk','epubs'].includes(t))return;for(const n of ['single','bulk','epubs','manage','review']){$(n).hidden=n!==t;const b=$('tab-'+n);b.setAttribute('aria-selected',String(n===t))}if(t==='review')loadPending();if(t==='epubs'||t==='manage')loadNovels()}
 for(const t of ['single','bulk','epubs','manage','review'])$('tab-'+t).addEventListener('click',()=>chooseTab(t));
 async function loadNovels(){try{const j=await call('/api/additional/books');novels=j.novels||[];const dl=$('additional-novel-list');dl.replaceChildren();for(const novel of novels){const op=document.createElement('option');op.value=`#${novel.id} · ${novel.title}`;dl.append(op);}}catch(e){show('epub-status',e.message,true)}}
-function selectedNovel(){const x=$('epub-novel').value.trim();const found=/^#(\d+)\b/.exec(x);if(found)return novels.find(b=>b.id===Number(found[1]))||null;return novels.find(b=>b.title.toLocaleLowerCase()===x.toLocaleLowerCase())||null;}
+function selectedNovel(){const x=$('epub-novel').value.trim();const found=/^#(\d+)\b/.exec(x);if(found){const id=Number(found[1]);return Number.isSafeInteger(id)&&id>0?novels.find(b=>b.id===id)||{id}:null;}return novels.find(b=>b.title.toLocaleLowerCase()===x.toLocaleLowerCase())||null;}
 $('create-form').addEventListener('submit',async(e)=>{e.preventDefault();const btn=$('create');btn.disabled=true;show('created','Creating novel…');try{const targetId=selectedMergeId;
  const j=await post('/api/admin/additional/create',{...payload(),publish:$('publish').checked,
   ...(targetId?{targetId,confirmIdentity:true}:{})});resetMergeSelection();lastCreated=j.id>=100000?j.id:null;
