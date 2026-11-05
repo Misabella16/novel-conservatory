@@ -1996,7 +1996,7 @@ const nuIdentity=x=>String(x||'').normalize('NFKD').toLocaleLowerCase()
 const nuStoredTitleKey=x=>String(x||'').toLocaleLowerCase().replace(/\s+/g,' ').trim();
 const nuCanon=x=>{
  try{const u=new URL(String(x||''));
-  if(u.protocol!=='https:'||u.hostname!=='www.novelupdates.com'||u.port||u.username||u.password||u.search||u.hash)return '';
+  if(u.protocol!=='https:'||!['novelupdates.com','www.novelupdates.com'].includes(u.hostname)||u.port||u.username||u.password||u.search||u.hash)return '';
   const m=/^\/series\/([a-z0-9][a-z0-9-]{0,190})\/?$/.exec(u.pathname);
   return m?'https://www.novelupdates.com/series/'+m[1]+'/':'';
  }catch{return ''}
