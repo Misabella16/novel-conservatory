@@ -2052,7 +2052,7 @@ async function nuGetExisting(env,url,id){
  return {id:bookId,kind:'extra',row,beforeRaw:row.payload_json,data:nuAdditionalData(row),title:row.title};
 }
 async function nuFindCandidates(env,url,source,excludedId){
- const key=nuIdentity(source.title),canonical=nuCanon(source.nuUrl),matches=[];
+ const key=nuIdentity(source.title),canonical=nuCanon(source.nuUrl)||nuCanon(source.sourceUrl),matches=[];
  const base=await nuBaseCatalogue(env,url),added=await nuAdditionalRows(env);
  // Include existing published editorial changes; a novel's source URL or
  // displayed title may differ from its original static catalogue snapshot.
@@ -2065,7 +2065,7 @@ async function nuFindCandidates(env,url,source,excludedId){
   if(x.id===excludedId)continue;
   const exactTitle=!!key&&(nuIdentity(x.title)===key||nuIdentity(x.originalTitle)===key)
    ||!!originalKey&&(nuIdentity(x.title)===originalKey||nuIdentity(x.originalTitle)===originalKey);
-  const exactUrl=!!canonical&&nuCanon(x.nuUrl)===canonical;
+  const exactUrl=!!canonical&&(nuCanon(x.nuUrl)===canonical||nuCanon(x.sourceUrl)===canonical);
   if(exactTitle||exactUrl)matches.push({id:x.id,title:x.title,matchedBy:exactUrl?'Novel Updates URL':'Exact normalized title',kind:x.id<=962?'original':'added'});
  }
  return matches;
@@ -2413,6 +2413,31 @@ async function nuAdminRoutes(request,env,email,role){
    return respond({ok:true,processed:results.length,merged:results.filter(x=>x.ok).length,
     results,skipped:scan.skipped,remainingMayExist:scan.proposals.length>12,
     note:'All successful merges have independent Undo history records.'});
+  }
+  // Read-only duplicate preflight used by Add Novels. It sees both the
+  // original 962 entries and all active additional entries, including drafts.
+  // Actual writes still re-check identity server-side to prevent races.
+  if(path==='/api/admin/nu/check-duplicate'&&method==='GET'){
+   const source={
+    title:extraTxt(url.searchParams.get('title'),210),
+    originalTitle:extraTxt(url.searchParams.get('originalTitle'),210),
+    author:extraTxt(url.searchParams.get('author'),140),
+    nuUrl:extraUrl(url.searchParams.get('nuUrl')),
+    sourceUrl:extraUrl(url.searchParams.get('sourceUrl'))
+   };
+   if(source.title.length<2&&!nuCanon(source.nuUrl)&&!nuCanon(source.sourceUrl))
+    return respond({items:[],note:'Enter a title or a Novel Updates series URL.'});
+   const matches=await nuFindCandidates(env,url,source,null);
+   const entries=[];
+   for(const x of matches.slice(0,20)){
+    const existing=await nuGetExisting(env,url,x.id);
+    entries.push({id:x.id,title:existing.data.title,author:existing.data.author||'',
+     kind:existing.kind,visibility:existing.kind==='extra'?existing.row.visibility:'published',
+     matchedBy:x.matchedBy,hasSynopsis:!!existing.data.synopsis,
+     tagCount:extraTags(existing.data.tags).length});
+   }
+   return respond({items:entries,total:matches.length,
+    note:'Existing entries are reused when a match is unambiguous. Conflicting records can be compared and merged with Undo.'});
   }
   if(path==='/api/admin/nu/search-books'&&method==='GET'){
    const q=String(url.searchParams.get('q')||'').trim().slice(0,120);
