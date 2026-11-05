@@ -2388,7 +2388,11 @@ async function nuUndoEdit(env,email,eventId){
      snap.afterVisibility!==undefined&&row.visibility!==snap.afterVisibility)
    throw Error('The new book changed or was published since creation. Undo any later edits first.');
   if(await nuHasPrivateEpub(env,targetId))throw Error('This book now has EPUBs. Unlink or transfer them safely before undoing creation.');
-  if(row.cover_key)throw Error('This book has a cover image attached. Move or remove the cover before undoing creation.');
+  // The cover originally submitted with this newly created book belongs
+  // to the same reversible creation event. Hide the book without deleting the
+  // cover object; only block Undo if the cover was subsequently replaced.
+  if(row.cover_key&&row.cover_key!==(snap.afterCoverKey||''))
+   throw Error('This book has a newer cover. Undo the later cover change first.');
   const result=await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND source_submission_id=''")
    .bind('reverted-create:'+targetId,targetId,snap.afterTarget).run();
   if((result.meta?.changes||0)!==1)throw Error('Creation changed while undoing; refresh first.');
