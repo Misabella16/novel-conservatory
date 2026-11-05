@@ -44,10 +44,16 @@ async function init(){try{
  approved=true;
  const [cat,content,inventoryData]=await Promise.all([json(await fetch('/api/catalogue',{cache:'no-store'})),json(await fetch('/api/content',{cache:'no-store'})),json(await fetch('/api/private/edition/inventory',{cache:'no-store'}))]);
  const list=Array.isArray(cat)?cat:(cat.books||[]),edits=new Map((content.edits||[]).map(x=>[x.id,x.patch]));
- books=list.map(b=>({...b,...(edits.get(b.id)||{})}));
- for(const b of books){for(const name of [b.title,b.originalTitle]){const k=norm(name);if(!k)continue;const v=titleMap.get(k)||[];if(!v.includes(b.id))v.push(b.id);titleMap.set(k,v);}const o=document.createElement('option');o.value=bookLabel(b);$('novel-choices').append(o);}
+ books=[];
+ for(const b of list)addBook({...b,...(edits.get(b.id)||{})});
+ for(const b of content.additional||[])if(b?.id)addBook(b);
  for(const e of inventoryData.editions||[]){const x=inventory.get(e.id)||[];x.push(e);inventory.set(e.id,x);}
  text(`Ready. ${books.length} existing novels, ${inventoryData.editions?.length||0} newer EPUB editions on record.`);
+ const selectedId=Number(new URLSearchParams(location.search).get('novel'));
+ if(Number.isSafeInteger(selectedId)&&books.some(x=>x.id===selectedId)){
+  $('lookup').value='#'+selectedId;
+  $('lookup-btn').click();
+ }
 }catch(e){text(e.message,true)}}
 $('files').addEventListener('change',()=>{$('folder').value='';files=Array.from($('files').files);text(`${files.length} selected. Click Review & match files.`)});
 $('folder').addEventListener('change',()=>{$('files').value='';files=Array.from($('folder').files).filter(f=>/\.epub$/i.test(f.name));text(`${files.length} EPUBs selected from folder.`)});
