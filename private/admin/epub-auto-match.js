@@ -23,8 +23,20 @@ function variants(value){
  return [...new Set(choices.map(norm).filter(Boolean))];
 }
 const els=(doc,name)=>[...doc.getElementsByTagName('*')].filter(node=>node.localName===name);
+const genreNames=new Set(['action','adventure','comedy','drama','fantasy','historical','horror',
+ 'martial arts','mystery','psychological','romance','sci-fi','science fiction',
+ 'slice of life','sports','supernatural','tragedy','wuxia','xianxia','xuanhuan']);
+function novelUpdatesUrl(value){
+ try{
+  const url=new URL(trim(value));
+  if(url.protocol!=='https:'||!['novelupdates.com','www.novelupdates.com'].includes(url.hostname)
+     ||url.username||url.password||url.port||url.search||url.hash)return '';
+  const match=/^\/series\/([a-z0-9][a-z0-9-]{0,190})\/?$/i.exec(url.pathname);
+  return match?'https://www.novelupdates.com/series/'+match[1].toLowerCase()+'/':'';
+ }catch{return ''}
+}
 async function inspect(file){
- const fallback={title:'',author:'',synopsis:'',tags:[],metadataFound:false};
+ const fallback={title:'',author:'',synopsis:'',tags:[],genres:[],nuUrl:'',language:'',metadataFound:false};
  if(!file||file.size>250*1048576||typeof JSZip==='undefined')return fallback;
  try{
   const zip=await JSZip.loadAsync(file),container=zip.file('META-INF/container.xml');
@@ -37,7 +49,22 @@ async function inspect(file){
   if(els(metadata,'parsererror').length)return fallback;
   const value=(name,max)=>trim(els(metadata,name)[0]?.textContent).slice(0,max);
   const tags=[...new Set(els(metadata,'subject').map(x=>trim(x.textContent).slice(0,65)).filter(Boolean))].slice(0,35);
-  return {title:value('title',210),author:value('creator',140),synopsis:value('description',6000),tags,metadataFound:true};
+  // Genre is taken only from explicit embedded subject/type labels. Never
+  // infer genre or tropes from chapter prose or the book's title.
+  const candidateGenres=[...tags,...els(metadata,'type').map(x=>trim(x.textContent))];
+  const genres=[...new Set(candidateGenres.map(x=>x.replace(/\s+/g,' ').trim()).filter(
+   x=>genreNames.has(x.toLowerCase())))].slice(0,20);
+  const possibleSources=[
+   ...els(metadata,'identifier').map(x=>trim(x.textContent)),
+   ...els(metadata,'source').map(x=>trim(x.textContent)),
+   ...els(metadata,'relation').map(x=>trim(x.textContent)),
+   ...els(metadata,'meta').flatMap(x=>[
+    trim(x.getAttribute('content')),trim(x.textContent)])
+  ];
+  const nuUrl=possibleSources.map(novelUpdatesUrl).find(Boolean)||'';
+  return {title:value('title',210),author:value('creator',140),
+   synopsis:value('description',6000),tags,genres,nuUrl,language:value('language',40),
+   metadataFound:true};
  }catch{return fallback}
 }
 function resolve(file,metadata,books){
@@ -46,6 +73,15 @@ function resolve(file,metadata,books){
  const meaningless=value=>/^(?:epub|ebook|book|untitled|unknown|volume|chapter|novel)(?:\s*\d+)?$/i.test(value);
  const sourceTitle=meaningless(embeddedTitle)?'':embeddedTitle;
  const parts=[...variants(sourceTitle),...variants(fileTitle)];
+ const sourceNu=novelUpdatesUrl(metadata?.nuUrl);
+ if(sourceNu){
+  const exact=books.filter(b=>novelUpdatesUrl(b.nuUrl)===sourceNu);
+  if(exact.length===1)return {kind:'matched',bookId:Number(exact[0].id),
+   title:sourceTitle||fileTitle,reason:'Matching canonical Novel Updates series URL'};
+  if(exact.length>1)return {kind:'ambiguous',bookId:null,
+   title:sourceTitle||fileTitle,candidates:exact.map(x=>x.id),
+   reason:'Multiple catalogue entries use this Novel Updates URL. Resolve duplicates first.'};
+ }
  const index=new Map();
  for(const b of books){
   for(const name of [b.title,b.originalTitle]){
@@ -63,6 +99,10 @@ function resolve(file,metadata,books){
   if(found.length===1){
    const candidate=books.find(b=>Number(b.id)===found[0]);
    const author=norm(metadata?.author),current=norm(candidate?.author);
+   const otherNu=novelUpdatesUrl(candidate?.nuUrl);
+   if(sourceNu&&otherNu&&sourceNu!==otherNu)return {kind:'ambiguous',bookId:null,
+    title:sourceTitle||fileTitle,candidates:found,
+    reason:'Title matches but the novels have different Novel Updates series URLs'};
    if(author&&current&&author!==current)return {kind:'ambiguous',bookId:null,
     title:sourceTitle||fileTitle,candidates:found,
     reason:'Title matches, but EPUB author conflicts with the catalogue'};
@@ -87,9 +127,11 @@ function createPayload(match,meta){
   author:trim(meta?.author).slice(0,140),
   synopsis:trim(meta?.synopsis).slice(0,6000),
   tags:Array.isArray(meta?.tags)?meta.tags.slice(0,35):[],
-  genres:[],metadataSource:meta?.metadataFound?'EPUB embedded metadata':'EPUB filename',
-  language:'English',translation:'unconfirmed',publish:false
+  genres:Array.isArray(meta?.genres)?meta.genres.slice(0,20):[],
+  nuUrl:novelUpdatesUrl(meta?.nuUrl),
+  metadataSource:meta?.metadataFound?'EPUB embedded metadata':'EPUB filename',
+  language:trim(meta?.language)||'English',translation:'unconfirmed',publish:false
  };
 }
-window.ConservatoryEPUBMatch={norm,filenameTitle,variants,inspect,resolve,createPayload};
+window.ConservatoryEPUBMatch={norm,filenameTitle,variants,inspect,resolve,createPayload,novelUpdatesUrl};
 })();
