@@ -2269,9 +2269,10 @@ async function nuUndoEdit(env,email,eventId){
  if(event.undone_at)throw Error('This change has already been undone');
  const snap=JSON.parse(event.before_json),targetId=Number(event.target_id);
  if(snap.targetKind==='created'){
-  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
-  if(row?.payload_json!==snap.afterTarget||row.source_submission_id!=='')
-   throw Error('The new book changed since creation. Undo any later edits first.');
+  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,source_submission_id,visibility FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
+  if(row?.payload_json!==snap.afterTarget||row.source_submission_id!==''||
+     snap.afterVisibility!==undefined&&row.visibility!==snap.afterVisibility)
+   throw Error('The new book changed or was published since creation. Undo any later edits first.');
   if(await nuHasPrivateEpub(env,targetId))throw Error('This book now has EPUBs. Unlink or transfer them safely before undoing creation.');
   const result=await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND source_submission_id=''")
    .bind('reverted-create:'+targetId,targetId,snap.afterTarget).run();
@@ -2284,8 +2285,10 @@ async function nuUndoEdit(env,email,eventId){
   const current=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(targetId).first();
   if(current?.patch_json!==snap.afterTarget)throw Error('The book was edited again. Resolve those newer changes before undoing this one.');
  }else{
-  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
-  if(row?.payload_json!==snap.afterTarget)throw Error('The book was edited again. Undo the newer edit first.');
+  const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,visibility FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
+  if(row?.payload_json!==snap.afterTarget||
+    snap.afterVisibility!==undefined&&row.visibility!==snap.afterVisibility)
+   throw Error('The book was edited or published again. Undo the newer edit first.');
  }
  if(snap.sourceId){
   const extra=await env.COMMUNITY_DB.prepare('SELECT source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(snap.sourceId).first();
@@ -2296,7 +2299,15 @@ async function nuUndoEdit(env,email,eventId){
   else await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND patch_json=?').bind(snap.beforeTarget,targetId,snap.afterTarget).run();
  }else{
   const before=JSON.parse(snap.beforeTarget||'{}');
-  await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=?').bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),targetId,snap.afterTarget).run();
+  let restored;
+  if(snap.beforeVisibility!==undefined){
+   restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,visibility=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND visibility=?')
+    .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),snap.beforeVisibility,targetId,snap.afterTarget,snap.afterVisibility).run();
+  }else{
+   restored=await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=?')
+    .bind(snap.beforeTarget,before.title,nuStoredTitleKey(before.title),targetId,snap.afterTarget).run();
+  }
+  if((restored.meta?.changes||0)!==1)throw Error('A newer edit changed the record while Undo was running.');
  }
  if(snap.sourceId){
   await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET source_submission_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND source_submission_id=?')
