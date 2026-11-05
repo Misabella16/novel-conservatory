@@ -2448,6 +2448,20 @@ async function nuUndoEdit(env,email,eventId){
   ).bind(stage.published_id,stage.slug,targetId).run();
  }
  await env.COMMUNITY_DB.prepare("UPDATE catalogue_edit_events SET undone_at=CURRENT_TIMESTAMP,undone_by=? WHERE id=? AND undone_at IS NULL").bind(email,id).run();
+ // A public contribution may introduce an image reference. Undo revokes its
+ // public image endpoint while keeping R2 bytes available for recovery.
+ if(snap.targetKind==='seed'){
+  try{
+   const after=JSON.parse(snap.afterTarget||'{}');
+   const before=JSON.parse(snap.beforeTarget||'{}');
+   const match=/^\/api\/community\/image\?id=([a-f0-9-]{36})$/.exec(String(after.cover||''));
+   if(match&&before.cover!==after.cover){
+    await env.COMMUNITY_DB.prepare(
+     "UPDATE community_entries SET status='rejected',moderated_by=?,moderated_at=CURRENT_TIMESTAMP WHERE id=? AND scope='public' AND kind='image' AND status='approved'"
+    ).bind(email,match[1]).run();
+   }
+  }catch(e){console.warn('A community cover needs manual access review after Undo',e)}
+ }
  let privateSynced=true;
  if(snap.targetKind==='seed'&&snap.afterPrivate!==snap.beforePrivate){
   try{
