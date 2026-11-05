@@ -2234,13 +2234,16 @@ async function nuSafeDuplicateScan(env,url){
   if(source.kind!=='added')continue;
   let reason='';
   const privateToOriginal=source.visibility==='private'&&target.kind==='original';
-  if(source.hasEpub)reason='Duplicate has private EPUB editions. Move those editions before merging; no book file was altered.';
-  else if(source.coverKey)reason='Duplicate has a private cover image attached. Preserve it before merging.';
-  else if(source.visibility!==target.visibility&&!privateToOriginal)
-   reason='Private/public visibility differs; automatic merging only supports private into original with no files.';
+  if(source.visibility!==target.visibility&&!privateToOriginal)
+   reason='Private/public visibility differs; automatic merging only supports private into an original public record.';
+  let assetSummary={editionCount:0,coverPreserved:!!source.coverKey};
+  if(!reason)try{
+   const plan=await nuAssetPlan(env,source.id,target.id,{cover_key:source.coverKey});
+   assetSummary={editionCount:plan.editions.length,coverPreserved:!!plan.coverKey};
+  }catch(error){reason=String(error.message||error).slice(0,190);}
   if(reason){skipped.push({id:source.id,title:source.title,targetId:target.id,reason});continue}
   proposals.push({sourceId:source.id,targetId:target.id,sourceTitle:source.title,
-   targetTitle:target.title,privateOnly:privateToOriginal,
+   targetTitle:target.title,privateOnly:privateToOriginal,assets:assetSummary,
    match:x.nuKey&&x.nuKey===y.nuKey?'Exact Novel Updates URL':'Same normalized title and author'});
  }
  return {proposals,skipped};
@@ -2480,7 +2483,8 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  }
  try{await audit(env,email,sourceId?'nu.duplicate.merge':'nu.metadata.sync',target.id,eventId)}catch{}
  return {ok:true,id:target.id,eventId,mergedFrom:sourceId||null,privateOnly:privateSourceOnly,
-  conflicts:computed.conflicts,changed:computed.changed,privateSynced};
+  conflicts:computed.conflicts,changed:computed.changed,privateSynced,
+  movedEditions:assetPlan?.editions?.length||0,coverPreserved:!!sourceRow?.cover_key};
 }
 async function nuSyncSource(env,url,email,source,options={}){
  const safe=extraPayload({...source,metadataReview:true,metadataSource:source.metadataSource||'Novel Updates source'});
@@ -2737,9 +2741,9 @@ async function nuAdminRoutes(request,env,email,role){
      const source=await nuGetExisting(env,url,candidate.sourceId);
      const target=await nuGetExisting(env,url,candidate.targetId);
      const privateOnly=source.row?.visibility==='private'&&target.kind==='seed';
-     if(await nuHasPrivateEpub(env,source.id)||source.row?.cover_key||
-       source.row?.visibility!==(target.kind==='seed'?'published':target.row.visibility)&&!privateOnly)
-      throw Error('EPUB, cover, or unsafe visibility difference. No changes made.');
+     if(source.row?.visibility!==(target.kind==='seed'?'published':target.row.visibility)&&!privateOnly)
+      throw Error('An unsafe visibility difference prevents this merge.');
+     await nuAssetPlan(env,source.id,target.id,source.row);
      const check=await nuFindCandidates(env,url,source.data,source.id);
      if(check.length!==1||check[0].id!==target.id)
       throw Error('Match changed or is ambiguous; nothing was merged');
@@ -2749,8 +2753,9 @@ async function nuAdminRoutes(request,env,email,role){
       !!nuIdentity(source.data.author)&&nuIdentity(source.data.author)===nuIdentity(target.data.author);
      if(srcUrl&&dstUrl&&srcUrl!==dstUrl||!sameURL&&!sameIdentity)
       throw Error('Source identity no longer matches the destination');
-     const merged=await nuSaveEdit(env,url,email,target.id,source.data,{sourceId:source.id,expectedBefore:target.beforeRaw});
-     results.push({ok:true,sourceId:source.id,targetId:target.id,eventId:merged.eventId,privateOnly:merged.privateOnly});
+     const merged=await nuSaveEdit(env,url,email,target.id,source.data,{sourceId:source.id,expectedBefore:target.beforeRaw,transferAssets:true});
+     results.push({ok:true,sourceId:source.id,targetId:target.id,eventId:merged.eventId,privateOnly:merged.privateOnly,
+      movedEditions:merged.movedEditions||0});
     }catch(e){results.push({ok:false,sourceId:candidate.sourceId,targetId:candidate.targetId,
       error:String(e.message||e).slice(0,190)})}
    }
@@ -2815,10 +2820,15 @@ async function nuAdminRoutes(request,env,email,role){
     previewData={...target.base,...privatePatch};
    }
    const preview=nuMergeData(previewData,data,[]);
+   let assetSummary={editionCount:0,coverPreserved:!!sourceRow.cover_key},blockedByAssets='';
+   try{
+    const plan=await nuAssetPlan(env,sourceId,targetId,sourceRow);
+    assetSummary={editionCount:plan.editions.length,coverPreserved:!!plan.coverKey};
+   }catch(error){blockedByAssets=String(error.message||error);}
    return respond({source:{id:sourceId,title:data.title,visibility:sourceRow.visibility,fields:data},
     target:{id:target.id,title:target.title,kind:target.kind,fields:target.data},
     alreadyMerged:String(sourceRow.source_submission_id||'').startsWith('merged-into:'),
-    blockedByEpub:await nuHasPrivateEpub(env,sourceId),privateOnly,
+    blockedByEpub:false,blockedByAssets,assets:assetSummary,privateOnly,
     visibilityConflict:sourceRow.visibility!==(target.kind==='seed'?'published':target.row.visibility)&&!privateOnly,
     changed:preview.changed,conflicts:preview.conflicts,
     expectedBefore:target.beforeRaw});
@@ -2831,7 +2841,7 @@ async function nuAdminRoutes(request,env,email,role){
    if(!sourceRow)return respond({error:'Source book not found'},404);
    const fields=Array.isArray(b.preferSourceFields)?b.preferSourceFields.filter(x=>NU_EDITABLE.includes(x)):[];
    const result=await nuSaveEdit(env,url,email,targetId,nuAdditionalData(sourceRow),{
-    sourceId,preferSourceFields:fields,expectedBefore:b.expectedBefore
+    sourceId,preferSourceFields:fields,expectedBefore:b.expectedBefore,transferAssets:true
    });
    return respond(result);
   }
