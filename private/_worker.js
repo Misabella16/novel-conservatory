@@ -3456,8 +3456,13 @@ const PRIVATE_EPUB_COVER_KEY='private-epub-cover:';
 // descriptions, subject tags or fan-translator artwork to the public Worker.
 const PRIVATE_EMBEDDED_KEY='private-epub-metadata:';
 async function privateEpubLinked(env,id,uuid){
- const bookId=editionBook(id),edition=editionUuid(uuid);
+ const bookId=editionBook(id),edition=uuid==='legacy'?'legacy':editionUuid(uuid);
  if(!bookId||!edition)return false;
+ if(edition==='legacy'&&bookId<=962){
+  const old=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+bookId).first();
+  return !!old;
+ }
+ if(edition==='legacy')return false;
  const row=await env.DB.prepare('SELECT id FROM '+editionTable(bookId)+' WHERE novel_id=? AND id=?').bind(bookId,edition).first();
  return !!row;
 }
@@ -3475,7 +3480,7 @@ async function privateEpubIngestRoute(request,env,email,role){
  if(request.method!=='POST'||!strictOrigin(request))return respond({error:'Invalid import or request origin'},403);
  if(!env.DB)return respond({error:'Private metadata database unavailable'},503);
  try{
-  const body=await getJson(request),id=editionBook(body.id),edition=editionUuid(body.editionId);
+  const body=await getJson(request),id=editionBook(body.id),edition=body.editionId==='legacy'?'legacy':editionUuid(body.editionId);
   if(!id||!edition||!await privateEpubLinked(env,id,edition))return respond({error:'First upload the selected EPUB edition to this novel'},409);
   const parsed=body.metadata&&typeof body.metadata==='object'?body.metadata:{};
   const synopsis=textField(parsed.synopsis,6000),tags=epubSubjects(parsed.tags),author=textField(parsed.author,140);
@@ -3528,7 +3533,8 @@ async function privateEpubAutoCoverRoute(request,env,email,role){
   // Only act on works with a stored EPUB; never turn this into a generic image
   // upload or publish the private owner's edition cover on the public site.
   const linked=await env.DB.prepare('SELECT id FROM '+editionTable(id)+' WHERE novel_id=? LIMIT 1').bind(id).first();
-  if(!linked)return respond({error:'Upload an EPUB edition before importing its cover'},409);
+  const legacy=!linked&&id<=962?await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind('private-epub:'+id).first():null;
+  if(!linked&&!legacy)return respond({error:'Upload an EPUB edition before importing its cover'},409);
   const key='private-epub-cover:'+id;
   const prior=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(key).first();
   if(prior)return respond({ok:true,stored:false,skipped:true,reason:'Private cover already exists'});
