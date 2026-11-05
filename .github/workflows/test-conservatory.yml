@@ -75,6 +75,10 @@ jobs:
         run: python tests/check_editor_direct_undo.py
       - name: Verify Undo for newly created catalogue entries
         run: python tests/check_creation_undo_history.py
+      - name: Verify shared canonical identity, EPUB transfer and Undo
+        run: |
+          python tests/check_canonical_migration.py
+          node tests/check_canonical_assets.js
       - name: Check migration SQL offline
         run: |
           python - <<'PY'
