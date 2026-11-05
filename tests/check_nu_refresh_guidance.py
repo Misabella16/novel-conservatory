@@ -14,8 +14,8 @@ review=(root/'private/admin/novel-updates-submissions/review.js').read_text(enco
 
 assert '↻ Submit / Refresh NU' in profile
 assert "nu?'Refresh details from Novel Updates':'Add Novel Updates link &amp; source details'" in profile
-assert "&url=\${encodeURIComponent(nu||'')}" in profile
-assert "Copy" in profile[profile.index("function renderDetail(d)"):profile.index("function openDetail(d)")]
+assert "&url=${encodeURIComponent(nu||'')}" in profile
+assert "copy its series URL" in profile[profile.index("function renderDetail(d)"):profile.index("function openDetail(d)")]
 assert "Even an already-linked novel can request updated synopsis, genres, tags and a cover reference" in profile
 assert "title=" in profile[profile.index("Refresh details from Novel Updates")-400:profile.index("Refresh details from Novel Updates")+400]
 
@@ -48,7 +48,7 @@ assert "Refresh a novel using Novel Updates" in about
 assert "copy its existing NU series URL" in about
 assert "cover artwork requires separate rights approval" in about
 assert "Refresh a novel from Novel Updates" in tour
-assert "Even if a novel already has its Novel Updates link" in tour
+assert "A novel can already have a Novel Updates link" in tour
 
 assert "SELECT title,author,payload_json,nu_url,cover_url,custom_locked FROM nu_staged_series" in private_worker
 assert "coverUrl:extraUrl(row.cover_url)" in private_worker
