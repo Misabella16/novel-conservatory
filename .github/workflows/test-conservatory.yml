@@ -71,6 +71,8 @@ jobs:
         run: python tests/check_safe_duplicate_batch.py
       - name: Verify instant editor save and Undo for added novels
         run: python tests/check_editor_direct_undo.py
+      - name: Verify Undo for newly created catalogue entries
+        run: python tests/check_creation_undo_history.py
       - name: Check migration SQL offline
         run: |
           python - <<'PY'
