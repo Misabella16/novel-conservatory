@@ -36,25 +36,53 @@ async function scanSafe(){
  finally{button.disabled=false}
 }
 $('safe-scan').addEventListener('click',scanSafe);
+let autoMergeRunning=false,autoMergeStop=false;
+$('safe-stop').addEventListener('click',()=>{
+ autoMergeStop=true;$('safe-stop').disabled=true;
+ show($('safe-status'),'Stopping after the current batch. Already saved merges remain reversible in Undo history.');
+});
 $('safe-merge').addEventListener('click',async()=>{
- if(!safeScan?.proposals?.length)return;
- const button=$('safe-merge');button.disabled=true;
- show($('safe-status'),'Merging at most 12 safe duplicate pairs. Every change gets an Undo entry…');
+ if(autoMergeRunning||!safeScan?.proposals?.length)return;
+ autoMergeRunning=true;autoMergeStop=false;
+ $('safe-merge').disabled=true;$('safe-scan').disabled=true;$('safe-stop').disabled=false;
+ const status=$('safe-status'),errors=[];
+ let merged=0,batches=0,more=false,stoppedEarly=false;
  try{
-  const result=await api('/api/admin/nu/duplicates/merge-safe',{method:'POST',
-   headers:{'content-type':'application/json'},body:JSON.stringify({})});
-  const errors=(result.results||[]).filter(x=>!x.ok);
-  show($('safe-status'),'✓ '+result.merged+' duplicate'+(result.merged===1?'':'s')+
-   ' combined with no per-book approval. '+errors.length+' skipped at save time. '+
-   (result.remainingMayExist?'Another batch may be available; scan again. ':'')+
-   'Open Undo history below to reverse a merge.'+
-   (errors.length?'\nSkipped: '+errors.slice(0,5).map(x=>'#'+x.sourceId+': '+x.error).join('; '):''));
+  // D1 operations are bounded to 12 merges per request. Continue automatically
+  // without individual approvals, but never spin on an unmergeable catalogue.
+  do{
+   if(autoMergeStop){stoppedEarly=true;break}
+   show(status,'Merging safe duplicates · batch '+(batches+1)+
+    ' · '+merged+' already combined. All changes have individual Undo records…');
+   const result=await api('/api/admin/nu/duplicates/merge-safe',{
+    method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({})
+   });
+   batches++;
+   merged+=Number(result.merged)||0;
+   errors.push(...(result.results||[]).filter(x=>!x.ok));
+   more=!!result.remainingMayExist;
+   // One failing batch should not be repeated indefinitely.
+   if(!result.merged||!more)break;
+  }while(batches<10);
+  if(autoMergeStop)stoppedEarly=true;
   await history();
   await scanSafe();
-  show($('safe-status'),'✓ '+result.merged+' safe duplicate'+(result.merged===1?'':'s')+' merged; '+
-   errors.length+' skipped while saving. All merges can be reversed below.'+
-   (result.remainingMayExist?' More pairs may remain; run the next batch.':''));
- }catch(error){show($('safe-status'),'Nothing else was merged: '+error.message,true);button.disabled=false}
+  const remaining=Number(safeScan?.proposals?.length)||0;
+  show(status,'✓ '+merged+' safe duplicate'+(merged===1?'':'s')+' merged in '+batches+
+   ' batch'+(batches===1?'':'es')+' without per-book approval. Each merge can be undone below. '+
+   (remaining?remaining+' possible safe matches remain. ':'No further safe matches were found. ')+
+   (stoppedEarly?'Stopped at your request. ':batches===10?'Reached the safety limit of 10 batches. ':'')+
+   (errors.length?errors.length+' attempts were skipped safely: '+
+    errors.slice(0,6).map(x=>'#'+x.sourceId+': '+x.error).join('; '):''));
+ }catch(error){
+  show(status,'Merge stopped after '+merged+' completed change'+(merged===1?'':'s')+
+   '. Existing changes remain in Undo history. '+error.message,true);
+  await history().catch(()=>{});
+ }finally{
+  autoMergeRunning=false;$('safe-stop').disabled=true;$('safe-scan').disabled=false;
+  if(!safeScan?.proposals?.length)$('safe-merge').disabled=true;
+  else $('safe-merge').disabled=false;
+ }
 });
 
 const idOf=x=>{
