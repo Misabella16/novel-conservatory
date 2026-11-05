@@ -35,7 +35,8 @@ assert "beforePrivate:previousPrivate,afterPrivate:nextPrivate" in private
 assert "snap.afterTarget" in private
 assert "if(await nuHasPrivateEpub(env,sourceId))throw Error" in private
 assert "if(current?.patch_json!==snap.afterTarget)" in private
-assert "if(row?.payload_json!==snap.afterTarget)" in private
+assert "if(row?.payload_json!==snap.afterTarget||" in private
+assert "snap.afterVisibility!==undefined&&row.visibility!==snap.afterVisibility" in private
 assert "Undo the newer edit first" in private
 assert "published_catalogue_overrides" in private
 assert "extraInsert(env,data,'','published',email)" in private
