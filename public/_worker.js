@@ -474,6 +474,170 @@ async function extraInsert(env,payload,coverKey,visibility,who,submissionId=''){
  }
  throw Error('Could not assign novel ID; please retry');
 }
+
+// Public community catalogue writes: publish on submission, log every change,
+// and preserve private novels/EPUBs without making them visible.
+const guestKey=x=>String(x||'').normalize('NFKD').toLowerCase().replace(/\p{M}/gu,'').replace(/[^\p{L}\p{N}]/gu,'');
+const guestEmpty=x=>x==null||x===''||(Array.isArray(x)&&x.length===0);
+const guestNu=x=>{
+ try{const u=new URL(String(x||''));const m=/^\/series\/([a-z0-9][a-z0-9-]{0,190})\/?$/.exec(u.pathname);
+  return u.protocol==='https:'&&['www.novelupdates.com','novelupdates.com'].includes(u.hostname)&&!u.username&&!u.password&&!u.port&&!u.search&&!u.hash&&m?
+   'https://www.novelupdates.com/series/'+m[1]+'/':'';}catch{return ''}
+};
+const guestMerge=(current,incoming)=>{
+ const result={...current},changed=[];
+ for(const field of ['title','author','originalTitle','synopsis','genres','tags','contentWarnings','nuUrl',
+  'translator','translatorUrl','originalLanguage','originalUrl','sourceUrl','language','translation','novelOrigin']){
+  const value=incoming[field],old=result[field];
+  if(guestEmpty(value))continue;
+  if(['genres','tags','contentWarnings'].includes(field)){
+   const before=extraTags(old),values=extraTags(value);
+   const next=[...before];
+   for(const x of values)if(!next.some(y=>guestKey(y)===guestKey(x)))next.push(x);
+   if(next.length!==before.length){result[field]=next.slice(0,35);changed.push(field)}
+  }else if(guestEmpty(old)||field==='translation'&&old==='unconfirmed'&&value!=='unconfirmed'){
+   result[field]=value;changed.push(field);
+  }
+ }
+ if(changed.length){result.metadataReview=false;result.metadataSource='Community submission (unreviewed)';}
+ return {result,changed};
+};
+let guestSeedCache=null;
+async function guestSeed(env,request){
+ if(guestSeedCache)return guestSeedCache;
+ const r=await env.ASSETS.fetch(new Request(new URL('/',request.url)));
+ if(!r.ok)throw Error('Cannot check the original catalogue now. Retry your submission.');
+ const html=await r.text();
+ const found=/<script\s+id="seed"\s+type="application\/json">([\s\S]*?)<\/script>/.exec(html);
+ if(!found)throw Error('Original catalogue unavailable; submission was not published.');
+ const books=JSON.parse(found[1]);if(!Array.isArray(books)||books.length<900)throw Error('The original catalogue could not be checked.');
+ guestSeedCache=books;return books;
+}
+async function guestJournal(env){
+ await env.COMMUNITY_DB.prepare("CREATE TABLE IF NOT EXISTS catalogue_edit_events (id TEXT PRIMARY KEY,operation TEXT NOT NULL CHECK(operation IN ('merge','metadata_sync','create')),target_id INTEGER NOT NULL,duplicate_id INTEGER,before_json TEXT NOT NULL,after_json TEXT NOT NULL,source_url TEXT NOT NULL DEFAULT '',actor_email TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,undone_at TEXT,undone_by TEXT NOT NULL DEFAULT '',CHECK(target_id>=1))").run();
+ await env.COMMUNITY_DB.prepare('CREATE INDEX IF NOT EXISTS idx_catalogue_edit_events_recent ON catalogue_edit_events(created_at DESC)').run();
+}
+async function guestCandidates(env,request,p){
+ const [seed,raw,overrides]=await Promise.all([
+  guestSeed(env,request),
+  env.COMMUNITY_DB.prepare("SELECT * FROM additional_catalogue_novels WHERE visibility='published' AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at ASC LIMIT 5000").all(),
+  env.COMMUNITY_DB.prepare('SELECT novel_id,patch_json FROM published_catalogue_overrides LIMIT 1500').all()
+ ]);
+ const patches=new Map((overrides.results||[]).map(x=>{let data={};try{data=JSON.parse(x.patch_json)}catch{}return [Number(x.novel_id),data]}));
+ const originals=seed.map(book=>({...book,...(patches.get(book.id)||{}),kind:'seed'}));
+ const added=(raw.results||[]).map(row=>{let values={};try{values=JSON.parse(row.payload_json)}catch{}return {...values,id:row.id,title:row.title,kind:'extra',row}});
+ const source=guestNu(p.nuUrl)||guestNu(p.sourceUrl),title=guestKey(p.title),original=guestKey(p.originalTitle),author=guestKey(p.author);
+ const matches=[];
+ for(const item of [...originals,...added]){
+  const targetSource=guestNu(item.nuUrl)||guestNu(item.sourceUrl);
+  const sameSource=!!source&&source===targetSource;
+  const conflictingSources=!!source&&!!targetSource&&source!==targetSource;
+  const sameTitle=!!title&&(title===guestKey(item.title)||title===guestKey(item.originalTitle))
+   ||!!original&&(original===guestKey(item.title)||original===guestKey(item.originalTitle));
+  const sameAuthor=!!author&&author===guestKey(item.author);
+  if(!conflictingSources&&(sameSource||sameTitle&&sameAuthor))
+   matches.push({item,rank:sameSource?3:2});
+ }
+ matches.sort((a,b)=>b.rank-a.rank||(a.item.kind==='seed'?-1:1)-(b.item.kind==='seed'?-1:1)||Number(a.item.id)-Number(b.item.id));
+ return matches.length?matches[0].item:null;
+}
+async function guestApply(env,request,p,coverKey,visitor){
+ await guestJournal(env);
+ const found=await guestCandidates(env,request,p);
+ const who='public-contributor';
+ const eventId=crypto.randomUUID();
+ if(!found){
+  // Same title can be a genuinely different novel. Identity checking above
+  // avoids hiding independent works just because the titles are identical.
+  let id=null;
+  for(let attempt=0;attempt<5;attempt++){
+   const candidate=100000+crypto.getRandomValues(new Uint32Array(1))[0];
+   try{
+    await env.COMMUNITY_DB.prepare('INSERT INTO additional_catalogue_novels(id,normalized_title,title,payload_json,cover_key,visibility,source_submission_id,created_by) VALUES (?,?,?,?,?,?,?,?)')
+     .bind(candidate,p.title.toLowerCase().replace(/\s+/g,' ').trim(),p.title,JSON.stringify(p),coverKey,'published','',who).run();
+    id=candidate;break;
+   }catch(error){if(!/unique|constraint.*id/i.test(String(error?.message||'')))throw error}
+  }
+  if(!id)throw Error('Unable to create a unique novel ID. Please retry.');
+  const snap={targetKind:'created',beforeTarget:null,afterTarget:JSON.stringify(p),sourceId:null,
+   beforeSourceMarker:'',afterSourceMarker:'reverted-create:'+id,beforeVisibility:null,afterVisibility:'published',
+   beforeCoverKey:'',afterCoverKey:coverKey||''};
+  try{
+   await env.COMMUNITY_DB.prepare('INSERT INTO catalogue_edit_events(id,operation,target_id,duplicate_id,before_json,after_json,source_url,actor_email) VALUES(?,?,?,?,?,?,?,?)')
+    .bind(eventId,'create',id,null,JSON.stringify(snap),JSON.stringify({target:JSON.stringify(p)}),guestNu(p.nuUrl),who).run();
+  }catch(error){
+   await env.COMMUNITY_DB.prepare("DELETE FROM additional_catalogue_novels WHERE id=? AND payload_json=? AND source_submission_id=''").bind(id,JSON.stringify(p)).run().catch(()=>{});
+   throw error;
+  }
+  return {ok:true,novelId:id,created:true,eventId,usedCover:!!coverKey,changedFields:['new novel']};
+ }
+ if(found.kind==='extra'){
+  const row=found.row,old=JSON.parse(row.payload_json||'{}');
+  const {result,changed}=guestMerge(old,p);
+  const before=row.payload_json,after=JSON.stringify(result);
+  const addedCover=!!coverKey&&!row.cover_key;
+  if(!changed.length&&!addedCover)return {ok:true,novelId:row.id,reused:true,unchanged:true,usedCover:false};
+  const nextCover=addedCover?coverKey:row.cover_key;
+  const snap={targetKind:'extra',beforeTarget:before,afterTarget:after,sourceId:null,
+   beforeSourceMarker:null,afterSourceMarker:null,beforePrivate:null,afterPrivate:null,
+   beforeVisibility:'published',afterVisibility:'published',beforeCoverKey:row.cover_key||'',afterCoverKey:nextCover||''};
+  const write=await env.COMMUNITY_DB.prepare(
+   "UPDATE additional_catalogue_novels SET payload_json=?,cover_key=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND payload_json=? AND cover_key=? AND visibility='published'")
+   .bind(after,nextCover,row.id,before,row.cover_key).run();
+  if((write.meta?.changes||0)!==1)throw Error('This book changed while submitting. Please retry.');
+  try{await env.COMMUNITY_DB.prepare('INSERT INTO catalogue_edit_events(id,operation,target_id,duplicate_id,before_json,after_json,source_url,actor_email) VALUES(?,?,?,?,?,?,?,?)')
+   .bind(eventId,'metadata_sync',row.id,null,JSON.stringify(snap),JSON.stringify({target:after}),guestNu(p.nuUrl),who).run();}
+  catch(error){
+   await env.COMMUNITY_DB.prepare("UPDATE additional_catalogue_novels SET payload_json=?,cover_key=? WHERE id=? AND payload_json=? AND cover_key=?")
+    .bind(before,row.cover_key,row.id,after,nextCover).run().catch(()=>{});
+   throw error;
+  }
+  return {ok:true,novelId:row.id,reused:true,eventId,usedCover:addedCover,changedFields:[...changed,...(addedCover?['cover']:[])]};
+ }
+ // Existing original catalogue: only fill blanks and union unique tags;
+ // never let an anonymous contribution replace curated descriptions.
+ const base=found;
+ const row=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(base.id).first();
+ const before=row?.patch_json??null,old=before?JSON.parse(before):{};
+ const {result,changed}=guestMerge({...base,...old},p);
+ let newImageId=null;
+ if(coverKey&&!result.cover){
+  newImageId=crypto.randomUUID();
+  result.cover='/api/community/image?id='+newImageId;
+  result.coverRights=true;result.coverCredit=p.coverCredit;
+  changed.push('cover');
+ }
+ if(!changed.length)return {ok:true,novelId:base.id,reused:true,unchanged:true,usedCover:false};
+ // Store only the fields that actually differ from the original. Other
+ // published changes survive untouched in the patch.
+ const next={...old};
+ for(const key of changed)if(key!=='cover')next[key]=result[key];
+ if(newImageId){next.cover=result.cover;next.coverRights=true;next.coverCredit=p.coverCredit}
+ next.metadataReview=false;next.metadataSource='Community submission (unreviewed)';
+ const after=JSON.stringify(next);
+ if(newImageId)await env.COMMUNITY_DB.prepare('INSERT INTO community_entries(id,scope,novel_id,kind,display_name,author_identity,body,rating,spoiler,tags_json,external_url,image_key,image_credit,parent_id,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+  .bind(newImageId,'public',base.id,'image',visitor||'Community contributor',who,'Community-submitted cover',null,0,'[]','',coverKey,p.coverCredit,'','approved').run();
+ let write;
+ try{
+  write=before===null?await env.COMMUNITY_DB.prepare(
+   'INSERT INTO published_catalogue_overrides(novel_id,patch_json,source_entry_id,published_by) VALUES (?,?,?,?) ON CONFLICT DO NOTHING')
+   .bind(base.id,after,eventId,who).run():await env.COMMUNITY_DB.prepare(
+   'UPDATE published_catalogue_overrides SET patch_json=?,source_entry_id=?,published_by=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND patch_json=?')
+   .bind(after,eventId,who,base.id,before).run();
+  if((write.meta?.changes||0)!==1)throw Error('This book changed while saving. Retry to include the latest changes.');
+  const snap={targetKind:'seed',beforeTarget:before,afterTarget:after,sourceId:null,
+   beforeSourceMarker:null,afterSourceMarker:null,beforePrivate:null,afterPrivate:null};
+  await env.COMMUNITY_DB.prepare('INSERT INTO catalogue_edit_events(id,operation,target_id,duplicate_id,before_json,after_json,source_url,actor_email) VALUES(?,?,?,?,?,?,?,?)')
+   .bind(eventId,'metadata_sync',base.id,null,JSON.stringify(snap),JSON.stringify({target:after}),guestNu(p.nuUrl),who).run();
+ }catch(error){
+  if(before===null)await env.COMMUNITY_DB.prepare('DELETE FROM published_catalogue_overrides WHERE novel_id=? AND patch_json=?').bind(base.id,after).run().catch(()=>{});
+  else await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=? WHERE novel_id=? AND patch_json=?').bind(before,base.id,after).run().catch(()=>{});
+  if(newImageId)await env.COMMUNITY_DB.prepare('DELETE FROM community_entries WHERE id=?').bind(newImageId).run().catch(()=>{});
+  throw error;
+ }
+ return {ok:true,novelId:base.id,reused:true,eventId,usedCover:!!newImageId,changedFields:changed};
+}
+
 async function additionalRoutes(request,env,scope,email='',role='reader'){
  const path=new URL(request.url).pathname,method=request.method.toUpperCase();
  if(!env.COMMUNITY_DB)return extraJson({error:'Community database binding is missing'},503);
