@@ -1418,6 +1418,17 @@ export default {
       head.set('cache-control','private,no-store');head.set('x-robots-tag','noindex,nofollow');
       return new Response(asset.body,{status:asset.status,statusText:asset.statusText,headers:head});
     }
+    // Static page shared by all novel IDs. The URL remains stable across
+    // re-cataloguing; API resolver redirects archived IDs to canonical ones.
+    if(/^\/novel\/[1-9]\d{0,10}\/?$/.test(path)){
+      const asset=await env.ASSETS.fetch(new Request(new URL('/novel/index.html',request.url)));
+      const headers=new Headers(asset.headers);
+      headers.set('content-type','text/html; charset=utf-8');
+      headers.set('cache-control','private,no-store');
+      headers.set('x-robots-tag','noindex,nofollow,noarchive');
+      headers.set('referrer-policy','no-referrer');
+      return new Response(asset.body,{status:asset.status,headers});
+    }
     if(path.startsWith('/api/')||path.startsWith('/media/')||path.startsWith('/admin/')||path==='/admin')
       return routes(request,env,ctx,email,role);
     const res=await env.ASSETS.fetch(request);
