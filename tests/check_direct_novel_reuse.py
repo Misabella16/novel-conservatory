@@ -13,7 +13,7 @@ assert "const sourceA=nuCanon(p.nuUrl),sourceB=nuCanon(current.nuUrl)" in code
 assert "sameTitle&&sameAuthor" in code
 assert "sameSource" in code
 assert "safe.length>1" in code
-assert "matched.kind==='original'||matched.visibility!==visibility" in code
+assert "matched.visibility!==visibility" in code
 assert "await nuSaveEdit(env,url,email,matched.id,p)" in code
 assert "await extraInsert(env,p,'',visibility,email)" in code
 assert "return {ok:true,id:matched.id,reused:true,eventId:result.eventId" in code
@@ -50,7 +50,7 @@ const incoming={title:"Novel Name",author:"Li Hua",nuUrl:"https://www.novelupdat
  let r=await extraCreateOrReuse(env,url,'editor@example.com',incoming,'published');
  assert.equal(r.id,100010);assert.equal(r.reused,true);assert.equal(counters.inserts,0);assert.equal(counters.updates,1);
  r=await extraCreateOrReuse(env,url,'editor@example.com',incoming,'private');
- assert.equal(r.needsChoice,true);assert.equal(counters.inserts,0);
+ assert.equal(r.reused,true);assert.equal(r.notUpdated,true);assert.equal(counters.inserts,0);assert.equal(counters.updates,1);
  records[100010].data.author='Another Author';records[100010].data.nuUrl='';
  r=await extraCreateOrReuse(env,url,'editor@example.com',incoming,'published');
  assert.equal(r.needsChoice,true);assert.equal(counters.inserts,0);
