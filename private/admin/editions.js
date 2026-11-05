@@ -34,7 +34,7 @@ async function ensureBook(r){
   credentials:'same-origin',headers:{'content-type':'application/json'},
   body:JSON.stringify({...b,publish:false})}));
  if(!j.id)throw Error(j.error||'Could not create a private novel');
- r.bookId=Number(j.id);r.wasCreatedPrivate=!j.reused;
+ r.bookId=Number(j.id);r.wasCreatedPrivate=!j.reused;r.creationEventId=j.eventId||null;
  r.matchKind='matched';r.reason=j.reused?'Matched an existing novel on save':'Created a private catalogue entry';
  addBook({id:r.bookId,title:r.newTitle,author:r.meta?.author||'',originalTitle:''});
  return r.bookId;
@@ -74,19 +74,22 @@ function draw(){const parent=$('rows');parent.replaceChildren();let ready=0,done
   tr.append(a,b,c,d);parent.append(tr);
  }
  $('counts').textContent=`${rows.length} selected · ${ready} ready · ${done} uploaded`; $('start').disabled=!approved||busy||!ready;}
-$('scan').addEventListener('click',async()=>{if(busy||!approved)return;if(files.length>5000)return text('Limit 5,000 EPUBs in one browser selection. Import more in another batch.',true);
+async function scanFiles(){if(busy||!approved)return;if(!files.length)return text('Choose EPUB files or a folder first.',true);if(files.length>5000)return text('Limit 5,000 EPUBs in one browser selection. Import more in another batch.',true);
  busy=true;$('scan').disabled=true;rows=[];text(`Inspecting ${files.length} file(s)…`);try{
   for(let i=0;i<files.length;i++){const file=files[i];if(!/\.epub$/i.test(file.name))continue;
     const meta=await MATCH.inspect(file),match=MATCH.resolve(file,meta,books);
     const suffix=file.name.replace(/\.epub$/i,'').split(/\s+[-–—]\s+/).slice(1).join(' - ');
     rows.push({file,detected:meta.title,meta,matchKind:match.kind,bookId:match.bookId,
       newTitle:match.kind==='new'?match.title:'',reason:match.reason,
-      label:suffix||'Translation edition',translator:suffix||meta.author||'',
+      label:suffix||'Translation edition',translator:suffix||'',
       done:false,error:file.size>2147483648?'Exceeds 2 GiB':file.size<100?'File is too small':''});
     if(i%10===0){$('counts').textContent=`Inspected ${i+1} of ${files.length}`;await new Promise(resolve=>setTimeout(resolve,0));}
   }
   text(`Matched EPUB titles automatically. ${rows.filter(r=>r.matchKind==='new').length} missing books will be created privately; ${rows.filter(r=>r.matchKind==='ambiguous').length} ambiguous titles need a choice.`);
- }catch(e){text(e.message,true)}finally{busy=false;$('scan').disabled=false;draw()}});
+ }catch(e){text(e.message,true)}finally{busy=false;$('scan').disabled=false;draw()}
+ return rows;
+}
+$('scan').addEventListener('click',scanFiles);
 $('skip').addEventListener('change',draw);
 async function uploadEdition(r,onProgress){
  const key=`conservatory-mpu:${r.bookId}:${r.file.name}:${r.file.size}`;let sessionId=localStorage.getItem(key)||'',completed=new Set(),partSize=8*1048576;
@@ -102,10 +105,10 @@ async function uploadEdition(r,onProgress){
 }
 
 async function ingestEmbeddedMetadata(id,editionId,metadata){
- if(!metadata?.synopsis&&!metadata?.tags?.length&&!metadata?.author)return {changed:[]};
+ if(!metadata)return {changed:[]};
  const response=await fetch('/api/admin/epub/ingest-metadata',{
   method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},
-  body:JSON.stringify({id,editionId,metadata})
+  body:JSON.stringify({id,editionId,metadata,enrichFromStaged:true})
  });
  return json(response);
 }
@@ -121,23 +124,25 @@ async function tryAutoCover(r){
   return {published:!!j.stored,
    detail:j.stored?'Private cover extracted, never public':j.reason||'Existing cover retained'};
 }
-$('start').addEventListener('click',async()=>{if(busy||!approved)return;const work=rows.filter(r=>['Ready','Ready · create private novel'].includes(rowState(r)));if(!work.length)return;
+async function uploadReady(){if(busy||!approved)return;const work=rows.filter(r=>['Ready','Ready · create private novel'].includes(rowState(r)));if(!work.length)return;
  
  busy=true;stop=false;$('start').disabled=true;$('scan').disabled=true;$('stop').disabled=false;let success=0,failed=0,covers=0,created=0,coverNotes=[];
  for(let i=0;i<work.length;i++){if(stop)break;const r=work[i];if(!['Ready','Ready · create private novel'].includes(rowState(r)))continue;
   text(`Uploading ${i+1}/${work.length}: ${r.file.name}`);
   try{await ensureBook(r);if(r.wasCreatedPrivate)created++;if(rowState(r)!=='Ready')continue;const entry=await uploadEdition(r,p=>{$('progress').value=Math.round((i+p)/work.length*100);$('counts').textContent=`File ${i+1}/${work.length}: ${Math.round(p*100)}% · ${success} saved · ${failed} failed`;});
    r.done=true;const x=inventory.get(r.bookId)||[];x.push({filename:r.file.name,bytes:r.file.size,editionId:entry.id});inventory.set(r.bookId,x);success++;
-   try{const meta=await ingestEmbeddedMetadata(r.bookId,entry.id,r.meta);
+   try{const meta=await ingestEmbeddedMetadata(r.bookId,entry.id,r.meta);r.enrichment=meta;
     if(meta.changed?.length&&coverNotes.length<12)coverNotes.push(r.file.name+': private '+meta.changed.join(', ')+' imported');
    }catch(e){if(coverNotes.length<12)coverNotes.push(r.file.name+': metadata import failed ('+e.message+')')}
-   try{const art=await tryAutoCover(r);if(art.published)covers++;else if(coverNotes.length<12)coverNotes.push(r.file.name+': '+art.detail)}catch(e){if(coverNotes.length<12)coverNotes.push(r.file.name+': '+e.message)}
+   try{const art=await tryAutoCover(r);r.coverImport=art;if(art.published)covers++;else if(coverNotes.length<12)coverNotes.push(r.file.name+': '+art.detail)}catch(e){if(coverNotes.length<12)coverNotes.push(r.file.name+': '+e.message)}
   }catch(e){r.error=String(e.message||e).slice(0,180);failed++;}
   draw();
  }
  busy=false;$('scan').disabled=false;$('stop').disabled=true;
  text(`${success} EPUB editions uploaded to private storage; ${created} new private novel entries created; ${failed} failed; ${covers} covers processed. ${coverNotes.length?'Other covers retained, unavailable, or skipped: '+coverNotes.slice(0,3).join('; '):''} ${stop?'Paused after current file. Re-select files to resume.':''}`,failed>0);draw();
-});
+ return {success,created,failed,covers};
+}
+$('start').addEventListener('click',async()=>{await uploadReady();renderImportReport();});
 $('stop').addEventListener('click',()=>{stop=true;text('Stopping after the current EPUB finishes…')});
 // Used only by the owner's stored-EPUB enrichment control. Do not publish EPUB bytes.
 window.ConservatoryStoredEpubTools={inspect:MATCH.inspect,ingest:ingestEmbeddedMetadata,cover:tryAutoCover,fetchJson:json};
