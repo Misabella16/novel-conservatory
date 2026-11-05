@@ -2727,6 +2727,57 @@ async function nuAdminRoutes(request,env,email,role){
    return respond({...result,displayTitle:target.title,note:'Novel Updates link saved with Undo history.'});
   }
 
+  if(path==='/api/admin/nu/health'&&method==='GET'){
+   if(role!=='owner')return respond({error:'Owner permission required'},403);
+   await canonicalEnsurePrivate(env);
+   const [base,rows,projections,aliases,keys,epubs,extraEpubs,uploads]=await Promise.all([
+    nuBaseCatalogue(env,url),
+    nuAdditionalRows(env),
+    env.COMMUNITY_DB.prepare('SELECT novel_id FROM public_novel_projections LIMIT 5000').all(),
+    env.COMMUNITY_DB.prepare('SELECT source_id,target_id FROM canonical_novel_aliases LIMIT 5000').all(),
+    env.COMMUNITY_DB.prepare('SELECT COUNT(*) AS n FROM canonical_novel_keys').first(),
+    env.DB.prepare('SELECT novel_id,COUNT(*) AS n FROM epub_editions GROUP BY novel_id').all(),
+    env.DB.prepare('SELECT novel_id,COUNT(*) AS n FROM additional_epub_editions GROUP BY novel_id').all(),
+    env.DB.prepare('SELECT novel_id,COUNT(*) AS n FROM additional_epub_upload_sessions GROUP BY novel_id').all()
+   ]);
+   const known=new Set([...base,...rows].map(x=>Number(x.id)));
+   const archived=(await env.COMMUNITY_DB.prepare("SELECT id,source_submission_id,cover_key FROM additional_catalogue_novels WHERE source_submission_id LIKE 'merged-into:%' LIMIT 5000").all()).results||[];
+   const combined=[...(epubs.results||[]),...(extraEpubs.results||[])];
+   const orphaned=combined.filter(x=>!known.has(Number(x.novel_id))&&
+    !archived.some(a=>a.id===Number(x.novel_id)));
+   const attachedArchived=combined.filter(x=>archived.some(a=>a.id===Number(x.novel_id)));
+   const missing=rows.filter(x=>{
+    const data=nuAdditionalData(x);
+    return !data.synopsis||!extraTags(data.tags).length||!x.cover_key;
+   }).slice(0,60).map(x=>{const d=nuAdditionalData(x);return {
+    id:x.id,title:x.title,missing:[
+     !d.synopsis?'synopsis':null,
+     !extraTags(d.tags).length?'tags':null,
+     !x.cover_key?'cover':null].filter(Boolean)
+   }});
+   const scan=await nuSafeDuplicateScan(env,url);
+   const projectionIds=new Set((projections.results||[]).map(x=>Number(x.novel_id)));
+   return respond({generatedAt:new Date().toISOString(),
+    counts:{original:base.length,additional:rows.length,
+     private:rows.filter(x=>x.visibility==='private').length,
+     published:rows.filter(x=>x.visibility==='published').length,
+     publicProjections:projectionIds.size,registeredIdentityKeys:Number(keys?.n)||0,
+     canonicalAliases:(aliases.results||[]).length,
+     epubEditions:combined.reduce((n,x)=>n+Number(x.n||0),0),
+     activeUploads:(uploads.results||[]).reduce((n,x)=>n+Number(x.n||0),0),
+     archivedDuplicates:archived.length},
+    duplicates:{ready:scan.proposals.length,needsAttention:scan.skipped.length,
+     readyItems:scan.proposals.slice(0,35).map(x=>({id:x.sourceId,targetId:x.targetId,title:x.sourceTitle,
+      privateOnly:!!x.privateOnly,editions:x.assets?.editionCount||0,cover:!!x.assets?.coverPreserved})),
+     skipped:scan.skipped.slice(0,50)},
+    assets:{orphanedEditionGroups:orphaned.length,editionsOnArchivedRecords:attachedArchived.length,
+     orphaned:orphaned.slice(0,30).map(x=>({id:Number(x.novel_id),count:Number(x.n)})),
+     attachedArchived:attachedArchived.slice(0,30).map(x=>({id:Number(x.novel_id),count:Number(x.n)}))},
+    incompleteMetadata:missing,
+    backups:{databaseExportAvailable:true,epubR2BackupVerified:false,
+     note:'A metadata CSV/JSON export does not back up the EPUB R2 bucket. Verify separate D1 and R2 backups.'}
+   });
+  }
   if(path==='/api/admin/nu/duplicates/scan'&&method==='GET'){
    const scan=await nuSafeDuplicateScan(env,url);
    return respond({ok:true,...scan,count:scan.proposals.length});
