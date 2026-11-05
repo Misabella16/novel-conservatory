@@ -733,13 +733,34 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
   if(path==='/api/additional/books'&&method==='GET'){
    const sql=scope==='public'?"SELECT * FROM additional_catalogue_novels WHERE visibility='published' AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000":"SELECT * FROM additional_catalogue_novels WHERE source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' ORDER BY created_at DESC LIMIT 5000";
    const rows=await env.COMMUNITY_DB.prepare(sql).all();
-   return extraJson({novels:(rows.results||[]).map(row=>extraDecorate(row,scope)),configured:true});
+   const visible=(rows.results||[]).map(row=>extraDecorate(row,scope));
+   if(scope==='public'){
+    await canonicalEnsure(env);
+    const projections=await env.COMMUNITY_DB.prepare(
+     "SELECT p.novel_id AS id,p.payload_json,p.cover_key FROM public_novel_projections p JOIN additional_catalogue_novels a ON a.id=p.novel_id WHERE a.visibility='private' AND a.source_submission_id NOT LIKE 'merged-into:%' AND a.source_submission_id NOT LIKE 'reverted-create:%' ORDER BY p.updated_at DESC LIMIT 5000"
+    ).all();
+    const ids=new Set(visible.map(x=>Number(x.id)));
+    for(const row of projections.results||[]){
+     if(ids.has(Number(row.id)))continue;
+     let data;try{data=JSON.parse(row.payload_json)}catch{continue}
+     visible.push(extraDecorate({...row,title:data.title},'public'));
+     ids.add(Number(row.id));
+    }
+   }
+   return extraJson({novels:visible,configured:true});
   }
   if(path==='/api/additional/cover'&&method==='GET'){
    const id=extraId(new URL(request.url).searchParams.get('id'));if(!id||!env.COMMUNITY_IMAGES)return new Response('Not found',{status:404});
    const row=await env.COMMUNITY_DB.prepare('SELECT cover_key,visibility,source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(id).first();
-   if(!row||!row.cover_key||String(row.source_submission_id||'').startsWith('reverted-create:')||(scope==='public'&&row.visibility!=='published'))return new Response('Not found',{status:404});
-   const obj=await env.COMMUNITY_IMAGES.get(row.cover_key);if(!obj)return new Response('Not found',{status:404});
+   if(!row||/^(?:merged-into:|reverted-create:)/.test(String(row.source_submission_id||'')))return new Response('Not found',{status:404});
+   let coverKey=row.cover_key;
+   if(scope==='public'&&row.visibility!=='published'){
+    await canonicalEnsure(env);
+    const projected=await env.COMMUNITY_DB.prepare('SELECT cover_key FROM public_novel_projections WHERE novel_id=?').bind(id).first();
+    coverKey=projected?.cover_key||'';
+   }
+   if(!coverKey)return new Response('Not found',{status:404});
+   const obj=await env.COMMUNITY_IMAGES.get(coverKey);if(!obj)return new Response('Not found',{status:404});
    return new Response(obj.body,{headers:{'content-type':obj.httpMetadata?.contentType||'application/octet-stream','cache-control':scope==='public'?'public,max-age=300':'private,no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox"}});
   }
   if(path==='/api/additional/config'&&method==='GET')return extraJson({siteKey:scope==='public'?(env.TURNSTILE_SITE_KEY||''):'',enabled:scope==='private'||!!(env.TURNSTILE_SECRET&&env.TURNSTILE_SITE_KEY)});
