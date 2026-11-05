@@ -7,7 +7,7 @@ if(!globalThis.crypto) globalThis.crypto=webcrypto;
 const team='https://book-tests.cloudflareaccess.com';
 const env={ACCESS_TEAM_DOMAIN:team, ACCESS_AUD:'book-audience', OWNER_EMAIL:'owner@example.com'};
 let privateKey, keyInfo, oldFetch;
-const encode=v=>Buffer.from(typeof v==='string'?v:JSON.stringify(v)).toString('base64url');
+const encode=v=>Buffer.from(v instanceof Uint8Array || v instanceof ArrayBuffer ? v : (typeof v==='string'?v:JSON.stringify(v))).toString('base64url');
 async function jwt(overrides={},mutate=false) {
   const now=Math.floor(Date.now()/1000);
   const header={alg:'RS256',typ:'JWT',kid:'test-rsa'};
