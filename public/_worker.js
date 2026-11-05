@@ -778,8 +778,15 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
   }
   if(path==='/api/additional/cover'&&method==='GET'){
    const id=extraId(new URL(request.url).searchParams.get('id'));if(!id||!env.COMMUNITY_IMAGES)return new Response('Not found',{status:404});
-   const row=await env.COMMUNITY_DB.prepare('SELECT cover_key,visibility,source_submission_id FROM additional_catalogue_novels WHERE id=?').bind(id).first();
-   if(!row||/^(?:merged-into:|reverted-create:)/.test(String(row.source_submission_id||'')))return new Response('Not found',{status:404});
+   const row=await env.COMMUNITY_DB.prepare('SELECT cover_key,visibility,source_submission_id,payload_json FROM additional_catalogue_novels WHERE id=?').bind(id).first();
+   if(!row||String(row.source_submission_id||'').startsWith('reverted-create:'))return new Response('Not found',{status:404});
+   const merged=String(row.source_submission_id||'').startsWith('merged-into:');
+   // A formerly public, rights-confirmed cover may remain referenced by its
+   // canonical book after merging. Private archived artwork is never public.
+   if(scope==='public'&&merged){
+    let rights=false;try{rights=JSON.parse(row.payload_json||'{}').coverRights===true}catch{}
+    if(row.visibility!=='published'||!rights)return new Response('Not found',{status:404});
+   }
    let coverKey=row.cover_key;
    if(scope==='public'&&row.visibility!=='published'){
     await canonicalEnsure(env);
