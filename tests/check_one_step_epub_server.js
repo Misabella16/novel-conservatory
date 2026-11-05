@@ -73,7 +73,7 @@ async function check(){
  assert.deepEqual(data.tags,['School Life','Found Family']);
  assert.deepEqual(data.genres,['Fantasy']);
  assert.equal(data.synopsis,'A captured series synopsis');
- assert.equal(data.nuUrl,nu);
+ assert.equal(data.nuUrl,undefined,'Existing canonical NU link should not be redundantly overwritten');
  assert(data.metadataSource.includes('Novel Updates'));
  assert(!worker.includes('fetch(nu)'), 'Staged source must not bypass blocked remote scraping');
  const previous=privateRow;
