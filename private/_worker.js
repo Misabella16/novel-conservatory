@@ -2203,10 +2203,17 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
   if(String(sourceRow.source_submission_id||'').startsWith('merged-into:'))throw Error('This duplicate was already merged');
   if(await nuHasPrivateEpub(env,sourceId))throw Error('This duplicate has linked EPUB editions. Ask the Owner to move those edition references before hiding it; nothing was merged.');
  }
+ // Private duplicates may be merged into ORIGINAL public catalogue IDs, but
+ // their details can only alter the private overlay. No private value is
+ // copied into published_catalogue_overrides or made accessible publicly.
+ const privateSourceOnly=!!sourceRow&&sourceRow.visibility==='private'&&target.kind==='seed';
+ const targetVisibility=target.kind==='seed'?'published':target.row.visibility;
+ if(sourceRow&&sourceRow.visibility!==targetVisibility&&!privateSourceOnly)
+  throw Error('These novels have different visibility. Choose the original public catalogue record to keep private details private.');
+ if(privateSourceOnly&&sourceRow.cover_key)
+  throw Error('The private duplicate has a cover file. Preserve or move the cover before hiding this record.');
  const computed=nuMergeData(target.data,source,opts.preferSourceFields||[]);
  const modified=computed.after;
- if(sourceRow&&sourceRow.visibility==='published'&&target.kind==='extra'&&target.row.visibility!=='published')
-  throw Error('The duplicate is published but the selected destination is still private. Publish the destination first, or keep a published record, before hiding the duplicate.');
  // Keep source cover assets intact. An editor-driven merge may reuse a
  // licensed/authorized cover, but never deletes either original R2 object.
  const sourceCoverData=sourceRow?nuAdditionalData(sourceRow):null;
@@ -2228,7 +2235,7 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
    if(JSON.stringify(modified[k])!==JSON.stringify(target.base[k])||k==='metadataReview'||k==='metadataSource')
     patch[k]=modified[k];
   }
-  resultRaw=JSON.stringify(patch);
+  resultRaw=privateSourceOnly?target.beforeRaw:JSON.stringify(patch);
   // Keep separately-curated private fields unless they are missing.
   const row=await env.DB.prepare('SELECT patch FROM novel_edits WHERE id=?').bind(target.id).first();
   previousPrivate=row?.patch??null;
@@ -2248,7 +2255,7 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  const afterSourceMarker=sourceRow?'merged-into:'+target.id:null;
  const stageLinks=sourceId?(await env.COMMUNITY_DB.prepare('SELECT slug,published_id FROM nu_staged_series WHERE published_id=?').bind(sourceId).all()).results||[]:[];
  const snapshot={targetKind:target.kind,beforeTarget:target.beforeRaw,afterTarget:resultRaw,
-  sourceId:sourceId||null,beforeSourceMarker:oldSourceMarker,afterSourceMarker,stageLinks,
+  privateSourceOnly,sourceId:sourceId||null,beforeSourceMarker:oldSourceMarker,afterSourceMarker,stageLinks,
   beforePrivate:previousPrivate,afterPrivate:nextPrivate,
   beforeCoverKey:target.kind==='extra'?(target.row.cover_key||''):null,
   afterCoverKey:target.kind==='extra'?(adoptedCoverKey||target.row.cover_key||''):null};
@@ -2256,8 +2263,22 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
  // Optimistic write rejects subsequent updates since preview was loaded.
  if(opts.expectedBefore!==undefined&&opts.expectedBefore!==target.beforeRaw)
   throw Error('Another editor changed this book. Refresh the preview to resolve the latest conflict.');
+ // This write is conditional. A concurrent private edit must not be overwritten.
+ // When archiving a private duplicate, the source only affects private D1.
+ let privatePrewritten=false;
+ if(privateSourceOnly&&nextPrivate!==previousPrivate){
+  const writePrivate=previousPrivate===null
+   ?await env.DB.prepare('INSERT INTO novel_edits(id,patch) VALUES(?,?) ON CONFLICT DO NOTHING').bind(target.id,nextPrivate).run()
+   :await env.DB.prepare('UPDATE novel_edits SET patch=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND patch=?')
+      .bind(nextPrivate,target.id,previousPrivate).run();
+  if((writePrivate.meta?.changes||0)!==1)throw Error('The private novel was edited concurrently. Refresh and retry.');
+  privatePrewritten=true;
+ }
  let write;
- if(target.kind==='seed'){
+ if(privateSourceOnly){
+  // Synthetic confirmation: public D1 has intentionally not been mutated.
+  write={meta:{changes:1}};
+ }else if(target.kind==='seed'){
   if(target.beforeRaw===null){
    write=await env.COMMUNITY_DB.prepare(
     'INSERT INTO published_catalogue_overrides(novel_id,patch_json,source_entry_id,published_by) VALUES(?,?,?,?) ON CONFLICT DO NOTHING'
@@ -2296,6 +2317,12 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
   ).bind(eventId,sourceId?'merge':'metadata_sync',target.id,sourceId||null,JSON.stringify(snapshot),JSON.stringify({target:resultRaw,sourceMarker:afterSourceMarker}),nuCanon(source.nuUrl),email).run();
  }catch(err){
   // No edit should be left invisible if the audit journal cannot be written.
+  if(privatePrewritten){
+   if(previousPrivate===null)await env.DB.prepare('DELETE FROM novel_edits WHERE id=? AND patch=?')
+    .bind(target.id,nextPrivate).run().catch(()=>{});
+   else await env.DB.prepare('UPDATE novel_edits SET patch=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND patch=?')
+    .bind(previousPrivate,target.id,nextPrivate).run().catch(()=>{});
+  }
   if(coverAdopted)await env.COMMUNITY_DB.prepare(
    'UPDATE additional_catalogue_novels SET cover_key=? WHERE id=? AND cover_key=?'
   ).bind(snapshot.beforeCoverKey,target.id,adoptedCoverKey).run().catch(()=>{});
@@ -2306,20 +2333,21 @@ async function nuSaveEdit(env,url,email,targetId,source,opts={}){
     'UPDATE nu_staged_series SET published_id=? WHERE slug=? AND published_id=?'
    ).bind(stage.published_id,stage.slug,target.id).run().catch(()=>{});
   }
-  if(target.kind==='seed'){
+  if(target.kind==='seed'&&!privateSourceOnly){
    if(target.beforeRaw===null)await env.COMMUNITY_DB.prepare('DELETE FROM published_catalogue_overrides WHERE novel_id=? AND patch_json=?').bind(target.id,resultRaw).run().catch(()=>{});
    else await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=? WHERE novel_id=? AND patch_json=?').bind(target.beforeRaw,target.id,resultRaw).run().catch(()=>{});
   }else await env.COMMUNITY_DB.prepare('UPDATE additional_catalogue_novels SET payload_json=?,title=?,normalized_title=? WHERE id=? AND payload_json=?').bind(target.beforeRaw,target.title,nuStoredTitleKey(target.title),target.id,resultRaw).run().catch(()=>{});
   throw err;
  }
  let privateSynced=true;
- if(target.kind==='seed'&&nextPrivate!==previousPrivate){
+ if(target.kind==='seed'&&!privateSourceOnly&&nextPrivate!==previousPrivate){
   try{
    await env.DB.prepare('INSERT INTO novel_edits(id,patch) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET patch=excluded.patch,updated_at=CURRENT_TIMESTAMP').bind(target.id,nextPrivate).run();
   }catch{privateSynced=false}
  }
  try{await audit(env,email,sourceId?'nu.duplicate.merge':'nu.metadata.sync',target.id,eventId)}catch{}
- return {ok:true,id:target.id,eventId,mergedFrom:sourceId||null,conflicts:computed.conflicts,changed:computed.changed,privateSynced};
+ return {ok:true,id:target.id,eventId,mergedFrom:sourceId||null,privateOnly:privateSourceOnly,
+  conflicts:computed.conflicts,changed:computed.changed,privateSynced};
 }
 async function nuSyncSource(env,url,email,source,options={}){
  const safe=extraPayload({...source,metadataReview:true,metadataSource:source.metadataSource||'Novel Updates source'});
@@ -2405,7 +2433,14 @@ async function nuUndoEdit(env,email,eventId){
  }
  if(snap.targetKind==='seed'){
   const current=await env.COMMUNITY_DB.prepare('SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?').bind(targetId).first();
-  if(current?.patch_json!==snap.afterTarget)throw Error('The book was edited again. Resolve those newer changes before undoing this one.');
+  if((current?.patch_json??null)!==snap.afterTarget)throw Error('The book was edited again. Resolve those newer changes before undoing this one.');
+  // Check private state BEFORE bringing the duplicate back. This prevents
+  // a partially undone merge if somebody has since edited private fields.
+  if(snap.privateSourceOnly&&snap.afterPrivate!==snap.beforePrivate){
+   const currentPrivate=await env.DB.prepare('SELECT patch FROM novel_edits WHERE id=?').bind(targetId).first();
+   if((currentPrivate?.patch??null)!==snap.afterPrivate)
+    throw Error('Private book metadata changed since this merge. Undo the newer change first.');
+  }
  }else{
   const row=await env.COMMUNITY_DB.prepare('SELECT payload_json,visibility,cover_key FROM additional_catalogue_novels WHERE id=?').bind(targetId).first();
   if(row?.payload_json!==snap.afterTarget||
@@ -2418,8 +2453,10 @@ async function nuUndoEdit(env,email,eventId){
   if(extra?.source_submission_id!==snap.afterSourceMarker)throw Error('The duplicate changed since merging. Undo the newer change first.');
  }
  if(snap.targetKind==='seed'){
-  if(snap.beforeTarget===null)await env.COMMUNITY_DB.prepare('DELETE FROM published_catalogue_overrides WHERE novel_id=? AND patch_json=?').bind(targetId,snap.afterTarget).run();
-  else await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND patch_json=?').bind(snap.beforeTarget,targetId,snap.afterTarget).run();
+  if(!snap.privateSourceOnly){
+   if(snap.beforeTarget===null)await env.COMMUNITY_DB.prepare('DELETE FROM published_catalogue_overrides WHERE novel_id=? AND patch_json=?').bind(targetId,snap.afterTarget).run();
+   else await env.COMMUNITY_DB.prepare('UPDATE published_catalogue_overrides SET patch_json=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND patch_json=?').bind(snap.beforeTarget,targetId,snap.afterTarget).run();
+  }
  }else{
   const before=JSON.parse(snap.beforeTarget||'{}');
   let restored;
