@@ -117,17 +117,17 @@ async function tryAutoCover(r){
 }
 $('start').addEventListener('click',async()=>{if(busy||!approved)return;const work=rows.filter(r=>['Ready','Ready · create private novel'].includes(rowState(r)));if(!work.length)return;
  
- busy=true;stop=false;$('start').disabled=true;$('scan').disabled=true;$('stop').disabled=false;let success=0,failed=0,covers=0,coverNotes=[];
+ busy=true;stop=false;$('start').disabled=true;$('scan').disabled=true;$('stop').disabled=false;let success=0,failed=0,covers=0,created=0,coverNotes=[];
  for(let i=0;i<work.length;i++){if(stop)break;const r=work[i];if(!['Ready','Ready · create private novel'].includes(rowState(r)))continue;
   text(`Uploading ${i+1}/${work.length}: ${r.file.name}`);
-  try{await ensureBook(r);if(rowState(r)!=='Ready')continue;const entry=await uploadEdition(r,p=>{$('progress').value=Math.round((i+p)/work.length*100);$('counts').textContent=`File ${i+1}/${work.length}: ${Math.round(p*100)}% · ${success} saved · ${failed} failed`;});
+  try{await ensureBook(r);if(r.wasCreatedPrivate)created++;if(rowState(r)!=='Ready')continue;const entry=await uploadEdition(r,p=>{$('progress').value=Math.round((i+p)/work.length*100);$('counts').textContent=`File ${i+1}/${work.length}: ${Math.round(p*100)}% · ${success} saved · ${failed} failed`;});
    r.done=true;const x=inventory.get(r.bookId)||[];x.push({filename:r.file.name,bytes:r.file.size,editionId:entry.id});inventory.set(r.bookId,x);success++;
    try{const art=await tryAutoCover(r);if(art.published)covers++;else if(coverNotes.length<12)coverNotes.push(r.file.name+': '+art.detail)}catch(e){if(coverNotes.length<12)coverNotes.push(r.file.name+': '+e.message)}
   }catch(e){r.error=String(e.message||e).slice(0,180);failed++;}
   draw();
  }
  busy=false;$('scan').disabled=false;$('stop').disabled=true;
- text(`${success} EPUB editions uploaded to private storage; ${failed} failed; ${covers} covers processed. ${coverNotes.length?'Other covers retained, unavailable, or skipped: '+coverNotes.slice(0,3).join('; '):''} ${stop?'Paused after current file. Re-select files to resume.':''}`,failed>0);draw();
+ text(`${success} EPUB editions uploaded to private storage; ${created} new private novel entries created; ${failed} failed; ${covers} covers processed. ${coverNotes.length?'Other covers retained, unavailable, or skipped: '+coverNotes.slice(0,3).join('; '):''} ${stop?'Paused after current file. Re-select files to resume.':''}`,failed>0);draw();
 });
 $('stop').addEventListener('click',()=>{stop=true;text('Stopping after the current EPUB finishes…')});
 $('lookup-btn').addEventListener('click',async()=>{const id=idFor($('lookup').value);if(!id)return text('Choose an existing novel.',true);try{
