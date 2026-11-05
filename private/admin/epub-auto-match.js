@@ -16,6 +16,10 @@ function variants(value){
  if(withoutVolume&&withoutVolume!==title)choices.push(withoutVolume);
  const afterBracket=title.replace(/^\s*\[(?:translation|fan translation|epub|team [^\]]+|group [^\]]+)\]\s*/i,'');
  if(afterBracket!==title)choices.push(afterBracket);
+ for(const candidate of [...choices]){
+  const article=candidate.replace(/^(?:the|an|a)\s+/i,'').trim();
+  if(article!==candidate&&article)choices.push(article);
+ }
  return [...new Set(choices.map(norm).filter(Boolean))];
 }
 const els=(doc,name)=>[...doc.getElementsByTagName('*')].filter(node=>node.localName===name);
