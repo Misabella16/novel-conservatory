@@ -1765,12 +1765,20 @@ async function extraInsert(env,payload,coverKey,visibility,who,submissionId=''){
  if(!payload.title||payload.title.length<2)throw Error('Enter a novel title');
  const duplicate=await env.COMMUNITY_DB.prepare("SELECT id,title FROM additional_catalogue_novels WHERE normalized_title=? AND source_submission_id NOT LIKE 'merged-into:%' AND source_submission_id NOT LIKE 'reverted-create:%' LIMIT 1").bind(key).first();
  if(duplicate)throw Error('This title may already exist as #'+duplicate.id+'. Check before submitting again.');
+ const existing=await canonicalPrivateOwner(env,payload);
+ if(existing)throw Error('This novel is already registered as #'+existing+'. Update that entry instead.');
  for(let i=0;i<5;i++){
   const id=100000+crypto.getRandomValues(new Uint32Array(1))[0];
+  const reservation=await canonicalPrivateClaim(env,payload,id);
+  if(!reservation.ok)throw Error('A matching novel was added as #'+reservation.owner+'. Retry to update the existing entry.');
   try{
    await env.COMMUNITY_DB.prepare('INSERT INTO additional_catalogue_novels(id,normalized_title,title,payload_json,cover_key,visibility,source_submission_id,created_by) VALUES (?,?,?,?,?,?,?,?)')
-    .bind(id,key,payload.title,JSON.stringify(payload),coverKey,visibility,submissionId,who).run();return id;
-  }catch(e){if(!/unique|constraint.*id/i.test(String(e?.message||'')))throw e;}
+    .bind(id,key,payload.title,JSON.stringify(payload),coverKey,visibility,submissionId,who).run();
+   return id;
+  }catch(e){
+   for(const claimed of reservation.claimed)await env.COMMUNITY_DB.prepare('DELETE FROM canonical_novel_keys WHERE identity_key=? AND novel_id=?').bind(claimed,id).run().catch(()=>{});
+   if(!/unique|constraint.*id/i.test(String(e?.message||'')))throw e;
+  }
  }
  throw Error('Could not assign novel ID; please retry');
 }
