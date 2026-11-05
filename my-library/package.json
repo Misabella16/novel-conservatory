@@ -1,0 +1,9 @@
+{
+  "name": "my-library",
+  "private": true,
+  "type": "module",
+  "description": "Standalone private sister site; no production deployment configured",
+  "scripts": {
+    "test": "node --test tests/test-worker.mjs && node tests/test-shelf-match.mjs"
+  }
+}

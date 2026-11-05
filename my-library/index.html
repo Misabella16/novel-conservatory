@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="referrer" content="no-referrer">
+<title>My Library · Your private library</title>
+<link rel="stylesheet" href="/library.css">
+<script type="module" src="/library.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/" aria-label="My Library home"><span class="brand-mark" aria-hidden="true">✦</span>
+    <span><strong>My Library</strong><small>A sister to Novel Conservatory</small></span></a>
+  <span class="privacy">Private library</span>
+</header>
+<section class="hero">
+  <div class="hero-inner">
+    <p class="eyebrow">My library · My reading life</p>
+    <h1>For books, <em>and every version of them.</em></h1>
+    <p class="hero-sub">A home for what you read, collect, own, annotate, and keep on your shelves.</p>
+    <p class="hero-status" id="connection-status" role="status">Connecting to your private library…</p>
+  </div>
+</section>
+<main class="main">
+  <nav class="tabs" aria-label="Library sections">
+    <button class="tab active" type="button" data-tab="library" aria-current="page">Library</button>
+    <button class="tab" type="button" data-tab="shelves">My Shelves</button>
+    <button class="tab" type="button" data-tab="photos">Shelf Photos</button>
+    <button class="tab" type="button" data-tab="imports">Imports & Undo</button>
+  </nav>
+  <div class="notice" id="notice" role="status" hidden></div>
+  <section class="tab-panel active" id="library">
+    <div class="library-header">
+      <div><p class="section-kicker">The collection</p><h2>Library Explorer</h2><p class="muted" id="count">Your books will appear here.</p></div>
+      <button class="btn" type="button" id="add-book">+ Add Book</button>
+    </div>
+    <div class="toolbar">
+      <label class="search-label"><span class="visually-hidden">Search library</span><input id="search" type="search" placeholder="Search books or authors…" autocomplete="off" maxlength="150"></label>
+      <button class="btn subtle" type="button" id="refresh">Refresh</button>
+    </div>
+    <div class="layout">
+      <div class="book-grid" id="book-grid" aria-live="polite">
+        <div class="empty">Loading your private books…</div>
+      </div>
+      <article class="detail" id="book-detail" aria-label="Selected book"><div class="empty"><h3>Choose a book</h3><p>Its synopsis, tags, editions and your notes will appear here.</p></div></article>
+    </div>
+    <div class="loadmore"><button class="btn subtle" id="load-more" type="button" hidden>Load more books</button></div>
+  </section>
+  <section class="tab-panel" id="shelves" hidden>
+    <div class="surface"><h2>My Shelves</h2><p>Give every physical copy a room, bookcase, shelf and optional position. Manage those locations on each book page, under <strong>My Editions & Copies</strong>.</p><div class="tip">Want to organize by genre, favorites, reading challenge or anything else? Add a personal shelf on the book page. You can also store a physical bookcase and shelf for every individual copy.</div></div>
+  </section>
+  <section class="tab-panel" id="photos" hidden>
+    <div class="surface"><h2>Shelf Photos</h2><p>In Phase 6, this space will let you upload pictures of whole shelves, covers or spines, identify the individual books, and match them to existing records or add a separate physical copy.</p>
+      <div class="tip"><strong>Preview only:</strong> You can select and inspect local shelf pictures here, but nothing is uploaded, analyzed, matched, saved or shared yet. The private scanning service will be a separate, tested feature.</div>
+      <label class="upload">Choose shelf photos <input id="photo-files" type="file" accept="image/png,image/jpeg,image/webp" multiple></label>
+      <div id="photo-preview" class="preview-pictures"></div>
+    </div>
+  </section>
+  <section class="tab-panel" id="imports" hidden>
+    <div class="surface"><h2>Imports & Undo</h2><p>The next stages will introduce Goodreads CSV, bulk EPUB imports, automatic cover extraction, duplicate cleanup, and reversible import batches.</p>
+      <div class="two-columns"><div class="tip"><strong>Goodreads</strong><p>Preserve shelves, ratings, reviews and dates read.</p></div><div class="tip"><strong>EPUBs</strong><p>Clean noisy filenames, match titles and authors, store private covers and preserve originals.</p></div><div class="tip"><strong>Special editions</strong><p>Edition-specific FairyLoot, Illumicrate, OwlCrate and other covers.</p></div><div class="tip"><strong>Undo</strong><p>Import and merge safety is a future stage. Do not delete copies to consolidate titles.</p></div></div>
+    </div>
+  </section>
+</main>
+<footer>Private by design · My Library Phase 2 · No personal book data included in the source</footer>
+<dialog id="add-book-dialog" aria-labelledby="add-book-title">
+  <form id="add-book-form" class="form">
+    <div class="modal-head"><h2 id="add-book-title">Add a Book</h2><button class="close" type="button" data-close-dialog aria-label="Close">×</button></div>
+    <label>Title <input name="title" required maxlength="300" autocomplete="off"></label>
+    <label>Author <input name="author" maxlength="400" autocomplete="off"></label>
+    <label>Synopsis <textarea name="synopsis" rows="4" maxlength="25000"></textarea></label>
+    <label>Reading status <select name="reading_status"><option value="unread">Want to read</option><option value="reading">Reading</option><option value="read">Read</option><option value="paused">Paused</option><option value="dnf">Did not finish</option></select></label>
+    <label>Private notes (optional) <textarea name="private_notes" rows="3" maxlength="120000"></textarea></label>
+    <div class="actions"><button class="btn subtle" type="button" data-close-dialog>Cancel</button><button class="btn" type="submit">Add to library</button></div>
+  </form>
+</dialog>
+<dialog id="add-edition-dialog" aria-labelledby="add-edition-title">
+  <form id="add-edition-form" class="form">
+    <div class="modal-head"><h2 id="add-edition-title">Add an Edition</h2><button class="close" type="button" data-close-dialog aria-label="Close">×</button></div>
+    <label>Edition name <input name="edition_name" placeholder="FairyLoot exclusive hardcover" maxlength="240" required></label>
+    <div class="two-columns"><label>Publisher <input name="publisher" maxlength="200"></label><label>Special-edition vendor <input name="vendor" placeholder="FairyLoot, Illumicrate…" maxlength="120"></label></div>
+    <label>ISBN (optional) <input name="isbn" maxlength="32"></label>
+    <label>Format <select name="format"><option value="hardcover">Hardcover</option><option value="paperback">Paperback</option><option value="ebook">Ebook</option><option value="audiobook">Audiobook</option><option value="other">Other</option></select></label>
+    <label class="check"><input name="is_special" type="checkbox"> Special or collector's edition</label>
+    <label>Details <textarea name="details" rows="3" maxlength="15000" placeholder="Exclusive artwork, sprayed edges, ribbon bookmark…"></textarea></label>
+    <div class="actions"><button class="btn subtle" type="button" data-close-dialog>Cancel</button><button class="btn" type="submit">Add edition</button></div>
+  </form>
+</dialog>
+<dialog id="add-copy-dialog" aria-labelledby="add-copy-title">
+  <form id="add-copy-form" class="form">
+    <div class="modal-head"><h2 id="add-copy-title">Add a Copy</h2><button class="close" type="button" data-close-dialog aria-label="Close">×</button></div>
+    <div class="two-columns">
+      <label>Medium <select name="medium"><option value="physical">Physical</option><option value="digital">Digital</option></select></label>
+      <label>Ownership <select name="ownership"><option value="owned">Owned</option><option value="preordered">Preordered</option><option value="wishlist">Wishlist</option><option value="borrowed">Borrowed</option><option value="sold">Sold</option><option value="donated">Donated</option></select></label>
+      <label>Signature <select name="signature"><option value="unsigned">Unsigned</option><option value="signed">Signed</option><option value="personalized">Personalized</option><option value="signed_bookplate">Signed bookplate</option></select></label>
+      <label class="check"><input type="checkbox" name="is_arc"> ARC / advance reader copy</label>
+      <label>Room <input name="room" maxlength="150"></label>
+      <label>Bookcase <input name="bookcase" maxlength="150"></label>
+      <label>Shelf <input name="shelf" maxlength="150"></label>
+      <label>Position <input name="shelf_position" maxlength="100"></label>
+    </div>
+    <label>Copy notes <textarea name="notes" rows="3" maxlength="25000"></textarea></label>
+    <div class="actions"><button class="btn subtle" type="button" data-close-dialog>Cancel</button><button class="btn" type="submit">Add copy</button></div>
+  </form>
+</dialog>
+</body>
+</html>

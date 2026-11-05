@@ -1,0 +1,52 @@
+name: My Library - Isolated Foundation Tests
+on:
+  pull_request:
+    paths:
+      - "my-library/**"
+      - ".github/workflows/my-library-tests.yml"
+  push:
+    branches:
+      - "feature/book-conservatory-sister-site"
+    paths:
+      - "my-library/**"
+      - ".github/workflows/my-library-tests.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  foundation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check JavaScript match module
+        run: |
+          node --check my-library/shelf-photo-matcher.mjs
+          node --check my-library/_worker.js
+          node --check my-library/library.js
+          node --test my-library/tests/test-worker.mjs
+          node my-library/tests/test-shelf-match.mjs
+      - name: Validate standalone schema and privacy constraints
+        run: python3 -m unittest discover -s my-library/tests -p 'test_*.py' -v
+      - name: Verify independent site root
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("my-library")
+          html=(root/"index.html").read_text()
+          assert '<title>My Library' in html
+          assert 'My Editions & Copies' in html
+          assert 'Shelf Photos' in html
+          assert 'No personal book data included' in html
+          assert 'nothing is uploaded, analyzed' in html.lower()
+          assert '<script type="module" src="/library.js"></script>' in html
+          assert 'My Private Notes' in Path('my-library/library.js').read_text()
+          assert 'private_notes' in Path('my-library/_worker.js').read_text()
+          assert 'my-library/library.css' in [str(p) for p in root.iterdir()]
+          print("Isolated prototype verified; no deployment performed")
+          PY
