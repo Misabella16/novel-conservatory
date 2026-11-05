@@ -78,7 +78,7 @@ const COMMUNITY_DB={prepare(sql){
  return {bind(...args){return {async first(){
   assert.equal(args[0],'example-book');
   return stage;
- }}};
+ }}}};
 }};
 const context={
  URL,crypto:{randomUUID:()=> '11111111-1111-4111-8111-111111111111'},
