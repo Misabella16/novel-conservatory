@@ -67,7 +67,7 @@ const DB={prepare(sql){return{
     throw Error('Unexpected write '+sql);
    }
   }}
- }};
+ };
 }};
 const stage={title:'Test Book',author:'Test Author',nu_url:url,
  payload_json:JSON.stringify({synopsis:'NU synopsis',genres:['Fantasy'],
