@@ -62,6 +62,12 @@ jobs:
         run: |
           node --check tests/check_personal_archived_tags.js
           node tests/check_personal_archived_tags.js
+      - name: Verify account-synced EPUB bookmark security and cross-device resume
+        run: |
+          node --check private/read/progress-sync.js
+          node --check private/read/reader.js
+          node --check tests/check_reader_progress_sync.js
+          node tests/check_reader_progress_sync.js
       - name: Verify private EPUB indicators and homepage scripts
         run: python tests/check_private_epub_indicators.py
       - name: Check Python syntax and parse source-only retrieval
