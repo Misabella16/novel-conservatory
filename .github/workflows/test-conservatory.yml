@@ -53,6 +53,11 @@ jobs:
           node --check private/novel/book.js
           node --check private/admin/epub-auto-match.js
           node tests/check_nu_novel_page_enrichment.js
+      - name: Verify guided mobile Novel Updates refresh and safe preview
+        run: |
+          node --check private/novel/nu-source.js
+          node --check private/novel/book.js
+          node tests/check_mobile_nu_refresh.js
       - name: Verify private EPUB indicators and homepage scripts
         run: python tests/check_private_epub_indicators.py
       - name: Check Python syntax and parse source-only retrieval

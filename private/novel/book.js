@@ -72,54 +72,115 @@ async function postNU(path,body){
  if(!r.ok)throw Error(result.error||'Could not apply metadata');
  return result;
 }
-async function applyNu(capture=null){
- if(!isEditor)return sourceStatus('Only authorized editors can apply this source.',true);
+let preparedNu=null,currentIdentity={title:'',author:''};
+const chosenFields=()=>Array.from(document.querySelectorAll('input[name="nu-fields"]:checked')).map(input=>input.value);
+const setBusy=busy=>{
+ for(const id of ['nu-preview','nu-preview-copied','nu-apply-capture','nu-apply'])
+  $(id).disabled=busy||id==='nu-apply'&&!preparedNu;
+};
+function resetPreview(){
+ preparedNu=null;
+ $('nu-preview-box').hidden=true;
+ $('nu-preview-list').replaceChildren();
+ $('nu-apply').disabled=true;
+}
+function brief(value){
+ const s=Array.isArray(value)?value.join(', '):String(value??'');
+ return s.length>260?s.slice(0,260)+'…':s;
+}
+async function previewNu(capture=null,origin=''){
+ if(!isEditor)return sourceStatus('Only authorized editors can apply source updates.',true);
  const nuUrl=seriesUrl($('nu-series-url').value);
- if(!nuUrl)return sourceStatus('Paste the exact Novel Updates series page URL, not a search link.',true);
- const button=capture?$('nu-apply-capture'):$('nu-apply');
- button.disabled=true;
- sourceStatus('Checking source metadata for this novel…');
+ if(!nuUrl)return sourceStatus('Paste the exact Novel Updates series URL.',true);
+ const fields=chosenFields();
+ if(!fields.length)return sourceStatus('Select at least one detail to update.',true);
+ resetPreview();setBusy(true);
+ sourceStatus('Looking for source information for this novel…');
  try{
-  if(capture){
-   if(capture.source!=='novelupdates-browser-v1'||!capture.novel||
-      seriesUrl(capture.novel.nuUrl)!==nuUrl)
-    throw Error('The captured series must match the Novel Updates URL above.');
-  }else{
-   // Read previously staged official source first. If absent, attempt a
-   // normal allowed fetch through the existing NU lookup endpoint.
-   try{
-    const staged=await fetch('/api/admin/nu/staged-by-url?url='+encodeURIComponent(nuUrl),
-     {credentials:'same-origin',cache:'no-store'});
-    if(!staged.ok){
-     const lookup=await json('/api/admin/nu/lookup?url='+encodeURIComponent(nuUrl));
-     capture=parseSourcePage(lookup.html,nuUrl);
-    }
-   }catch{
-    // 403/429, origin blocks and unavailable pages are expected. Never
-    // attempt any access-control bypass. The link alone can still be saved.
+  if(capture&&
+    (capture.source!=='novelupdates-browser-v1'||!capture.novel||
+     seriesUrl(capture.novel.nuUrl)!==nuUrl))
+   throw Error('The copied source must match this novel’s exact NU link.');
+  if(!capture){
+   const result=await window.ConservatoryNUSource.discover(nuUrl);
+   if(result.mode==='blocked'){
+    sourceStatus('Novel Updates could not be read automatically. Open the linked NU page, copy the visible sections on your phone, and paste them in “Source blocked?” below.');
+    $('nu-capture-help').open=true;
+    return;
    }
+   capture=result.capture;
+   origin=result.mode==='staged'?'Previously captured Novel Updates metadata':'Novel Updates series page';
   }
-  const result=await postNU('/api/admin/nu/book-import',
-   {id:activeNovelId,nuUrl,...(capture?{capture}:{})});
+  const request={id:activeNovelId,nuUrl,fields,preview:true};
+  if(capture)request.capture=capture;
+  const result=await postNU('/api/admin/nu/book-import',request);
+  if(result.needsCapture){
+   sourceStatus('This NU link is saved, but its metadata has not been captured yet. Copy the visible NU fields into the mobile fallback below.');
+   $('nu-capture-help').open=true;
+   return;
+  }
+  const list=$('nu-preview-list');
+  list.replaceChildren();
+  const values=result.fields||{};
+  for(const [name,value] of Object.entries(values)){
+   if(name==='nuUrl')continue;
+   const item=document.createElement('li');
+   const strong=document.createElement('strong');strong.textContent=name.replace(/^nu/,'NU ')+': ';
+   const span=document.createElement('span');span.textContent=brief(value);
+   item.append(strong,span);list.append(item);
+  }
+  if(!list.children.length){
+   sourceStatus('No missing fields to add for your selection. Existing information is preserved.');
+   return;
+  }
+  $('nu-preview-heading').textContent='Step 3 · Review ' + list.children.length + ' proposed field updates';
+  $('nu-preview-origin').textContent='Source: '+(origin||'Novel Updates')+'. Nothing has been changed yet.';
+  preparedNu={nuUrl,fields,capture};
+  $('nu-preview-box').hidden=false;
+  $('nu-apply').disabled=false;
+  sourceStatus('Review the proposed updates below, then apply them when ready.');
+ }catch(e){
+  sourceStatus(e.message||'Could not preview Novel Updates data.',true);
+  $('nu-capture-help').open=true;
+ }finally{setBusy(false)}
+}
+async function applyNu(){
+ if(!isEditor||!preparedNu)return sourceStatus('Preview the source updates before applying.',true);
+ const payload={id:activeNovelId,nuUrl:preparedNu.nuUrl,fields:preparedNu.fields};
+ if(preparedNu.capture)payload.capture=preparedNu.capture;
+ setBusy(true);sourceStatus('Applying selected information with Undo history…');
+ try{
+  const result=await postNU('/api/admin/nu/book-import',payload);
   lastNuImportId=result.eventId||null;
   $('nu-undo').hidden=!lastNuImportId;
-  sourceStatus(result.needsCapture?
-   'Novel Updates link saved privately. Full tags/genres and cover were not available automatically. Open the capture instructions below, then paste the source metadata.':
-   'Applied to novel #'+activeNovelId+': '+(result.changed||[]).join(', ')+
-   '. The existing editorial fields and private EPUBs were preserved.');
-  $('nu-capture-help').open=!!result.needsCapture;
+  resetPreview();
+  sourceStatus(result.needsCapture?'The NU link was saved, but source details were unavailable. Use the mobile copy option below.':
+   'Updated this novel: '+(result.changed||[]).join(', ')+'. Your curated fields and EPUBs were preserved.');
   await start();
- }catch(e){sourceStatus(e.message,true);$('nu-capture-help').open=true}
- finally{button.disabled=false}
+ }catch(e){sourceStatus(e.message,true)}
+ finally{setBusy(false)}
 }
+$('nu-preview').addEventListener('click',()=>previewNu());
 $('nu-apply').addEventListener('click',()=>applyNu());
+$('nu-preview-copied').addEventListener('click',()=>{
+ try{
+  const nuUrl=seriesUrl($('nu-series-url').value);
+  const text=$('nu-copied-text').value.trim();
+  const capture=window.ConservatoryNUSource.parseCopiedText(text,nuUrl,currentIdentity);
+  previewNu(capture,'Text copied from the linked Novel Updates page (editor supplied)');
+ }catch(e){sourceStatus(e.message,true)}
+});
 $('nu-apply-capture').addEventListener('click',()=>{
  try{
   const raw=$('nu-capture-json').value.trim();
   if(!raw||raw.length>15000)throw Error('Paste up to 15,000 characters of captured Novel Updates JSON.');
-  const capture=JSON.parse(raw);applyNu(capture);
+  const capture=JSON.parse(raw);
+  previewNu(capture,'Existing Novel Updates browser capture');
  }catch(e){sourceStatus(e.message,true)}
 });
+$('nu-series-url').addEventListener('input',resetPreview);
+document.querySelectorAll('input[name="nu-fields"]').forEach(input=>
+ input.addEventListener('change',resetPreview));
 $('nu-undo').addEventListener('click',async()=>{
  if(!lastNuImportId)return;
  const button=$('nu-undo');button.disabled=true;
@@ -183,7 +244,10 @@ async function start(){
   if(!Number.isSafeInteger(id)||id<1)throw Error('Invalid canonical novel ID.');
   const [cat,content,me]=await Promise.all([json('/api/catalogue'),json('/api/content'),json('/api/me')]);
   activeNovelId=id;isEditor=['owner','editor'].includes(me.role);
-  $('nu-apply').disabled=!isEditor;$('nu-apply-capture').disabled=!isEditor;
+  $('nu-preview').disabled=!isEditor;
+  $('nu-preview-copied').disabled=!isEditor;
+  $('nu-apply-capture').disabled=!isEditor;
+  $('nu-apply').disabled=!isEditor||!preparedNu;
   if(!isEditor)sourceStatus('Editors can apply missing metadata. Share the NU series URL with a library editor to help fill this record.');
   const list=Array.isArray(cat)?cat:cat.books||[];
   const base=list.find(x=>Number(x.id)===id);
@@ -197,6 +261,7 @@ async function start(){
    d.genres=unionLabels(base.genres,patch.genres);
   document.title=(d.title||'Novel')+' · Novel Conservatory';
   $('title').textContent=d.title||'Untitled novel';
+  currentIdentity={title:d.title||'',author:d.author||''};
   $('catalogue-id').textContent='Novel Conservatory · catalogue #'+id;
   $('original').textContent=d.originalTitle||'';
   $('author').textContent=d.author?'By '+d.author:'Author not yet listed';
@@ -225,7 +290,14 @@ async function start(){
   link(actions,'Open in my catalogue','/#browse');
   if(isEditor)link(actions,'✎ Edit this novel',id>=100000?
    '/admin/add-novels.html?novel='+id:'/admin/?book='+id);
-  if(d.nuUrl&&!$('nu-series-url').value)$('nu-series-url').value=d.nuUrl;
+  // Most novels already have a source link; never make readers re-enter it.
+  if(d.nuUrl)$('nu-series-url').value=d.nuUrl;
+  const existing=seriesUrl(d.nuUrl);
+  $('nu-link-state').textContent=existing?
+   '✓ Linked NU page found. Tap “Pull linked NU information” to check the fields above.':
+   'No NU series link saved yet. Paste its source page link once below.';
+  $('nu-open-source').href=existing||'https://www.novelupdates.com/';
+  $('nu-open-source').textContent=existing?'Open linked NU page ↗':'Find this novel on Novel Updates ↗';
   const coverSource=$('nu-cover-link');coverSource.replaceChildren();
   if(d.nuCoverUrl){
    const label=document.createElement('span');label.textContent='NU cover source: ';
