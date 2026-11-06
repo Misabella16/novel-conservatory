@@ -685,7 +685,7 @@ async function routes(request,env,ctx,email,role){
        }
        if(imported.nuCoverUrl)fields.nuCoverUrl=imported.nuCoverUrl;
        // Source progress is displayed separately, never promoted to curated status.
-       for(const key of ['nuTranslationSourceStatus','nuChapterSourceText']){
+       for(const key of ['nuTranslationSourceStatus','nuOriginalSourceStatus','nuChapterSourceText']){
         if(!fields[key]&&imported[key])fields[key]=imported[key];
        }
        if(!fields.metadataReview&&imported.metadataOrigin==='nu'){
@@ -2987,6 +2987,13 @@ async function privateNuBookImport(request,env,email,role){
     next.nuTranslationSourceStatus=reported;
     changed.push('NU translation status reference');
    }
+   // Country-of-origin completion is separate from English translation completion.
+   const originalStatus=String(raw.nuOriginalSourceStatus||'').trim().slice(0,100);
+   if(originalStatus&&/^[\p{L}\p{N}\s,().:–+/-]{1,100}$/u.test(originalStatus)
+      &&!old.nuOriginalSourceStatus){
+    next.nuOriginalSourceStatus=originalStatus;
+    changed.push('NU original publication status');
+   }
    const chapters=String(raw.nuChapterSourceText||'').trim().slice(0,120);
    if(chapters&&/^[\p{L}\p{N}\s,().:–+/-]{1,120}$/u.test(chapters)
       &&!old.nuChapterSourceText){
@@ -3011,6 +3018,18 @@ async function privateNuBookImport(request,env,email,role){
    next.metadataOrigin='nu';
   }
   const changedSource=raw?sourceName:'Novel Updates link only';
+  // Preview must be read-only: no write, journal event, or public mutation.
+  // Values are included so editors can see exactly what will be imported.
+  if(body.preview===true){
+   const fields={};
+   for(const field of ['nuUrl','synopsis','author','originalTitle','tags','genres',
+     'nuTranslationSourceStatus','nuOriginalSourceStatus','nuChapterSourceText','cover']){
+    if(JSON.stringify(old[field])!==JSON.stringify(next[field])&&next[field]!==undefined)
+     fields[field]=next[field];
+   }
+   return respond({ok:true,preview:true,id,changed,fields,nuUrl,source:changedSource,
+    sourceFound:!!raw,needsCapture:!raw,privateOnly:true,published:false});
+  }
   if(JSON.stringify(old)===JSON.stringify(next))return respond({
    ok:true,id,changed:[],nuUrl,source:changedSource,sourceFound:!!raw,
    needsCapture:!raw,privateOnly:true,published:false,message:'No new private details found.'});
