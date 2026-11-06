@@ -22,7 +22,7 @@ assert(html.includes('id="nu-segment-continue"'));
 assert(page.includes('nu-segment-leftovers')&&page.includes('reviewedLines'));
 assert(html.includes('iPhone Photos')&&html.includes('Live Text'));
 assert(html.includes('id="nu-capture-help"'));
-assert(html.includes('On a phone: Copy information from Novel Updates'));
+assert(html.includes('On a phone: Copy tags or use screenshot text'));
 assert(html.includes('On a computer: Use the original Capture Novel Updates bookmarklet'));
 assert(html.includes('/admin/novel-updates.html#nu-browser-import'));
 assert(html.includes('id="nu-capture-json"')&&html.includes('id="nu-copied-text"'));
