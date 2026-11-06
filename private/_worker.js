@@ -684,6 +684,10 @@ async function routes(request,env,ctx,email,role){
         fields.coverCredit=imported.coverCredit||'Novel Updates source cover, private reference';
        }
        if(imported.nuCoverUrl)fields.nuCoverUrl=imported.nuCoverUrl;
+       // Source progress is displayed separately, never promoted to curated status.
+       for(const key of ['nuTranslationSourceStatus','nuChapterSourceText']){
+        if(!fields[key]&&imported[key])fields[key]=imported[key];
+       }
        if(!fields.metadataReview&&imported.metadataOrigin==='nu'){
         fields.metadataOrigin='nu';
         fields.metadataSource=imported.metadataSource||'Novel Updates (private)';
