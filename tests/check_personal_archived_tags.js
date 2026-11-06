@@ -34,8 +34,8 @@ assert(novelHtml.includes('id="personal-tag-hint"'));
 assert(reader.includes("localStorage.setItem(positionKey(),cfi)"));
 assert(reader.includes("localStorage.getItem(positionKey())"));
 assert(reader.includes("conservatory-position-"));
-assert(reader.includes("rendition.display(last||undefined)"));
-assert(readerHtml.includes('saved on this device'));
+assert(reader.includes("rendition.display(resume||undefined)"));
+assert(readerHtml.includes('offline fallback'));
 
 const values=new Map();
 let denyOrigin=false;
