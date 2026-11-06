@@ -26,6 +26,8 @@ jobs:
           node --check private/admin/epub-metadata.js
           node --check private/admin/nu-browser-capture.js
           node --check private/admin/add-novels.js
+      - name: Verify public-only D1 caching and privacy safeguards
+        run: node tests/check_public_d1_cache.cjs
       - name: Verify personal archiving and EPUB metadata auto-enrichment
         run: |
           node --check private/admin/editions.js
