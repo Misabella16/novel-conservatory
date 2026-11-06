@@ -168,13 +168,48 @@ async function applyNu(){
 }
 $('nu-preview').addEventListener('click',()=>previewNu());
 $('nu-apply').addEventListener('click',()=>applyNu());
+let mobileCopiedCapture=null;
+const reviewedLines=id=>Array.from(new Set($(id).value.split(/\r?\n/).map(s=>s.trim())
+ .filter(s=>s&&s.length<=70))).slice(0,100);
 $('nu-preview-copied').addEventListener('click',()=>{
  try{
   const nuUrl=seriesUrl($('nu-series-url').value);
-  const text=$('nu-copied-text').value.trim();
-  const capture=window.ConservatoryNUSource.parseCopiedText(text,nuUrl,currentIdentity);
-  previewNu(capture,'Text copied from the linked Novel Updates page (editor supplied)');
+  const sourceText=$('nu-copied-text').value.trim();
+  const mode=$('nu-paste-mode').value;
+  const capture=window.ConservatoryNUSource.parseCopiedText(sourceText,nuUrl,currentIdentity,{mode});
+  mobileCopiedCapture=capture;
+  $('nu-segment-tags').value=(capture.novel.tags||[]).join('\n');
+  $('nu-segment-genres').value=(capture.novel.genres||[]).join('\n');
+  const warnings=[...(capture.review?.unresolvedTags||[]),...(capture.review?.unresolvedGenres||[])];
+  $('nu-segment-uncertain').hidden=!warnings.length;
+  $('nu-segment-leftovers').textContent=warnings.join('\n');
+  const tags=capture.novel.tags.length,genres=capture.novel.genres.length;
+  $('nu-segment-message').textContent=tags+' tag'+(tags===1?'':'s')+' and '+genres+
+   ' genre'+(genres===1?'':'s')+' separated.'+
+   (warnings.length?' Review '+warnings.length+' unrecognized fragment'+(warnings.length===1?'':'s')+
+   ' below, and add missing complete names one per line.':' Check the full list before saving.');
+  $('nu-segment-review').hidden=false;
+  sourceStatus('Separated known NU names. Review the editable list, then continue to the change preview.');
+ }catch(e){mobileCopiedCapture=null;$('nu-segment-review').hidden=true;sourceStatus(e.message,true)}
+});
+$('nu-segment-continue').addEventListener('click',()=>{
+ try{
+  if(!mobileCopiedCapture)throw Error('First separate the copied Novel Updates text.');
+  const tags=reviewedLines('nu-segment-tags'),genres=reviewedLines('nu-segment-genres');
+  mobileCopiedCapture.novel.tags=tags;
+  mobileCopiedCapture.novel.genres=genres;
+  const n=mobileCopiedCapture.novel;
+  if(!tags.length&&!genres.length&&!n.synopsis&&!n.nuChapterSourceText&&
+     !n.nuTranslationSourceStatus&&!n.nuOriginalSourceStatus)
+   throw Error('Add at least one complete tag or genre, one per line, before continuing.');
+  previewNu(mobileCopiedCapture,'NU text copied and reviewed on mobile');
  }catch(e){sourceStatus(e.message,true)}
+});
+$('nu-copied-text').addEventListener('input',()=>{
+ mobileCopiedCapture=null;$('nu-segment-review').hidden=true;resetPreview();
+});
+$('nu-paste-mode').addEventListener('change',()=>{
+ mobileCopiedCapture=null;$('nu-segment-review').hidden=true;resetPreview();
 });
 $('nu-apply-capture').addEventListener('click',()=>{
  try{

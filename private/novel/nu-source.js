@@ -64,42 +64,72 @@ const headings=[
  ['author',/^authors?\s*:?\s*(.*)$/i],
  ['title',/^(?:series title|novel title)\s*:?\s*(.*)$/i]
 ];
-function parseCopiedText(text,url,identity={}){
- const raw=String(text||'').replace(/\r/g,'').trim().slice(0,15000);
- if(!raw)throw Error('Paste the copied series information first.');
- const sections={},lines=raw.split(/\n+/),trim=clean;
- let section='';
- for(const line of lines){
-  const value=trim(line);
-  if(!value)continue;
+function parseCopiedText(text,url,identity={},options={}){
+ const raw=String(text||'').replace(/\r/g,'').replace(/\u00a0/g,' ').trim().slice(0,15000);
+ if(!raw)throw Error('Paste the copied Novel Updates information first.');
+ const mode=['tags','genres','mixed'].includes(options.mode)?options.mode:'mixed';
+ const sections={},trim=clean;
+ const lines=raw.split(/\n+/).map(line=>trim(line.replace(/\[\s*(?:Edit|[↑⇧⌃▲▼])\s*\]/gi,'')
+  .replace(/\s*[↑⇧⌃▲▼]\s*/g,' '))).filter(Boolean);
+ let section=mode==='mixed'?'':mode;
+ for(const value of lines){
+  // The copied page can include ratings or navigation after the tag list.
+  // Do not allow unrelated page sections to become source metadata.
+  if(/^(?:rating\b|ratings\b|reviews?\b|recommendations?\b|readers?\b|reading list\b|type\b|release frequency\b)/i.test(value)){
+   section='';continue;
+  }
   let matched=false;
   for(const [key,pattern] of headings){
    const m=pattern.exec(value);
    if(!m)continue;
-   section=key;sections[key]=sections[key]||[];
-   if(trim(m[1]))sections[key].push(trim(m[1]));
+   section=mode==='mixed'||mode===key||!['genres','tags'].includes(key)?key:'';
+   if(section){
+    sections[key]=sections[key]||[];
+    if(trim(m[1]))sections[key].push(trim(m[1]));
+   }
    matched=true;break;
   }
-  if(!matched&&section&&sections[section].join(' ').length<6500)sections[section].push(value);
+  if(!matched&&section&&(sections[section]||[]).join(' ').length<9500){
+   sections[section]=sections[section]||[];
+   sections[section].push(value);
+  }
  }
- const list=key=>(sections[key]||[]).flatMap(x=>x.split(/\s*(?:,|;|\||•)\s*/))
-  .map(trim).filter(x=>x&&x.length<=100).slice(0,100);
+ if((mode==='tags'||mode==='genres')&&!sections[mode]?.length){
+  // No heading is needed when a user copies only the NU tag/genre links.
+  const standalone=lines.filter(value=>!/^(?:genre|tags)\b/i.test(value)&&
+   !/^(?:rating|reviews?|type)\b/i.test(value));
+  if(standalone.length)sections[mode]=standalone;
+ }
+ const split=key=>{
+  const input=(sections[key]||[]).join(' ');
+  if(!input)return {labels:[],unresolved:[]};
+  if(!root.ConservatoryNUSplit)
+   throw Error('The tag separator did not load. Refresh the novel page and try again.');
+  return root.ConservatoryNUSplit.splitLabels(input,key);
+ };
+ const tags=split('tags'),genres=split('genres');
  const single=(key,max)=>trim((sections[key]||[]).join(' ')).slice(0,max);
  const status=single('nuTranslationSourceStatus',80);
  const novel={
   nuUrl:canonical(url),title:single('title',210)||String(identity.title||'').slice(0,210),
   author:single('author',140)||String(identity.author||'').slice(0,140),
   synopsis:single('synopsis',6000),
-  genres:list('genres'),tags:list('tags'),
+  genres:genres.labels,tags:tags.labels,
   nuChapterSourceText:single('nuChapterSourceText',120),
   nuTranslationSourceStatus:/^(yes|no|completed|ongoing|fully translated|not fully translated)$/i.test(status)?status:'',
   nuOriginalSourceStatus:single('nuOriginalSourceStatus',100),
   coverUrl:''
  };
  if(!novel.nuUrl)throw Error('Enter the Novel Updates series URL first.');
- if(!novel.genres.length&&!novel.tags.length&&!novel.synopsis&&!novel.nuChapterSourceText&&!novel.nuTranslationSourceStatus&&!novel.nuOriginalSourceStatus)
-  throw Error('No labeled fields found. Copy the source section with headings such as Genres, Tags, Chapters or Completely Translated, then try again.');
- return {source:'novelupdates-browser-v1',novel};
+ if(!novel.genres.length&&!novel.tags.length&&!novel.synopsis&&!novel.nuChapterSourceText&&
+    !novel.nuTranslationSourceStatus&&!novel.nuOriginalSourceStatus&&
+    !genres.unresolved.length&&!tags.unresolved.length)
+  throw Error('No fields found. Choose “Tags” or “Genres” for copied lists, or include headings when copying several NU sections.');
+ return {source:'novelupdates-browser-v1',novel,review:{
+  unresolvedTags:tags.unresolved,unresolvedGenres:genres.unresolved,
+  recognizedTags:tags.labels.length,recognizedGenres:genres.labels.length,
+  mode
+ }};
 }
 async function discover(url){
  const canonicalUrl=canonical(url);
