@@ -684,6 +684,10 @@ async function routes(request,env,ctx,email,role){
         fields.coverCredit=imported.coverCredit||'Novel Updates source cover, private reference';
        }
        if(imported.nuCoverUrl)fields.nuCoverUrl=imported.nuCoverUrl;
+       // Source progress is displayed separately, never promoted to curated status.
+       for(const key of ['nuTranslationSourceStatus','nuChapterSourceText']){
+        if(!fields[key]&&imported[key])fields[key]=imported[key];
+       }
        if(!fields.metadataReview&&imported.metadataOrigin==='nu'){
         fields.metadataOrigin='nu';
         fields.metadataSource=imported.metadataSource||'Novel Updates (private)';
@@ -2974,6 +2978,20 @@ async function privateNuBookImport(request,env,email,role){
     if(updated.length>oldList.length){
      next[field]=updated;changed.push(field);
     }
+   }
+   // NU completion is a source observation, not an override of the catalogue's
+   // translation status. Preserve any manually curated status and dates.
+   const reported=String(raw.nuTranslationSourceStatus||'').trim().slice(0,80);
+   if(/^(yes|no|completed|ongoing|fully translated|not fully translated)$/i.test(reported)
+      &&!old.nuTranslationSourceStatus){
+    next.nuTranslationSourceStatus=reported;
+    changed.push('NU translation status reference');
+   }
+   const chapters=String(raw.nuChapterSourceText||'').trim().slice(0,120);
+   if(chapters&&/^[\p{L}\p{N}\s,().:–+/-]{1,120}$/u.test(chapters)
+      &&!old.nuChapterSourceText){
+    next.nuChapterSourceText=chapters;
+    changed.push('NU chapter reference');
    }
    if(imageUrl){
     next.nuCoverUrl=imageUrl;

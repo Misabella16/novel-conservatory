@@ -30,7 +30,9 @@ assert "an editor will try to pull" in form_html.lower()
 assert "not copied to this site without a separate image-rights and credit review" in form_html
 for name in ("Synopsis","Genres and story tags","Cover artwork reference","Author and original title","Novel Updates URL correction"):
  assert f'value="{name}"' in form_html
-assert form_html.count('name="nu-target"')==5
+assert form_html.count('name="nu-target"')==7
+assert 'Chapter count and release progress' in form_html
+assert 'Translation completion status' in form_html
 assert "Copy the exact series URL" in form_html
 
 assert "const prefilled=canonical(params.get('url')||'')" in form_js

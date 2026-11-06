@@ -9,8 +9,10 @@ $('start').addEventListener('click',()=>{
  if(typeof dialog.close==='function')dialog.close();else dialog.removeAttribute('open');
  $('nu-url').focus();
 });
-try{if(localStorage.getItem(modalKey)!=='1')showInfo()}catch(e){showInfo()}
+const embedded=new URLSearchParams(location.search).get('embedded')==='1';
+if(embedded){document.body.classList.add('embedded');}else{try{if(localStorage.getItem(modalKey)!=='1')showInfo()}catch(e){showInfo()}}
 const params=new URLSearchParams(location.search);
+if(embedded){try{parent.postMessage({type:'conservatory-nu-embed-ready'},location.origin)}catch(e){}}
 const rawBook=params.get('book')||'';
 const selectedBook=/^[1-9]\d{0,9}$/.test(rawBook)&&Number.isSafeInteger(Number(rawBook))?Number(rawBook):null;
 if(selectedBook){

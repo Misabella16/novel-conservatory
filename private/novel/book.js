@@ -49,12 +49,19 @@ function parseSourcePage(html,url){
   const raw=cover?.getAttribute('data-src')||cover?.getAttribute('src');
   if(raw)coverUrl=new URL(raw,url).href;
  }catch{}
+ const sourceLabel=(label)=>{
+  const candidates=Array.from(doc.querySelectorAll('#showtranslated,#showstatus,#showchapters,.seriesstat,.seriesstatus'));
+  const direct=candidates.map(node=>String(node.textContent||'').replace(/\s+/g,' ').trim()).filter(Boolean);
+  if(label==='translation')return direct.find(v=>/^(yes|no|completed|ongoing|fully translated|not fully translated)$/i.test(v))||'';
+  if(label==='chapters')return direct.find(v=>/\d/.test(v)&&v.length<=100)||'';
+  return '';
+ };
  const novel={nuUrl:url,title:first(['.seriestitlenu','#edit-title','.series-title']).slice(0,210),
   author:first(['#showauthors','#seriesauthors','.author-content']).slice(0,140),
   originalTitle:first(['#editassociated','#seriesothernames','#showassociated','#seriesassociated']).slice(0,210),
   synopsis:first(['#editdescription','#seriesdescription','.series-description','#showdescription','.seriesdescription']).slice(0,6000),
   genres:list(['#seriesgenre a','#showgenres a','.seriesgenre a']),
-  tags:list(['#showtags a','#seriestags a','.seriestags a']),coverUrl};
+  tags:list(['#showtags a','#seriestags a','.seriestags a']),nuTranslationSourceStatus:sourceLabel('translation'),nuChapterSourceText:sourceLabel('chapters'),coverUrl};
  return novel.title&&(novel.synopsis||novel.tags.length||novel.genres.length)?
   {source:'novelupdates-browser-v1',novel}:null;
 }
@@ -196,6 +203,7 @@ async function start(){
   $('synopsis').textContent=d.synopsis||'This novel does not have a synopsis yet. EPUB and Novel Updates metadata can fill missing information.';
   $('source-info').textContent=d.metadataSource?'Metadata source: '+d.metadataSource:'';
   chips($('genres'),d.genres);chips($('tags'),d.tags);
+  $('nu-source-progress').textContent=[d.nuTranslationSourceStatus?'NU translation completion report: '+d.nuTranslationSourceStatus:'',d.nuChapterSourceText?'NU chapter information: '+d.nuChapterSourceText:''].filter(Boolean).join(' · ')||'Novel Updates chapter count and translation completion are not yet verified for this entry.';
   // Preserve original book-cover paths from the root catalogue. Relative
   // "covers/123.png" must not resolve underneath /novel/123.
   // Only display source artwork when rights or private EPUB scope are known.
