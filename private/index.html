@@ -488,6 +488,19 @@ header{background:rgba(255,251,244,.98);box-shadow:0 4px 22px #182a2111;border-b
  #tab-discover .region-section{margin-top:18px}
 }
 </style>
+<style id="personal-tag-archive-style">
+.tag-index-results .personal-tag-row{display:flex;align-items:stretch;gap:5px;min-width:0}
+[data-story-tag][hidden]{display:none!important}
+.tag-index-results .personal-tag-row .tag-index-chip{flex:1;min-width:0}
+.tag-index-results .personal-tag-row .archive-tag-button{flex:0 0 auto;min-width:41px;padding:8px;border:1px solid #cbdacc;border-radius:8px;background:#f5f8f1;color:#285641;font-size:12px;cursor:pointer}
+.archive-tag-button:hover{background:#e8f0e5}
+#archived-tags-manager{margin:12px 0;padding:11px 13px;border:1px solid #d1decc;border-radius:10px;background:#f6f8f1;color:#365446}
+#archived-tags-manager summary{font-weight:700;cursor:pointer}
+#archived-tag-list{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 5px}
+#archived-tag-list button{border-radius:8px;border:1px solid #a9c3aa;background:white;color:#254b37;min-height:38px;padding:8px 12px;font-size:13px}
+#archive-tag-status{font-size:12px;color:#526f5c;margin:7px 0;min-height:16px}
+@media(max-width:650px){.tag-index-results .personal-tag-row .archive-tag-button{min-width:45px}}
+</style>
 </head>
 <body>
 <header><div class="top"><a href="#top" class="brand" aria-label="The Novel Conservatory, home"><div class="brand-mark" aria-hidden="true">文</div><div><strong>The Novel Conservatory</strong><span>GENRES · RELATIONSHIPS · STORY WORLDS</span></div></a><button type="button" id="section-menu-toggle" class="section-menu-toggle" aria-controls="library-main-nav" aria-expanded="false" aria-label="Show all library sections">☰ All sections <span aria-hidden="true">▾</span></button><nav id="library-main-nav" class="nav" aria-label="Library sections"><button type="button" id="explore-nav" class="navbtn active">Discover</button><button type="button" id="covers-nav" class="navbtn">Browse novels</button><a href="/admin/" id="edit-site-nav" class="navbtn" style="display:none;text-decoration:none;white-space:nowrap">✎ Edit Site</a><button type="button" id="saved-nav" class="navbtn">Device favorites <span id="saved-badge" class="nav-count">0</span></button><a href="/shelves/" class="navbtn" style="text-decoration:none;white-space:nowrap">Friends’ shelves</a><a href="/submit-epub/" class="navbtn" style="text-decoration:none;white-space:nowrap">📖 Submit EPUB</a><a href="/epub-verification/" class="navbtn" style="text-decoration:none;white-space:nowrap">✓ Verify EPUBs</a><button type="button" id="about-nav" class="navbtn">About</button><a class="navbtn session-signout" href="/cdn-cgi/access/logout" title="End your Cloudflare Access session" onclick="return confirm('Sign out of Cloudflare Access? This ends your Access session across protected sites. Favorites saved on this device will remain here.');">↪ Sign out</a></nav><div class="invite" title="The website must remain behind Cloudflare Access"><i></i> Friends' reading room</div><a class="mobile-session-signout" href="/cdn-cgi/access/logout" title="End your Cloudflare Access session" onclick="return confirm('Sign out of Cloudflare Access? This ends your session across protected sites. Favorites saved in this browser remain.');">↪ Sign out</a></div></header>
@@ -518,6 +531,8 @@ header{background:rgba(255,251,244,.98);box-shadow:0 4px 22px #182a2111;border-b
 </div><button type="button" id="genre-more" class="genre-more" aria-expanded="false">Show all genres +</button></section><section aria-label="Find by popular story tags" class="browse-shortcuts"><div class="shortcut-heading"><span>FIND BY STORY TAG</span><span>Relationship dynamics, characters &amp; plot devices; only catalogued or imported tags are shown</span></div><div class="shortcut-list"><button class="shortcut" data-story-tag="Childhood Friends" type="button">Childhood Friends</button><button class="shortcut" data-story-tag="Rivals to Lovers" type="button">Rivals to Lovers</button><button class="shortcut" data-story-tag="Enemies to Lovers" type="button">Enemies to Lovers</button><button class="shortcut" data-story-tag="Survival" type="button">Survival</button><button class="shortcut" data-story-tag="Found Family" type="button">Found Family</button><button class="shortcut" data-story-tag="Reunion" type="button">Reunion</button><button class="shortcut" data-story-tag="Transmigration" type="button">Transmigration</button></div></section><section aria-label="Browse story tags" class="tag-index-section">
 <div class="heading-inline"><div><div class="sec-kicker">A STORY FOR EVERY OBSESSION</div><h2>Explore story tags <span class="tag-index-sparkle">✧</span></h2></div><p>Search a library of story elements inspired by Novel Updates. Only source-imported or editor-reviewed tags produce matches. Missing story elements are never guessed.</p></div>
 <div class="tag-index-controls"><input aria-label="Search story tags" id="tag-library-search" placeholder="Try childhood friends, survival game, hidden identity…" type="search"/><select aria-label="Choose tag category" id="tag-library-category"><option value="all">All story tags</option></select><label class="only-matches"><input id="tag-library-matches" type="checkbox" checked/> Tags with books only</label></div>
+<details id="archived-tags-manager"><summary>🙈 My archived tags (<span id="archived-tag-count">0</span>)</summary><p style="font-size:12px;margin:7px 0">Archived tags disappear from your own tag lists and novel pages, but the books and their saved metadata remain. Restore any tag below.</p><div id="archived-tag-list"></div></details>
+<p id="archive-tag-status" role="status" aria-live="polite"></p>
 <p aria-live="polite" class="tag-index-count" id="tag-library-summary">Loading tag library…</p>
 <div class="tag-selected-toolbar" aria-label="Selected story tags">
   <div class="tag-selection-label"><strong id="tag-selected-count">No tags selected</strong><span>Check several tags, then browse the results together.</span></div>
@@ -706,6 +721,70 @@ function renderRegions(){
 let selectedHomeShelf='all';
 function syncHomeShelf(){$$('[data-home-genre]').forEach(b=>b.classList.toggle('active',b.dataset.homeGenre===selectedHomeShelf))}
 let selectedStoryTags=new Set(),tagMatchMode='any';
+let archivedTags=new Set();
+let archivedTagChangePending=false;
+const isArchivedTag=value=>archivedTags.has(normStoryTag(value));
+function applyPersonalTagShortcutVisibility(){
+ $('[data-story-tag]').forEach(el=>{el.hidden=isArchivedTag(el.dataset.storyTag)});
+}
+function renderPersonalArchivedTags(){
+ const host=$('#archived-tag-list'),manager=$('#archived-tags-manager');
+ if(!host||!manager)return;
+ $('#archived-tag-count').textContent=String(archivedTags.size);
+ host.replaceChildren();
+ const names=new Map();
+ for(const book of data)for(const name of book.tags||[]){
+  const key=normStoryTag(name);if(key&&!names.has(key))names.set(key,name);
+ }
+ for(const name of Object.values(tagLibraryGroups).flat()){
+  const key=normStoryTag(name);if(key&&!names.has(key))names.set(key,name);
+ }
+ const entries=[...archivedTags].sort((a,b)=>a.localeCompare(b));
+ if(!entries.length){const empty=document.createElement('p');empty.textContent='No archived tags yet.';host.append(empty)}
+ for(const key of entries){
+  const button=document.createElement('button');button.type='button';
+  button.textContent='↩ Restore '+(names.get(key)||key);
+  button.disabled=archivedTagChangePending;
+  button.addEventListener('click',()=>changePersonalTag(key,'restore'));
+  host.append(button);
+ }
+}
+function refreshTagArchiveViews(){
+ selectedStoryTags=new Set([...selectedStoryTags].filter(x=>!isArchivedTag(x)));
+ selectedTags=new Set([...selectedTags].filter(x=>!isArchivedTag(x)));
+ renderPersonalArchivedTags();
+ applyPersonalTagShortcutVisibility();
+ renderFilters();renderTagLibrary();renderBooks();
+}
+async function changePersonalTag(value,action){
+ if(archivedTagChangePending)return;
+ const tag=normStoryTag(value);
+ if(!tag)return;
+ archivedTagChangePending=true;
+ const status=$('#archive-tag-status');
+ status.textContent=action==='archive'?'Archiving your tag…':'Restoring your tag…';
+ try{
+  const response=await fetch('/api/me/archived-tags',{method:'POST',credentials:'same-origin',
+   headers:{'content-type':'application/json'},body:JSON.stringify({tag,action})});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(result.error||'Could not save your tag preference.');
+  archivedTags=new Set((result.tags||[]).map(normStoryTag));
+  status.textContent=action==='archive'?'Tag archived for your account only.':'Tag restored to your view.';
+  const manager=$('#archived-tags-manager');if(action==='archive'&&manager)manager.open=false;
+  refreshTagArchiveViews();
+ }catch(e){status.textContent=e.message||'Could not change your archived tags'}
+ finally{archivedTagChangePending=false;renderPersonalArchivedTags();renderTagLibrary()}
+}
+async function loadPersonalArchivedTags(){
+ try{
+  const response=await fetch('/api/me/archived-tags',{credentials:'same-origin',cache:'no-store'});
+  if(!response.ok)throw Error('Tag preferences unavailable');
+  const payload=await response.json();
+  archivedTags=new Set((payload.tags||[]).map(normStoryTag));
+  refreshTagArchiveViews();
+ }catch(e){$('#archive-tag-status').textContent='Archived tags could not be loaded; your saved preferences were not changed.'}
+}
+
 let tagLibraryGroups={},tagLibraryLimit=120;
 
 /* Negative filters are a separate set, so include and exclude can coexist.
@@ -724,7 +803,7 @@ function renderExcludedTagFilters(){
   }
  }
  const needle=$('#exclude-tag-search').value.trim().toLocaleLowerCase();
- const values=[...count.keys()].filter(key=>!needle||key.includes(needle)||display.get(key).toLocaleLowerCase().includes(needle));
+ const values=[...count.keys()].filter(key=>!isArchivedTag(key)&&(!needle||key.includes(needle)||display.get(key).toLocaleLowerCase().includes(needle)));
  values.sort((a,b)=>Number(excludedTags.has(b))-Number(excludedTags.has(a))||a.localeCompare(b));
  const visible=values.slice(0,55);
  host.innerHTML=visible.length?visible.map(key=>{
@@ -747,7 +826,7 @@ $('#excluded-tag-filters').addEventListener('change',event=>{
  renderBooks();
 });
 
-function normStoryTag(t){const s=String(t||'').trim().toLowerCase();return ({'enemies to lovers':'enemies become lovers','rivals to lovers':'rivals to lovers','infinite flow':'unlimited flow','sci fi':'sci-fi','abo':'omegaverse'})[s]||s;}
+function normStoryTag(t){const s=String(t||'').normalize('NFKC').trim().toLowerCase();return ({'enemies to lovers':'enemies become lovers','rivals to lovers':'rivals to lovers','infinite flow':'unlimited flow','sci fi':'sci-fi','abo':'omegaverse'})[s]||s;}
 function storyTagCounts(){const counts={};for(const d of data){if(!isDiscoverable(d))continue;for(const t of d.tags||[]){const k=normStoryTag(t);counts[k]=(counts[k]||0)+1;}}return counts;}
 function chooseStoryTag(label){savedOnly=false;selectedHomeShelf='all';selectedStatus.clear();selectedAvailability.clear();selectedLanguages.clear();selectedThemes.clear();selectedGenres.clear();selectedTags=new Set([label]);selectedStoryTags=new Set([normStoryTag(label)]);tagMatchMode='any';excludedWarnings.clear();richOnly=false;visible=48;renderFilters();renderBooks();syncHomeShelf();goBrowse();}
 function selectionMatchesNovel(d,keys){if(!isDiscoverable(d))return false;const bookTags=new Set((d.tags||[]).map(normStoryTag));return tagMatchMode==='all'?keys.every(t=>bookTags.has(t)):keys.some(t=>bookTags.has(t));}
@@ -787,7 +866,7 @@ function renderTagLibrary(){const host=$('#tag-library-results');if(!host)return
    const option=document.createElement('option');option.value='Imported discoveries';option.textContent='Imported discoveries';$('#tag-library-category').append(option);
   }
  }
- let entries=[];for(const [cat,items] of Object.entries(groups)){if(group!=='all'&&group!==cat)continue;for(const name of items){const count=counts[normStoryTag(name)]||0;if((!q||name.toLowerCase().includes(q))&&(!onlyMatches||count>0))entries.push({name,cat,count});}}
+ let entries=[];for(const [cat,items] of Object.entries(groups)){if(group!=='all'&&group!==cat)continue;for(const name of items){const count=counts[normStoryTag(name)]||0;if(!isArchivedTag(name)&&(!q||name.toLowerCase().includes(q))&&(!onlyMatches||count>0))entries.push({name,cat,count});}}
  entries.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base',numeric:true}));
  const unique=[];const seen=new Set();for(const item of entries){const key=normStoryTag(item.name);if(seen.has(key))continue;seen.add(key);unique.push(item)}
  host.replaceChildren();for(const item of unique.slice(0,tagLibraryLimit)){
@@ -797,7 +876,12 @@ function renderTagLibrary(){const host=$('#tag-library-results');if(!host)return
    const name=document.createElement('span');name.className='tag-chip-name';name.textContent=item.name;
    const num=document.createElement('small');num.textContent=item.count?`${item.count}`:'—';num.title=item.count?`${item.count} matching book(s)`:'No tagged books yet';
    input.addEventListener('change',()=>{const key=normStoryTag(item.name);if(input.checked)selectedStoryTags.add(key);else selectedStoryTags.delete(key);label.classList.toggle('is-selected',input.checked);updateTagSelection();});
-   label.append(input,name,num);host.append(label);
+   const row=document.createElement('div');row.className='personal-tag-row';
+   const archive=document.createElement('button');archive.type='button';archive.className='archive-tag-button';
+   archive.textContent='🙈';archive.title='Archive '+item.name+' only for me';archive.setAttribute('aria-label','Archive '+item.name+' only for me');
+   archive.disabled=archivedTagChangePending;
+   archive.addEventListener('click',()=>changePersonalTag(item.name,'archive'));
+   label.append(input,name,num);row.append(label,archive);host.append(row);
  }
  $('#tag-library-summary').textContent=unique.length+' story tags · A–Z · '+unique.filter(x=>x.count).length+' with book matches. Select as many as you like.';
  const more=$('#tag-library-more');more.classList.toggle('hide',unique.length<=tagLibraryLimit);more.textContent='Show more tags ('+Math.min(tagLibraryLimit,unique.length)+' of '+unique.length+')';updateTagSelection();
@@ -828,7 +912,7 @@ function renderFilters(){
  makeChecks('#availability-filters',Object.keys(availabilityLabels),availCounts,selectedAvailability,'availability');
  makeChecks('#theme-filters',cues,cueCounts,selectedThemes,'theme');
  makeChecks('#genre-filters',Object.keys(genreCounts).sort(),genreCounts,selectedGenres,'genre');
- makeChecks('#tag-filters',Object.keys(tagCounts).sort(),tagCounts,selectedTags,'tag');
+ makeChecks('#tag-filters',Object.keys(tagCounts).filter(t=>!isArchivedTag(t)).sort(),tagCounts,selectedTags,'tag');
  renderExcludedTagFilters();
  makeChecks('#warning-filters',Object.keys(warningCounts).sort(),warningCounts,excludedWarnings,'warning');
  $('#rich-only').checked=richOnly;
@@ -874,7 +958,7 @@ function matches(d){
 function hoverTags(d){
  const verified=isDiscoverable(d);
  const genreItems=verified?(d.genres||[]).map(t=>({t,kind:'genre'})):[];
- const tropeItems=verified?(d.tags||[]).map(t=>({t,kind:'trope'})):[];
+ const tropeItems=verified?(d.tags||[]).filter(t=>!isArchivedTag(t)).map(t=>({t,kind:'trope'})):[];
  const items=[...genreItems.slice(0,2),...tropeItems.slice(0,1)];
  for(const candidate of [...tropeItems.slice(1),...genreItems.slice(2)]){
    if(items.length>=3)break;
@@ -890,7 +974,7 @@ function hoverBlurb(d){
 
 function seriesListExtras(d){
  const reviewed=isReviewed(d);
- const tags=(reviewed||hasImportedMetadata(d))?[...(d.genres||[]).map(x=>({value:x,kind:'genre'})),...(d.tags||[]).map(x=>({value:x,kind:'trope'}))]:[];
+ const tags=(reviewed||hasImportedMetadata(d))?[...(d.genres||[]).map(x=>({value:x,kind:'genre'})),...(d.tags||[]).filter(x=>!isArchivedTag(x)).map(x=>({value:x,kind:'trope'}))]:[];
  const distinct=[...new Map(tags.map(x=>[x.value.toLocaleLowerCase(),x])).values()].slice(0,9);
  const chips=distinct.length?distinct.map(x=>`<span class="series-tag ${esc(x.kind)}">${esc(x.value)}</span>`).join(''):'<span class="series-tag meta-pending">Tags awaiting review</span>';
  const translated=String(d.translator||'').trim();
@@ -966,7 +1050,7 @@ function detailCell(name,value){return `<div><small>${esc(name)}</small><span>${
 function renderDetail(d){const nu=safeUrl(d.nuUrl),translationSite=safeUrl(d.translatorUrl),star=favorites.includes(d.id),reviewed=isReviewed(d);
  const src=coverSrc(d);const cover=src?`<img src="${esc(src)}" alt="Cover for ${esc(d.title)}" onerror="this.remove()">`:'';
  const synopsis=d.synopsis?esc(d.synopsis):'This book is waiting for its editorial description. Visit the linked series listing for the original description and reader reviews.';
- const originalTags=(d.tags||[]).map(t=>detailCuteTag(t,'trope')).join('');
+ const originalTags=(d.tags||[]).filter(t=>!isArchivedTag(t)).map(t=>detailCuteTag(t,'trope')).join('');
  const imported=hasImportedMetadata(d);
  const genrePills=(d.genres||[]).map(t=>detailCuteTag(t,'genre')).join('');
  const warnings=(d.contentWarnings||[]).map(t=>detailCuteTag(t,'warning')).join('');
@@ -1183,6 +1267,7 @@ async function loadLiveEditorChanges(){
 }
 $('#density-toggle').addEventListener('click',()=>{compactCovers=!compactCovers;try{localStorage.setItem('conservatory-cover-density',compactCovers?'compact':'roomy')}catch(e){}renderBooks()});
 shuffle();updateStats();renderFilters();renderRegions();renderStoryTags();renderSpotlights();renderBooks();hiddenLabel();loadPersonalHidden();
+loadPersonalArchivedTags();
 const initialTab=({covers:'covers',shelf:'shelf',discover:'discover'})[location.hash.slice(1)]||'discover';if(initialTab==='shelf'){savedOnly=true;$('#section-title').textContent='My saved shelf';renderBooks()}showLibraryTab(initialTab,{scroll:false});
 async function refreshPrivateEpubAvailability(){
  const notice=$('#epub-inventory-status'),picker=$('#epub-presence-filter');
