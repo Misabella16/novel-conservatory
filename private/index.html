@@ -490,6 +490,7 @@ header{background:rgba(255,251,244,.98);box-shadow:0 4px 22px #182a2111;border-b
 </style>
 <style id="personal-tag-archive-style">
 .tag-index-results .personal-tag-row{display:flex;align-items:stretch;gap:5px;min-width:0}
+[data-story-tag][hidden]{display:none!important}
 .tag-index-results .personal-tag-row .tag-index-chip{flex:1;min-width:0}
 .tag-index-results .personal-tag-row .archive-tag-button{flex:0 0 auto;min-width:41px;padding:8px;border:1px solid #cbdacc;border-radius:8px;background:#f5f8f1;color:#285641;font-size:12px;cursor:pointer}
 .archive-tag-button:hover{background:#e8f0e5}
@@ -772,7 +773,7 @@ async function changePersonalTag(value,action){
   const manager=$('#archived-tags-manager');if(action==='archive'&&manager)manager.open=false;
   refreshTagArchiveViews();
  }catch(e){status.textContent=e.message||'Could not change your archived tags'}
- finally{archivedTagChangePending=false;renderPersonalArchivedTags()}
+ finally{archivedTagChangePending=false;renderPersonalArchivedTags();renderTagLibrary()}
 }
 async function loadPersonalArchivedTags(){
  try{
@@ -802,7 +803,7 @@ function renderExcludedTagFilters(){
   }
  }
  const needle=$('#exclude-tag-search').value.trim().toLocaleLowerCase();
- const values=[...count.keys()].filter(key=>!needle||key.includes(needle)||display.get(key).toLocaleLowerCase().includes(needle));
+ const values=[...count.keys()].filter(key=>!isArchivedTag(key)&&(!needle||key.includes(needle)||display.get(key).toLocaleLowerCase().includes(needle)));
  values.sort((a,b)=>Number(excludedTags.has(b))-Number(excludedTags.has(a))||a.localeCompare(b));
  const visible=values.slice(0,55);
  host.innerHTML=visible.length?visible.map(key=>{
