@@ -28,7 +28,7 @@ if(rendition){rendition.themes.default({'body':{'color':`${colors.fg} !important
 el('font-size-output').value=el('font-size').value+'%';document.documentElement.style.setProperty('--reading-width',el('reading-width').value+'px');rememberPrefs();}
 function chapterIndex(){const current=rendition?.currentLocation()?.start?.href;if(!current)return -1;return toc.findIndex(t=>t.href?.split('#')[0]===current.split('#')[0]);}
 function updateChapter(loc){const href=loc?.start?.href;if(!href)return;const i=toc.findIndex(t=>t.href?.split('#')[0]===href.split('#')[0]);if(i>=0){el('chapter-menu').value=String(i);el('chapter-position').textContent=toc[i].label||`Chapter ${i+1}`}else{el('chapter-position').textContent='Reading…'}
-const cfi=loc?.start?.cfi;if(cfi){lastCfi=cfi;if(!restoringPosition){rememberLocalPosition(cfi);progressSync?.queue(cfi)}}
+const cfi=loc?.start?.cfi;if(cfi){lastCfi=cfi;if(!restoringPosition){rememberLocalPosition(cfi);progressSync?.queue(cfi)}}}
 function addNav(list,depth=0){for(const item of list||[]){toc.push({label:'  '.repeat(depth)+(item.label||'Chapter'),href:item.href||''});if(item.subitems?.length)addNav(item.subitems,depth+1)}}
 async function gotoChapter(i){if(!rendition||!toc[i])return;message('Opening '+toc[i].label.trim()+'…');await rendition.display(toc[i].href);message('Reading');}
 async function init(){
