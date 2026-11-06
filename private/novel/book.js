@@ -51,8 +51,9 @@ function parseSourcePage(html,url){
  }catch{}
  const sourceLabel=(label)=>{
   const candidates=Array.from(doc.querySelectorAll('#showtranslated,#showstatus,#showchapters,.seriesstat,.seriesstatus'));
-  const direct=candidates.map(node=>String(node.textContent||'').replace(/\\s+/g,' ').trim()).filter(Boolean);
+  const direct=candidates.map(node=>String(node.textContent||'').replace(/\s+/g,' ').trim()).filter(Boolean);
   if(label==='translation')return direct.find(v=>/^(yes|no|completed|ongoing|fully translated|not fully translated)$/i.test(v))||'';
+  if(label==='chapters')return direct.find(v=>/\d/.test(v)&&v.length<=100)||'';
   return '';
  };
  const novel={nuUrl:url,title:first(['.seriestitlenu','#edit-title','.series-title']).slice(0,210),
@@ -60,7 +61,7 @@ function parseSourcePage(html,url){
   originalTitle:first(['#editassociated','#seriesothernames','#showassociated','#seriesassociated']).slice(0,210),
   synopsis:first(['#editdescription','#seriesdescription','.series-description','#showdescription','.seriesdescription']).slice(0,6000),
   genres:list(['#seriesgenre a','#showgenres a','.seriesgenre a']),
-  tags:list(['#showtags a','#seriestags a','.seriestags a']),nuTranslationSourceStatus:sourceLabel('translation'),coverUrl};
+  tags:list(['#showtags a','#seriestags a','.seriestags a']),nuTranslationSourceStatus:sourceLabel('translation'),nuChapterSourceText:sourceLabel('chapters'),coverUrl};
  return novel.title&&(novel.synopsis||novel.tags.length||novel.genres.length)?
   {source:'novelupdates-browser-v1',novel}:null;
 }
