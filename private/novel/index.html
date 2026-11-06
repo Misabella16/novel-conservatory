@@ -21,11 +21,32 @@
 <div id="nu-cover-link" class="tiny"></div>
 <p class="nu-panel-note" style="margin:16px 0 8px"><strong>Couldn't retrieve NU details automatically?</strong> Choose whichever method you're using. Both work with this same novel.</p>
 <details class="nu-capture" id="nu-capture-help">
-<summary>📱 On a phone: Copy information from Novel Updates</summary>
-<p class="nu-help">Tap <strong>Open linked NU page</strong>, copy the visible fields you need along with their headings (for example, <em>Genres</em>, <em>Tags</em>, <em>Chapters</em>, or <em>Completely Translated</em>), and paste them here. Return to the preview before saving. This option does not require a bookmarklet.</p>
-<label for="nu-copied-text"><strong>Information copied from the NU series page</strong></label>
-<textarea id="nu-copied-text" placeholder="Genres: Fantasy, Romance&#10;Tags: Found Family, Slow Romance&#10;Chapters: 120&#10;Completely Translated: Yes"></textarea>
-<button type="button" class="btn" id="nu-preview-copied">Preview pasted information</button>
+<summary>📱 On a phone: Copy tags or use screenshot text</summary>
+<p class="nu-help">Novel Updates often copies multiple linked tags as one long line. Choose what you're pasting and we'll try to separate complete tag names, including multiword tags such as <strong>Appearance Changes</strong>. Review everything before saving.</p>
+<p class="nu-help"><strong>Using a screenshot?</strong> Open it in iPhone Photos, use <strong>Live Text</strong> to select and copy the tags, then paste them here. You can also copy text directly from the NU page. The same separator works for either method.</p>
+<label for="nu-paste-mode"><strong>What are you pasting?</strong></label>
+<select id="nu-paste-mode" style="width:100%;padding:11px;margin:5px 0 10px;border:1px solid #bfccbf;border-radius:8px;background:white;color:#25493c;font:16px system-ui">
+<option value="tags">Tags only (default)</option>
+<option value="genres">Genres only</option>
+<option value="mixed">Several NU sections with headings</option>
+</select>
+<label for="nu-copied-text"><strong>Text copied from Novel Updates</strong></label>
+<textarea id="nu-copied-text" placeholder="Appearance Changes Black Belly Brainwashing Character Growth ..."></textarea>
+<button type="button" class="btn" id="nu-preview-copied">Separate &amp; review pasted information</button>
+<div class="nu-preview" id="nu-segment-review" hidden style="margin-top:13px">
+<strong>Review the separated names</strong>
+<p class="nu-panel-note" id="nu-segment-message">One tag or genre per line. You can correct names or add anything the parser missed.</p>
+<label for="nu-segment-tags" style="display:block;font-weight:700;margin:10px 0 4px">Tags, one per line</label>
+<textarea id="nu-segment-tags" spellcheck="false" placeholder="Appearance Changes&#10;Black Belly&#10;Brainwashing" style="width:100%;min-height:125px;font:14px/1.6 system-ui"></textarea>
+<label for="nu-segment-genres" style="display:block;font-weight:700;margin:10px 0 4px">Genres, one per line</label>
+<textarea id="nu-segment-genres" spellcheck="false" placeholder="Fantasy&#10;Romance" style="width:100%;min-height:80px;font:14px/1.6 system-ui"></textarea>
+<details id="nu-segment-uncertain" hidden style="margin:12px 0">
+<summary><strong>Unrecognized words (check before adding)</strong></summary>
+<p class="nu-panel-note">The vocabulary isn't exhaustive. These words might be valid tags, but they cannot be separated reliably without your help. Copy each complete name into the fields above if appropriate.</p>
+<pre id="nu-segment-leftovers" style="white-space:pre-wrap;overflow-wrap:anywhere;background:#fff;padding:10px;border-radius:8px"></pre>
+</details>
+<button type="button" class="btn primary" id="nu-segment-continue">Continue to change preview</button>
+</div>
 </details>
 <details class="nu-capture" id="nu-advanced-capture">
 <summary>💻 On a computer: Use the original Capture Novel Updates bookmarklet</summary>
@@ -35,4 +56,4 @@
 <button type="button" class="btn" id="nu-apply-capture">Preview bookmarklet results</button>
 </details>
 <div class="buttons"><button type="button" class="btn" id="nu-undo" hidden>↶ Reverse this update</button></div><details class="nu-capture" id="nu-history"><summary>Previous changes and restoration options</summary><p class="nu-help">Changes are recorded so editors can restore earlier information if needed.</p><a href="/admin/resolve-duplicates.html">Open change and merge history</a></details>
-</section><section class="panel"><h2>Private reading editions</h2><p class="muted tiny">Private EPUB files are available only to accounts with reading permission.</p><div id="editions"></div></section></div></div></main><script src="/novel/nu-source.js" defer></script><script src="/novel/book.js" defer></script></body></html>
+</section><section class="panel"><h2>Private reading editions</h2><p class="muted tiny">Private EPUB files are available only to accounts with reading permission.</p><div id="editions"></div></section></div></div></main><script src="/novel/nu-labels.js" defer></script><script src="/novel/nu-segments.js" defer></script><script src="/novel/nu-source.js" defer></script><script src="/novel/book.js" defer></script></body></html>
