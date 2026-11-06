@@ -58,6 +58,10 @@ jobs:
           node --check private/novel/nu-source.js
           node --check private/novel/book.js
           node tests/check_mobile_nu_refresh.js
+      - name: Verify personal tag archiving and existing EPUB reading position
+        run: |
+          node --check tests/check_personal_archived_tags.js
+          node tests/check_personal_archived_tags.js
       - name: Verify private EPUB indicators and homepage scripts
         run: python tests/check_private_epub_indicators.py
       - name: Check Python syntax and parse source-only retrieval
