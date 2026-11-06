@@ -404,6 +404,65 @@ async function routes(request,env,ctx,email,role){
     return respond({ok:true,tags:next,private:true,affectedOtherAccounts:false});
    }catch(e){return respond({error:textField(e?.message||'Could not change your archived tags',180)},400)}
   }
+  // Signed-in per-account EPUB reading progress. Only the EPUB location (CFI)
+  // is stored, never chapter text or uploaded content. Changes are private to
+  // the Cloudflare Access identity, selected novel, and specific EPUB edition.
+  if(path==='/api/me/reading-position'&&(method==='GET'||method==='POST')){
+   if(!env.DB)return editionJson({error:'Private reader storage unavailable'},503);
+   if(!await canReadEpubs(email,role,env))
+    return editionJson({error:'EPUB reading permission required'},403);
+   if(method==='POST'&&!sameOrigin(request))
+    return editionJson({error:'Cross-origin reading-position update rejected'},403);
+   try{
+    const payload=method==='POST'?await getJson(request):url.searchParams;
+    const id=editionBook(method==='GET'?payload.get('id'):payload.id);
+    const editionId=String(method==='GET'?payload.get('edition'):payload.edition||'');
+    if(!id||(editionId!=='legacy'&&!editionUuid(editionId)))
+     return editionJson({error:'Choose a valid novel and EPUB edition'},400);
+    // Verify the requested edition exists before exposing or saving a position.
+    if(editionId==='legacy'){
+     const row=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?')
+      .bind('private-epub:'+id).first();
+     let legacy=null;try{legacy=JSON.parse(row?.value||'null')}catch{}
+     if(!legacy?.key)return editionJson({error:'EPUB edition not found'},404);
+    }else{
+     const row=await env.DB.prepare('SELECT id FROM '+editionTable(id)+' WHERE novel_id=? AND id=?')
+      .bind(id,editionId).first();
+     if(!row)return editionJson({error:'EPUB edition not found'},404);
+    }
+    const key='conservatory-reading-position-v1:'+emailNorm(email)+':'+id+':'+editionId;
+    const row=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(key).first();
+    let current={cfi:'',version:0,updatedAt:null};
+    if(row){
+     try{
+      const saved=JSON.parse(row.value);
+      if(!saved||typeof saved!=='object'||!Number.isSafeInteger(saved.version)||saved.version<1||
+       typeof saved.cfi!=='string'||saved.cfi.length>2048)
+       return editionJson({error:'Saved reading position needs repair; nothing was changed'},409);
+      current={cfi:saved.cfi,version:saved.version,updatedAt:saved.updatedAt||null};
+     }catch{return editionJson({error:'Saved reading position could not be read'},409)}
+    }
+    if(method==='GET')return editionJson({ok:true,position:current,exists:!!row,private:true});
+    const desired=payload.cfi;
+    const revision=Number(payload.version);
+    if(typeof desired!=='string'||desired.length>2048||
+       (desired!==''&&(!/^epubcfi\([\x20-\x7e]{1,2035}\)$/.test(desired)||/[<>]/.test(desired)))||
+       !Number.isSafeInteger(revision)||revision<0)
+     return editionJson({error:'Invalid EPUB bookmark or revision'},400);
+    if(revision!==current.version)
+     return editionJson({error:'This book was updated on another device. Reload or keep reading to save a newer position.',conflict:true,position:current},409);
+    if(desired===current.cfi)return editionJson({ok:true,position:current,unchanged:true,private:true});
+    const next={cfi:desired,version:current.version+1,updatedAt:new Date().toISOString()};
+    const value=JSON.stringify(next);
+    const written=row?await env.DB.prepare('UPDATE site_settings SET value=?,updated_at=CURRENT_TIMESTAMP WHERE key=? AND value=?')
+      .bind(value,key,row.value).run():
+      await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING')
+      .bind(key,value).run();
+    if((written.meta?.changes||0)!==1)
+     return editionJson({error:'Reading progress changed in another tab; reload to check its position.',conflict:true},409);
+    return editionJson({ok:true,position:next,private:true,affectedOtherAccounts:false});
+   }catch(e){return editionJson({error:textField(e?.message||'Could not sync your reading progress',180)},400)}
+  }
   if(path.startsWith('/api/epub-submissions/'))return privateEpubSubmissionRoutes(request,env,email,role);
   if(path.startsWith('/api/admin/nu/'))return nuAdminRoutes(request,env,email,role);
   if(path==='/api/admin/epub/ingest-metadata')return privateEpubIngestRoute(request,env,email,role);
