@@ -88,6 +88,12 @@ function brief(value){
  const s=Array.isArray(value)?value.join(', '):String(value??'');
  return s.length>260?s.slice(0,260)+'…':s;
 }
+function showManualOptions(){
+ // Keep both capture methods available. Highlight the most convenient one.
+ const small=typeof window.matchMedia==='function'&&window.matchMedia('(max-width: 700px)').matches;
+ $('nu-capture-help').open=small;
+ $('nu-advanced-capture').open=!small;
+}
 async function previewNu(capture=null,origin=''){
  if(!isEditor)return sourceStatus('Only authorized editors can apply source updates.',true);
  const nuUrl=seriesUrl($('nu-series-url').value);
@@ -104,8 +110,8 @@ async function previewNu(capture=null,origin=''){
   if(!capture){
    const result=await window.ConservatoryNUSource.discover(nuUrl);
    if(result.mode==='blocked'){
-    sourceStatus('Novel Updates could not be read automatically. Open the linked NU page, copy the visible sections on your phone, and paste them in “Source blocked?” below.');
-    $('nu-capture-help').open=true;
+    sourceStatus('Novel Updates did not return usable information automatically. Choose the phone copy-and-paste option or the original computer bookmarklet below.');
+    showManualOptions();
     return;
    }
    capture=result.capture;
@@ -115,8 +121,8 @@ async function previewNu(capture=null,origin=''){
   if(capture)request.capture=capture;
   const result=await postNU('/api/admin/nu/book-import',request);
   if(result.needsCapture){
-   sourceStatus('This NU link is saved, but its metadata has not been captured yet. Copy the visible NU fields into the mobile fallback below.');
-   $('nu-capture-help').open=true;
+   sourceStatus('No source details were available for this link. Use either the phone copy-and-paste method or the original computer bookmarklet below.');
+   showManualOptions();
    return;
   }
   const list=$('nu-preview-list');
@@ -141,20 +147,20 @@ async function previewNu(capture=null,origin=''){
   sourceStatus('Review the proposed updates below, then apply them when ready.');
  }catch(e){
   sourceStatus(e.message||'Could not preview Novel Updates data.',true);
-  $('nu-capture-help').open=true;
+  showManualOptions();
  }finally{setBusy(false)}
 }
 async function applyNu(){
  if(!isEditor||!preparedNu)return sourceStatus('Preview the source updates before applying.',true);
  const payload={id:activeNovelId,nuUrl:preparedNu.nuUrl,fields:preparedNu.fields};
  if(preparedNu.capture)payload.capture=preparedNu.capture;
- setBusy(true);sourceStatus('Applying selected information with Undo history…');
+ setBusy(true);sourceStatus('Saving selected information…');
  try{
   const result=await postNU('/api/admin/nu/book-import',payload);
   lastNuImportId=result.eventId||null;
   $('nu-undo').hidden=!lastNuImportId;
   resetPreview();
-  sourceStatus(result.needsCapture?'The NU link was saved, but source details were unavailable. Use the mobile copy option below.':
+  sourceStatus(result.needsCapture?'No new source details were found. Use either the phone method or the original computer bookmarklet below.':
    'Updated this novel: '+(result.changed||[]).join(', ')+'. Your curated fields and EPUBs were preserved.');
   await start();
  }catch(e){sourceStatus(e.message,true)}
