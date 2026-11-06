@@ -4,6 +4,8 @@
 'use strict';
 const $=id=>document.getElementById(id);
 let activeNovelId=null,activeNovelUrl='',lastNuImportId=null,isEditor=false;
+let archivedReaderTags=new Set();
+const readerTagKey=value=>String(value||'').normalize('NFKC').trim().toLowerCase();
 const norm=value=>String(value??'').normalize('NFKD').toLocaleLowerCase()
  .replace(/\p{M}/gu,'').replace(/[^\p{L}\p{N}]/gu,'');
 function seriesUrl(value){
@@ -283,7 +285,11 @@ async function start(){
   const identity=await json('/api/novel/resolve?id='+encodeURIComponent(requested));
   const id=Number(identity.canonicalId);
   if(!Number.isSafeInteger(id)||id<1)throw Error('Invalid canonical novel ID.');
-  const [cat,content,me]=await Promise.all([json('/api/catalogue'),json('/api/content'),json('/api/me')]);
+  const [cat,content,me,tagPrefs]=await Promise.all([
+   json('/api/catalogue'),json('/api/content'),json('/api/me'),
+   json('/api/me/archived-tags').catch(()=>({tags:[]}))
+  ]);
+  archivedReaderTags=new Set((Array.isArray(tagPrefs.tags)?tagPrefs.tags:[]).map(readerTagKey));
   activeNovelId=id;isEditor=['owner','editor'].includes(me.role);
   $('nu-preview').disabled=!isEditor;
   $('nu-preview-copied').disabled=!isEditor;
@@ -308,7 +314,11 @@ async function start(){
   $('author').textContent=d.author?'By '+d.author:'Author not yet listed';
   $('synopsis').textContent=d.synopsis||'This novel does not have a synopsis yet. EPUB and Novel Updates metadata can fill missing information.';
   $('source-info').textContent=d.metadataSource?'Metadata source: '+d.metadataSource:'';
-  chips($('genres'),d.genres);chips($('tags'),d.tags);
+  chips($('genres'),d.genres);
+  const visibleTags=(d.tags||[]).filter(tag=>!archivedReaderTags.has(readerTagKey(tag)));
+  chips($('tags'),visibleTags);
+  const tagNote=$('personal-tag-hint');
+  if(tagNote)tagNote.hidden=visibleTags.length===(d.tags||[]).length;
   $('nu-source-progress').textContent=[d.nuTranslationSourceStatus?'NU translation completion report: '+d.nuTranslationSourceStatus:'',d.nuChapterSourceText?'NU chapter information: '+d.nuChapterSourceText:''].filter(Boolean).join(' · ')||'Novel Updates chapter count and translation completion are not yet verified for this entry.';
   // Preserve original book-cover paths from the root catalogue. Relative
   // "covers/123.png" must not resolve underneath /novel/123.
