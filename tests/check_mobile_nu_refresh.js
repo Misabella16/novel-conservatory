@@ -2,17 +2,25 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
+const labels=fs.readFileSync('private/novel/nu-labels.js','utf8');
+const segments=fs.readFileSync('private/novel/nu-segments.js','utf8');
 const source=fs.readFileSync('private/novel/nu-source.js','utf8');
 const page=fs.readFileSync('private/novel/book.js','utf8');
 const html=fs.readFileSync('private/novel/index.html','utf8');
 const catalogue=fs.readFileSync('private/index.html','utf8');
 const worker=fs.readFileSync('private/_worker.js','utf8');
-for(const code of [source,page])new Function(code); // Worker is an ES module, checked by CI.
+for(const code of [labels,segments,source,page])new Function(code); // Worker is an ES module, checked by CI.
 assert(html.includes('name="nu-fields"')&&html.includes('id="nu-preview-box"'));
 assert(html.includes('id="nu-copied-text"')&&html.includes('id="nu-preview-copied"'));
 assert(html.includes('@media(max-width:700px){main'));
 assert(html.includes('.layout{display:block!important}'),'Mobile novel page must not use narrow desktop split');
 assert(html.includes('/novel/nu-source.js'));
+assert(html.includes('/novel/nu-labels.js')&&html.includes('/novel/nu-segments.js'));
+assert(html.includes('id="nu-paste-mode"')&&html.includes('id="nu-segment-review"'));
+assert(html.includes('id="nu-segment-tags"')&&html.includes('id="nu-segment-genres"'));
+assert(html.includes('id="nu-segment-continue"'));
+assert(page.includes('nu-segment-leftovers')&&page.includes('reviewedLines'));
+assert(html.includes('iPhone Photos')&&html.includes('Live Text'));
 assert(html.includes('id="nu-capture-help"'));
 assert(html.includes('On a phone: Copy information from Novel Updates'));
 assert(html.includes('On a computer: Use the original Capture Novel Updates bookmarklet'));
@@ -33,7 +41,7 @@ assert(page.includes('result.mode===')===false || page.includes("result.mode==='
 const browser={};
 const browserContext={window:browser,URL,console};
 vm.createContext(browserContext);
-vm.runInContext(source,browserContext);
+vm.runInContext(labels+'\n'+segments+'\n'+source,browserContext);
 const url='https://www.novelupdates.com/series/test-book/';
 const parsed=browser.ConservatoryNUSource.parseCopiedText(
  'Genres: Fantasy, Romance\nTags: Found Family, Slow Burn\nChapters: 120\nCompletely Translated: Yes\nStatus in COO: Completed',
@@ -46,6 +54,33 @@ assert.equal(parsed.novel.nuTranslationSourceStatus,'Yes');
 assert.equal(parsed.novel.nuOriginalSourceStatus,'Completed');
 assert.equal(browser.ConservatoryNUSource.canonical('https://evil.com/series/test-book/'),'');
 assert.throws(()=>browser.ConservatoryNUSource.parseCopiedText('Random prose',url,{}));
+const flattened='Appearance Changes Black Belly Brainwashing Cannibalism Character Growth '+
+ 'Conflicting Loyalties Cruel Characters Curious Protagonist Dark Death Depictions of Cruelty '+
+ 'Determined Protagonist Devoted Love Interests Fantasy Creatures Gore Half-human Protagonist '+
+ 'Handsome Male Lead Hard-Working Protagonist Human-Nonhuman Relationship Incest '+
+ 'Love Interest Falls in Love First Love Rivals Male Yandere Modern Day Mystery Solving '+
+ 'Mythical Beasts Possessive Characters R-18 R*pe Victim Becomes Lover R*pe S*xual Abuse '+
+ 'Shapeshifters Thriller Wars Weak to Strong';
+const copied=browser.ConservatoryNUSource.parseCopiedText(flattened,url,{title:'Test Book',author:'Test Author'},{mode:'tags'});
+assert.equal(copied.novel.tags.length,35,'Flattened tag links must become 35 distinct names');
+assert(copied.novel.tags.includes('Black Belly'));
+assert(copied.novel.tags.includes('Love Interest Falls in Love First'));
+assert(copied.novel.tags.includes('Human-Nonhuman Relationship'));
+assert(copied.novel.tags.includes('R*pe Victim Becomes Lover'));
+assert.deepEqual(Array.from(copied.review.unresolvedTags),[],'Known copied tags have no leftovers');
+const screenshotText='Genre [Edit]\nAdult Fantasy Horror Psychological Romance Sci-fi Smut Supernatural Yaoi'+
+ '\nTags [↑] [Edit]\n'+flattened+'\nRating (3.9 / 5.0, 232 votes)';
+const grouped=browser.ConservatoryNUSource.parseCopiedText(screenshotText,url,
+ {title:'Test Book',author:'Test Author'},{mode:'mixed'});
+assert(grouped.novel.genres.includes('Fantasy')&&grouped.novel.genres.includes('Psychological'));
+assert(grouped.novel.tags.length===35,'Mixed screenshot text must preserve all tags');
+assert(!grouped.novel.tags.some(t=>t.toLowerCase().includes('rating')));
+const unknown=browser.ConservatoryNUSource.parseCopiedText(
+ 'Black Belly AnUnlistedTag Brainwashing',url,{title:'Test Book',author:'Test Author'},{mode:'tags'});
+assert.deepEqual(Array.from(unknown.novel.tags),['Black Belly','Brainwashing']);
+assert(unknown.review.unresolvedTags.length===1&&unknown.review.unresolvedTags[0]==='AnUnlistedTag',
+ 'Unrecognized source text must be flagged, not invented as a tag');
+
 
 const block=worker.slice(worker.indexOf('const privateNuPageKey='),worker.indexOf('async function nuAdminRoutes('));
 const saved=new Map(),events=new Map();
