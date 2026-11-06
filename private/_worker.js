@@ -3017,6 +3017,38 @@ async function privateNuBookImport(request,env,email,role){
    // fields are separately sourced, never represented as editor-approved.
    next.metadataOrigin='nu';
   }
+  // When the mobile editor selects fields, import only those fields.
+  // Legacy desktop callers without 'fields' retain the existing behavior.
+  if(body.fields!==undefined){
+   const allowed=new Set(['tags','genres','synopsis','author','originalTitle','cover',
+    'nuChapterSourceText','nuTranslationSourceStatus','nuOriginalSourceStatus']);
+   if(!Array.isArray(body.fields)||!body.fields.length||body.fields.length>9||
+      body.fields.some(field=>!allowed.has(field)))
+    return respond({error:'Choose at least one valid metadata field to update.'},400);
+   const chosen=new Set(body.fields);
+   const mapped={cover:['cover','privateCover','coverCredit','nuCoverUrl'],
+    synopsis:['synopsis'],tags:['tags'],genres:['genres'],author:['author'],
+    originalTitle:['originalTitle'],nuChapterSourceText:['nuChapterSourceText'],
+    nuTranslationSourceStatus:['nuTranslationSourceStatus'],
+    nuOriginalSourceStatus:['nuOriginalSourceStatus']};
+   const keep=new Set(['nuUrl','metadataSource','metadataOrigin']);
+   for(const field of chosen)for(const key of mapped[field])keep.add(key);
+   for(const key of Object.keys(next)){
+    if(keep.has(key))continue;
+    if(Object.prototype.hasOwnProperty.call(old,key))next[key]=old[key];
+    else delete next[key];
+   }
+   const labels={ 'NU translation status reference':'nuTranslationSourceStatus',
+    'NU original publication status':'nuOriginalSourceStatus','NU chapter reference':'nuChapterSourceText'};
+   const actual=changed.filter(name=>name==='nuUrl'||chosen.has(labels[name]||name));
+   changed.splice(0,changed.length,...actual);
+   if(!actual.some(v=>v!=='nuUrl')){
+    if(Object.prototype.hasOwnProperty.call(old,'metadataSource'))next.metadataSource=old.metadataSource;
+    else delete next.metadataSource;
+    if(Object.prototype.hasOwnProperty.call(old,'metadataOrigin'))next.metadataOrigin=old.metadataOrigin;
+    else delete next.metadataOrigin;
+   }
+  }
   const changedSource=raw?sourceName:'Novel Updates link only';
   // Preview must be read-only: no write, journal event, or public mutation.
   // Values are included so editors can see exactly what will be imported.
