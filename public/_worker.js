@@ -2,6 +2,48 @@
 // Never bind the private DB, EPUB bucket or private banner storage to this Worker.
 const respond=(b,s=200)=>new Response(JSON.stringify(b),{status:s,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 const validKey=k=>/^[a-f0-9-]{36}\.(?:png|jpg|webp|gif)$/.test(k);
+// Public, approved metadata ONLY. Never call from the private Worker,
+// authenticated endpoints, EPUB routes or visitor submissions.
+const PUBLIC_D1_CACHE_TTL=Object.freeze({
+ '/api/published/novels':60,
+ '/api/additional/books':60,
+ '/api/site/config':30,
+ '/api/banner':30
+});
+export async function withPublicD1Cache(request,ctx,produce){
+ const url=new URL(request.url);
+ const ttl=PUBLIC_D1_CACHE_TTL[url.pathname];
+ // Fixed-path, anonymous GET endpoints only. Ignore query strings or auth.
+ if(request.method!=='GET'||!ttl||url.search||request.headers.has('authorization'))
+  return produce();
+ const cache=globalThis.caches?.default;
+ if(!cache)return produce();
+ const key=new Request(url.origin+url.pathname,{method:'GET'});
+ try{
+  const hit=await cache.match(key);
+  if(hit?.ok){
+   const headers=new Headers(hit.headers);
+   headers.set('cache-control','no-store');
+   return new Response(hit.body,{status:hit.status,headers});
+  }
+ }catch{} // Cache unavailable: use the normal public database endpoint.
+ const response=await produce();
+ // Never cache errors, 404s, Turnstile responses, cookies or private assets.
+ if(response.status===200 &&
+    /^application\/json\b/i.test(response.headers.get('content-type')||'') &&
+    !response.headers.has('set-cookie')){
+  const headers=new Headers(response.headers);
+  headers.set('cache-control','public,max-age='+ttl);
+  const cacheable=new Response(response.clone().body,{status:200,headers});
+  const task=Promise.resolve().then(()=>cache.put(key,cacheable)).catch(()=>{});
+  if(ctx&&typeof ctx.waitUntil==='function')ctx.waitUntil(task);
+  else await task;
+ }
+ // Browser responses remain no-store so recently published changes are
+ // rechecked at the edge instead of kept in visitors' local browser caches.
+ return response;
+}
+
 const clamp=v=>Number.isFinite(Number(v))?Math.max(0,Math.min(100,Math.round(Number(v)))):50;
 async function activeBanner(env){
  if(!env.COMMUNITY_DB||!env.COMMUNITY_IMAGES)return {image:'',positionX:50,positionY:50,configured:false};
@@ -9,7 +51,7 @@ async function activeBanner(env){
  const key=String(settings.publicBannerKey||'');
  return {image:validKey(key)?'/banner-media/'+key:'',positionX:clamp(settings.publicBannerX),positionY:clamp(settings.publicBannerY),configured:true};
 }
-export default {async fetch(request,env){
+export default {async fetch(request,env,ctx){
  const url=new URL(request.url),path=url.pathname;
  if(path==='/api/novel/resolve'&&request.method==='GET'){
   if(!env.COMMUNITY_DB)return respond({error:'Catalogue unavailable'},503);
@@ -25,11 +67,16 @@ export default {async fetch(request,env){
   }
   return respond({id,canonicalId:id});
  }
- if(path.startsWith('/api/additional/'))return additionalRoutes(request,env,'public');
- if(path==='/api/site/config')return siteConfigRoute(request,env,'public');
+ if(path.startsWith('/api/additional/'))return path==='/api/additional/books'&&request.method==='GET'
+   ?withPublicD1Cache(request,ctx,()=>additionalRoutes(request,env,'public'))
+   :additionalRoutes(request,env,'public');
+ if(path==='/api/site/config')return request.method==='GET'
+   ?withPublicD1Cache(request,ctx,()=>siteConfigRoute(request,env,'public'))
+   :siteConfigRoute(request,env,'public');
  if(path==='/api/site/feedback')return siteFeedbackRoute(request,env,'public','');
  if(path==='/api/nu-links/submit')return publicNovelUpdatesLinkSubmit(request,env);
  if(path==='/api/published/novels'&&request.method==='GET'){
+  return withPublicD1Cache(request,ctx,async()=>{
   if(!env.COMMUNITY_DB)return respond({overrides:[],configured:false});
   try{const r=await env.COMMUNITY_DB.prepare('SELECT novel_id,patch_json,updated_at FROM published_catalogue_overrides ORDER BY novel_id LIMIT 1000').all();
    const allowed=new Set(['tags','genres','author','originalTitle','nuUrl','translatorUrl','translatorLinks','synopsis','translation','title','cover','coverRights','coverCredit','metadataReview','metadataSource']);
@@ -53,10 +100,13 @@ export default {async fetch(request,env){
    }catch{}
    return respond({configured:true,overrides:[...byId.values()]});
   }catch{return respond({error:'Published corrections not configured'},503)}
+  });
  }
  if(path.startsWith('/api/community/')) return communityDispatch(request,env,'public',null);
  if(request.method==='GET'&&path==='/api/banner'){
-  try{return respond(await activeBanner(env))}catch{return respond({image:'',positionX:50,positionY:50,configured:false},503)}
+  return withPublicD1Cache(request,ctx,async()=>{
+   try{return respond(await activeBanner(env))}catch{return respond({image:'',positionX:50,positionY:50,configured:false},503)}
+  });
  }
  if(request.method==='GET'&&path.startsWith('/banner-media/')){
   const key=path.slice('/banner-media/'.length);
