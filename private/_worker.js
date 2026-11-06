@@ -2983,20 +2983,20 @@ async function privateNuBookImport(request,env,email,role){
    // translation status. Preserve any manually curated status and dates.
    const reported=String(raw.nuTranslationSourceStatus||'').trim().slice(0,80);
    if(/^(yes|no|completed|ongoing|fully translated|not fully translated)$/i.test(reported)
-      &&!old.nuTranslationSourceStatus){
+      &&old.nuTranslationSourceStatus!==reported){
     next.nuTranslationSourceStatus=reported;
     changed.push('NU translation status reference');
    }
    // Country-of-origin completion is separate from English translation completion.
    const originalStatus=String(raw.nuOriginalSourceStatus||'').trim().slice(0,100);
    if(originalStatus&&/^[\p{L}\p{N}\s,().:–+/-]{1,100}$/u.test(originalStatus)
-      &&!old.nuOriginalSourceStatus){
+      &&old.nuOriginalSourceStatus!==originalStatus){
     next.nuOriginalSourceStatus=originalStatus;
     changed.push('NU original publication status');
    }
    const chapters=String(raw.nuChapterSourceText||'').trim().slice(0,120);
    if(chapters&&/^[\p{L}\p{N}\s,().:–+/-]{1,120}$/u.test(chapters)
-      &&!old.nuChapterSourceText){
+      &&old.nuChapterSourceText!==chapters){
     next.nuChapterSourceText=chapters;
     changed.push('NU chapter reference');
    }
