@@ -2984,7 +2984,7 @@ async function privateNuBookImport(request,env,email,role){
     changed.push('NU translation status reference');
    }
    const chapters=String(raw.nuChapterSourceText||'').trim().slice(0,120);
-   if(chapters&&/^[\\p{L}\\p{N}\\s,().:–+/-]{1,120}$/u.test(chapters)
+   if(chapters&&/^[\p{L}\p{N}\s,().:–+/-]{1,120}$/u.test(chapters)
       &&!old.nuChapterSourceText){
     next.nuChapterSourceText=chapters;
     changed.push('NU chapter reference');
