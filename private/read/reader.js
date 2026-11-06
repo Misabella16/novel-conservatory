@@ -5,11 +5,20 @@ const params=new URLSearchParams(location.search);
 const id=params.get('id');
 const validId=/^[1-9][0-9]{0,9}$/.test(id||'')&&Number(id)>=1;
 let epubBook=null,rendition=null,toc=[],lastCfi='',readingSize=110,currentTheme='cream';
+let progressSync=null,restoringPosition=true;
 const safe=x=>String(x??'');
 const prefKey='conservatory-reader-prefs';
 const editionParam=params.get('edition')||'legacy';
 let activeEdition=params.get('edition')||'legacy';
 const positionKey=()=>`conservatory-position-${id}-${activeEdition}`;
+const positionTimeKey=()=>positionKey()+':saved-at';
+function rememberLocalPosition(cfi){
+ try{
+  localStorage.setItem(positionKey(),cfi);
+  localStorage.setItem(positionTimeKey(),String(Date.now()));
+ }catch{}
+}
+function progressMessage(value){const target=el('progress-sync-status');if(target)target.textContent=value;}
 function message(text){el('reading-status').textContent=text;}
 function error(text){el('loading').classList.add('hidden');el('error-message').textContent=text;el('error-message').classList.remove('hidden');message('Unable to open this EPUB');}
 function rememberPrefs(){try{localStorage.setItem(prefKey,JSON.stringify({theme:el('theme').value,size:+el('font-size').value,font:el('font-family').value,width:el('reading-width').value}))}catch{}}
@@ -19,7 +28,7 @@ if(rendition){rendition.themes.default({'body':{'color':`${colors.fg} !important
 el('font-size-output').value=el('font-size').value+'%';document.documentElement.style.setProperty('--reading-width',el('reading-width').value+'px');rememberPrefs();}
 function chapterIndex(){const current=rendition?.currentLocation()?.start?.href;if(!current)return -1;return toc.findIndex(t=>t.href?.split('#')[0]===current.split('#')[0]);}
 function updateChapter(loc){const href=loc?.start?.href;if(!href)return;const i=toc.findIndex(t=>t.href?.split('#')[0]===href.split('#')[0]);if(i>=0){el('chapter-menu').value=String(i);el('chapter-position').textContent=toc[i].label||`Chapter ${i+1}`}else{el('chapter-position').textContent='Reading…'}
-const cfi=loc?.start?.cfi;if(cfi){lastCfi=cfi;try{localStorage.setItem(positionKey(),cfi)}catch{}}}
+const cfi=loc?.start?.cfi;if(cfi){lastCfi=cfi;if(!restoringPosition){rememberLocalPosition(cfi);progressSync?.queue(cfi)}}
 function addNav(list,depth=0){for(const item of list||[]){toc.push({label:'  '.repeat(depth)+(item.label||'Chapter'),href:item.href||''});if(item.subitems?.length)addNav(item.subitems,depth+1)}}
 async function gotoChapter(i){if(!rendition||!toc[i])return;message('Opening '+toc[i].label.trim()+'…');await rendition.display(toc[i].href);message('Reading');}
 async function init(){
@@ -45,6 +54,12 @@ try{
  const requested=editions.find(x=>x.id===editionParam)||editions[0];
  if(!requested)throw Error('No EPUB stored for this novel.');
  const editionId=requested.id;activeEdition=editionId;
+ // The saved bookmark belongs to this signed-in account and exact edition.
+ // Keep localStorage as the fallback when the cloud endpoint is unavailable.
+ progressSync=window.ConservatoryReaderProgress?.session({
+  id:Number(id),edition:editionId,onStatus:progressMessage,delay:30000
+ })||null;
+ const remoteBookmarkPromise=progressSync?.load()||Promise.resolve({available:false,exists:false,position:null});
  const picker=el('edition-picker');picker.replaceChildren();for(const entry of editions){const o=document.createElement('option');o.value=entry.id;o.textContent=entry.label+(entry.translator?' · '+entry.translator:'')+' · '+entry.language;o.selected=entry.id===editionId;picker.append(o)}
  picker.addEventListener('change',()=>{location.href='/read/?id='+encodeURIComponent(id)+'&edition='+encodeURIComponent(picker.value)});
  // Readable catalogue changes are public to all invited site visitors.
@@ -67,9 +82,41 @@ try{
  setTheme();rendition.on('relocated',updateChapter);
  const nav=await epubBook.loaded.navigation;addNav(nav.toc);
  el('chapter-menu').replaceChildren();if(!toc.length){const o=document.createElement('option');o.textContent='Chapters unavailable';el('chapter-menu').append(o)}else for(let i=0;i<toc.length;i++){const opt=document.createElement('option');opt.value=String(i);opt.textContent=toc[i].label;el('chapter-menu').append(opt)}
- let last='';try{last=localStorage.getItem(positionKey())||''}catch{}
- try{await rendition.display(last||undefined)}catch{await rendition.display()}
- el('loading').classList.add('hidden');message(last?'Resumed where you left off':'Reading');
+ let localCfi='',localSavedAt=0;
+ try{
+  localCfi=localStorage.getItem(positionKey())||'';
+  localSavedAt=Number(localStorage.getItem(positionTimeKey()))||0;
+ }catch{}
+ const remoteBookmark=await remoteBookmarkPromise;
+ const serverPosition=remoteBookmark.position||null;
+ const remoteCfi=serverPosition?.cfi||'';
+ const remoteSavedAt=Date.parse(serverPosition?.updatedAt||'')||0;
+ // Existing un-timestamped local bookmarks remain a migration fallback.
+ // A newer on-device bookmark made offline is never silently discarded.
+ const preferLocal=!!localCfi&&(!remoteBookmark.exists||localSavedAt>remoteSavedAt);
+ const resume=preferLocal?localCfi:(remoteBookmark.available&&remoteBookmark.exists?remoteCfi:localCfi);
+ let resumedSuccessfully=false;
+ try{await rendition.display(resume||undefined);resumedSuccessfully=!!resume}
+ catch{await rendition.display()}
+ restoringPosition=false;
+ const displayed=rendition.currentLocation()?.start?.cfi||'';
+ if(displayed){
+  lastCfi=displayed;
+  // Do not overwrite an offline timestamp while first restoring the book.
+  if(remoteBookmark.available&&remoteBookmark.exists&&!preferLocal){
+   try{
+    if(remoteCfi)localStorage.setItem(positionKey(),displayed);
+    else localStorage.removeItem(positionKey());
+    localStorage.setItem(positionTimeKey(),String(remoteSavedAt||0));
+   }catch{}
+  }else if(!localCfi){rememberLocalPosition(displayed)}
+ }
+ if(resumedSuccessfully&&preferLocal&&localCfi&&remoteBookmark.available&&
+     (!remoteBookmark.exists||localCfi!==remoteCfi))progressSync?.queue(displayed||localCfi);
+ el('loading').classList.add('hidden');
+ message(resumedSuccessfully?'Resumed where you left off':'Reading');
+ if(remoteBookmark.available)progressMessage('Reading position synced to this account');
+ 
  }catch(e){error(e.message||'Could not open the EPUB.')}}
 el('settings-button').addEventListener('click',()=>{const panel=el('settings-panel'),opening=panel.classList.contains('hidden');panel.classList.toggle('hidden',!opening);el('settings-button').setAttribute('aria-expanded',String(opening))});
 for(const input of ['theme','font-family','reading-width'])el(input).addEventListener('change',setTheme);
@@ -77,6 +124,25 @@ el('font-size').addEventListener('input',setTheme);
 el('chapter-menu').addEventListener('change',()=>gotoChapter(Number(el('chapter-menu').value)).catch(e=>error(e.message)));
 el('prev-chapter').addEventListener('click',async()=>{if(!rendition)return;const i=chapterIndex();if(i>0)await gotoChapter(i-1);else await rendition.prev()});
 el('next-chapter').addEventListener('click',async()=>{if(!rendition)return;const i=chapterIndex();if(i>=0&&i<toc.length-1)await gotoChapter(i+1);else await rendition.next()});
-el('reset-position').addEventListener('click',async()=>{try{localStorage.removeItem(positionKey())}catch{}if(rendition){await rendition.display();message('Back at the beginning')}});
-window.addEventListener('pagehide',()=>{if(lastCfi){try{localStorage.setItem(positionKey(),lastCfi)}catch{}}});
+el('reset-position').addEventListener('click',async()=>{
+ const remoteCleared=progressSync?await progressSync.reset():false;
+ try{localStorage.removeItem(positionKey())}catch{}
+ if(rendition){
+  restoringPosition=true;lastCfi='';
+  try{await rendition.display();message('Back at the beginning')}
+  catch(e){error(e.message||'Could not return to the beginning')}
+  finally{restoringPosition=false}
+  // Keep a fresh local start bookmark if the cloud reset was unavailable.
+  const startCfi=rendition.currentLocation()?.start?.cfi||'';
+  if(startCfi){lastCfi=startCfi;rememberLocalPosition(startCfi);
+   if(!remoteCleared)progressSync?.queue(startCfi)}
+ }
+});
+document.addEventListener('visibilitychange',()=>{
+ if(document.hidden)void progressSync?.flush({keepalive:true});
+});
+window.addEventListener('pagehide',()=>{
+ if(lastCfi)try{localStorage.setItem(positionKey(),lastCfi)}catch{}
+ progressSync?.close();
+});
 init();
