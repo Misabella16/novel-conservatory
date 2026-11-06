@@ -1175,6 +1175,36 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&nav.classLi
 window.addEventListener('resize',()=>{if(window.innerWidth>1280)close()});
 })();
 </script>
+<style id="mobile-nu-cta-style">
+.nu-community-cta{max-width:1120px;margin:18px auto 24px;padding:18px 22px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border:1px solid #d2dcbc;border-radius:15px;background:#f6f8ef;color:#284b39;box-shadow:0 4px 16px #1e42290d}
+.nu-community-cta strong{display:block;font:600 clamp(19px,2.6vw,24px)/1.3 Georgia,serif;margin-bottom:5px}
+.nu-community-cta p{margin:0;max-width:690px;font:14px/1.55 system-ui,sans-serif}
+.nu-community-cta a{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:11px 16px;border-radius:10px;background:#285b45;color:white!important;text-decoration:none!important;font:700 14px/1.3 system-ui,sans-serif;text-align:center}
+.nu-community-cta a:focus-visible{outline:3px solid #bd9056;outline-offset:3px}
+@media(max-width:680px){.nu-community-cta{margin:12px 12px 20px;padding:16px;display:block}.nu-community-cta a{width:100%;margin-top:14px;min-height:48px}.nu-community-cta p{font-size:13px}}
+</style>
+<script id="mobile-nu-cta-script">
+(function(){
+'use strict';
+const hero=document.querySelector('#tab-discover .hero');
+if(!hero||document.getElementById('nu-community-cta'))return;
+const section=document.createElement('aside');
+section.id='nu-community-cta';
+section.className='nu-community-cta';
+section.setAttribute('aria-label','Help complete novel information');
+const copy=document.createElement('div');
+const heading=document.createElement('strong');
+heading.textContent='🌿 Help complete our novel collection';
+const description=document.createElement('p');
+description.textContent="Know this novel's NU link? Open its private novel page to pull missing genres, tags, synopsis, and cover references. Editors can also use the NU tools here.";
+copy.append(heading,description);
+const action=document.createElement('a');
+action.href="/admin/novel-updates.html";
+action.textContent="📖 Open Novel Updates tools";
+section.append(copy,action);
+hero.insertAdjacentElement('afterend',section);
+})();
+</script>
 <script id="conservatory-onboarding-script" data-site="private" src="/onboarding-tour.js"></script>
 </body>
 </html>
