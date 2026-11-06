@@ -366,6 +366,44 @@ async function routes(request,env,ctx,email,role){
     return respond({ok:true,ids:next,private:true,affectedOtherAccounts:false});
    }catch(err){return respond({error:textField(err?.message||'Could not update your archive',180)},400)}
   }
+  // Personal story-tag archive, kept in the current Access user's private D1
+  // setting. It only hides labels in that account's view; books, EPUBs,
+  // content warnings, and shared metadata are never changed.
+  if(path==='/api/me/archived-tags'&&(method==='GET'||method==='POST')){
+   if(!env.DB)return respond({error:'Private account storage unavailable'},503);
+   const settingKey='conservatory-archived-tags-v1:'+email;
+   const normalizeTag=v=>String(v??'').normalize('NFKC').trim().toLowerCase();
+   try{
+    const row=await env.DB.prepare('SELECT value FROM site_settings WHERE key=?').bind(settingKey).first();
+    let current=[];
+    try{
+     const decoded=JSON.parse(row?.value||'[]');
+     if(!Array.isArray(decoded))throw Error('Invalid archive record');
+     current=[...new Set(decoded.filter(v=>typeof v==='string')
+      .map(normalizeTag).filter(v=>v.length>0&&v.length<=90))].slice(0,1000);
+    }catch{return respond({error:'Your archived tags could not be read. No changes were made.'},409)}
+    if(method==='GET')return respond({tags:current,private:true,affectsBooks:false});
+    if(!sameOrigin(request))return respond({error:'Cross-origin request rejected'},403);
+    const payload=await getJson(request);
+    const tag=normalizeTag(payload.tag),action=String(payload.action||'');
+    if(tag.length<1||tag.length>90||/[\x00-\x1f\x7f<>]/u.test(tag)||
+      !['archive','restore'].includes(action))
+     return respond({error:'Choose a valid story tag and Archive or Restore'},400);
+    const next=action==='archive'?[...new Set([...current,tag])]:
+     current.filter(x=>x!==tag);
+    if(next.length>1000)return respond({error:'Personal tag archive limit reached'},413);
+    if(JSON.stringify(current)===JSON.stringify(next))
+     return respond({ok:true,tags:next,private:true,affectedOtherAccounts:false});
+    const value=JSON.stringify(next);
+    const written=row?await env.DB.prepare('UPDATE site_settings SET value=?,updated_at=CURRENT_TIMESTAMP WHERE key=? AND value=?')
+       .bind(value,settingKey,row.value).run():
+       await env.DB.prepare('INSERT INTO site_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING')
+       .bind(settingKey,value).run();
+    if((written.meta?.changes||0)!==1)
+     return respond({error:'Your tag archive changed in another tab. Refresh and retry.'},409);
+    return respond({ok:true,tags:next,private:true,affectedOtherAccounts:false});
+   }catch(e){return respond({error:textField(e?.message||'Could not change your archived tags',180)},400)}
+  }
   if(path.startsWith('/api/epub-submissions/'))return privateEpubSubmissionRoutes(request,env,email,role);
   if(path.startsWith('/api/admin/nu/'))return nuAdminRoutes(request,env,email,role);
   if(path==='/api/admin/epub/ingest-metadata')return privateEpubIngestRoute(request,env,email,role);
