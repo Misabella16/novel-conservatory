@@ -7,7 +7,7 @@ const page=fs.readFileSync('private/novel/book.js','utf8');
 const html=fs.readFileSync('private/novel/index.html','utf8');
 const catalogue=fs.readFileSync('private/index.html','utf8');
 const worker=fs.readFileSync('private/_worker.js','utf8');
-for(const code of [source,page,worker])new Function(code);
+for(const code of [source,page])new Function(code); // Worker is an ES module, checked by CI.
 assert(html.includes('name="nu-fields"')&&html.includes('id="nu-preview-box"'));
 assert(html.includes('id="nu-copied-text"')&&html.includes('id="nu-preview-copied"'));
 assert(html.includes('@media(max-width:700px){main'));
