@@ -5,7 +5,11 @@
 const $=id=>document.getElementById(id);
 let activeNovelId=null,activeNovelUrl='',lastNuImportId=null,isEditor=false;
 let archivedReaderTags=new Set();
-const readerTagKey=value=>String(value||'').normalize('NFKC').trim().toLowerCase();
+const readerTagKey=value=>{
+ const s=String(value||'').normalize('NFKC').trim().toLowerCase();
+ return ({'enemies to lovers':'enemies become lovers','rivals to lovers':'rivals to lovers',
+ 'infinite flow':'unlimited flow','sci fi':'sci-fi','abo':'omegaverse'})[s]||s;
+};
 const norm=value=>String(value??'').normalize('NFKD').toLocaleLowerCase()
  .replace(/\p{M}/gu,'').replace(/[^\p{L}\p{N}]/gu,'');
 function seriesUrl(value){
