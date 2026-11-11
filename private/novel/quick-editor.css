@@ -1,0 +1,95 @@
+/* Private editorial controls: always near the novel summary and tags. */
+#drawer .detail-cover:has(.novel-cover-edit-trigger){
+ cursor:pointer;outline-offset:3px
+}
+#drawer .novel-cover-edit-trigger{
+ position:absolute;z-index:5;left:50%;bottom:11px;
+ transform:translateX(-50%);border:1px solid #b7cbb7;
+ background:#fbfcf4f2;color:#224e3e;border-radius:999px;
+ box-shadow:0 4px 16px #122d2340;padding:9px 12px;
+ font:700 12px/1.2 system-ui,-apple-system,sans-serif;
+ min-height:39px;min-width:109px;white-space:nowrap;
+ cursor:pointer;touch-action:manipulation
+}
+#drawer .novel-cover-edit-trigger:focus-visible,
+#drawer .novel-inline-toggle:focus-visible{outline:3px solid #a9834d;outline-offset:3px}
+#drawer .novel-inline-editor,
+#drawer .novel-cover-editor{
+ background:#fafcf8;border:1px solid #cddccd;
+ border-radius:12px;margin:18px 0;padding:15px;
+ box-shadow:0 2px 9px #2547370b;min-width:0
+}
+#drawer .novel-inline-editor{margin:13px 0 20px}
+#drawer .novel-cover-editor{margin-top:10px}
+#drawer .novel-inline-editor [hidden],#drawer .novel-cover-editor[hidden]{display:none!important}
+#drawer .novel-inline-toggle{
+ display:block;width:100%;min-height:47px;
+ padding:11px 13px;border:1px solid #a1bea8;border-radius:9px;
+ text-align:left;background:#e5f1e7;color:#245541;
+ font:750 15px/1.35 system-ui,-apple-system,sans-serif;cursor:pointer
+}
+#drawer .novel-inline-toggle[aria-expanded="true"]{
+ background:#285846;color:white
+}
+#drawer .novel-inline-fields{display:grid;gap:11px;padding-top:14px}
+#drawer .novel-inline-fields h3,
+#drawer .novel-cover-editor h3{
+ font:500 21px/1.3 Georgia,serif;color:#2c473b;margin:0 0 5px
+}
+#drawer .novel-editor-help{
+ color:#617367;font:12px/1.6 system-ui,-apple-system,sans-serif;
+ margin:5px 0 12px
+}
+#drawer .novel-inline-field{display:grid;gap:6px;min-width:0}
+#drawer .novel-inline-field>span{
+ font:700 12px/1.4 system-ui,-apple-system,sans-serif;color:#405c4d
+}
+#drawer .novel-inline-field input,
+#drawer .novel-inline-field textarea{
+ display:block;width:100%;box-sizing:border-box;min-width:0;
+ border:1px solid #bad1bc;border-radius:8px;background:white;
+ padding:10px 12px;color:#2c4035;font:14px/1.5 system-ui,-apple-system,sans-serif
+}
+#drawer .novel-inline-field textarea{
+ min-height:94px;resize:vertical
+}
+#drawer .novel-inline-field textarea[rows="6"]{min-height:160px}
+#drawer .novel-editor-actions{
+ display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:9px
+}
+#drawer .novel-editor-save,
+#drawer .novel-editor-cancel,
+#drawer .novel-editor-full{
+ display:inline-flex;align-items:center;justify-content:center;
+ text-decoration:none;padding:10px 14px;min-height:44px;
+ border-radius:8px;font:700 13px/1.3 system-ui,-apple-system,sans-serif
+}
+#drawer .novel-editor-save{
+ border:1px solid #235644;background:#255b49;color:white
+}
+#drawer .novel-editor-cancel,
+#drawer .novel-editor-full{
+ border:1px solid #afc6b3;background:#fff;color:#2c5a42
+}
+#drawer .novel-editor-save:disabled{opacity:.6}
+#drawer .novel-editor-status{font-size:12px;color:#496b55;line-height:1.5}
+#drawer .novel-editor-status[data-error="true"]{color:#a1473a}
+#drawer .novel-editor-success{
+ margin:10px 0;padding:9px 12px;border:1px solid #b1d4b5;
+ border-radius:8px;background:#f0f8e8;color:#275d3c;
+ font:600 12px/1.5 system-ui
+}
+#drawer .novel-cover-rights{
+ display:flex;align-items:flex-start;gap:9px;margin:9px 0;
+ font:12px/1.5 system-ui;color:#526b59
+}
+#drawer .novel-cover-rights input{width:18px;height:18px;flex-shrink:0}
+@media(max-width:600px){
+ #drawer .novel-inline-editor,
+ #drawer .novel-cover-editor{padding:12px;margin:11px 0}
+ #drawer .novel-inline-field input,
+ #drawer .novel-inline-field textarea{font-size:16px}
+ #drawer .novel-cover-edit-trigger{min-height:37px;font-size:11px;padding:8px}
+ #drawer .novel-editor-actions{display:grid;grid-template-columns:1fr 1fr}
+ #drawer .novel-editor-actions .novel-editor-full{grid-column:1/-1}
+}
