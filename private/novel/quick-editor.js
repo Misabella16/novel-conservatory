@@ -118,15 +118,24 @@
  }
  function renderCover(book,onUpdate){
   const slot=$('novel-inline-cover-slot');
-  const trigger=$('novel-cover-edit-trigger');
-  if(!slot||!trigger||!canEdit())return;
+  if(!slot||!canEdit())return;
+  const cover=$('drawer-content')?.querySelector('.detail-head .detail-cover');
+  if(!cover)return;
+  const trigger=e('button','novel-cover-edit-trigger','✎ Edit cover');
+  trigger.id='novel-cover-edit-trigger';
+  trigger.type='button';
+  trigger.setAttribute('aria-expanded','false');
+  trigger.setAttribute('aria-controls','novel-cover-editor');
+  trigger.setAttribute('aria-label','Edit cover for '+book.title);
+  trigger.title='Tap this cover to edit it';
+  cover.append(trigger);
   slot.replaceChildren();
   const panel=e('section','novel-cover-editor');
   panel.id='novel-cover-editor';
   panel.hidden=true;
   const heading=e('h3','','Change this cover');
   const hint=e('p','novel-editor-help',
-   'Choose an image file or paste a direct HTTPS image URL. This changes the PRIVATE catalogue cover only. Private EPUB artwork stays protected and no image is published to the public site automatically.');
+   'Choose an image file or paste a direct HTTPS image URL. Changes remain private until separately published. Private EPUB files are never changed.');
   panel.append(heading,hint);
   const imageUrl=makeField('Paste a direct cover image URL',book.cover?.startsWith('https://')?book.cover:'');
   imageUrl.input.type='url';
@@ -157,6 +166,10 @@
    if(open)panel.scrollIntoView?.({block:'nearest',behavior:'smooth'});
   };
   trigger.addEventListener('click',()=>toggle());
+  cover.addEventListener('click',event=>{
+   if(event.target===trigger)return;
+   toggle();
+  });
   cancel.addEventListener('click',()=>toggle(false));
   photo.input.addEventListener('change',()=>{
    const selected=photo.input.files?.[0];
