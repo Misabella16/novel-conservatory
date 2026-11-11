@@ -12,7 +12,7 @@
    const item=text(line,75).normalize('NFKC');
    if(!item||seen.has(item.toLocaleLowerCase()))continue;
    seen.add(item.toLocaleLowerCase());output.push(item);
-   if(output.length>=24)break;
+   if(output.length>=100)break;
   }
   return output;
  };
@@ -95,13 +95,35 @@
    if(Number(book.id)>=100000){root.location.href=editorLink(book.id);return;}
    const newTitle=text(title.input.value,240);
    if(!newTitle){status(feedback,'A title is required.',true);return;}
-   const patch={
-    title:newTitle,originalTitle:text(original.input.value,240),
-    author:text(author.input.value,240),
-    synopsis:text(synopsis.input.value,2000),
-    genres:list(genres.input.value),tags:list(tags.input.value),
-    contentWarnings:list(warnings.input.value)
-   };
+   const patch={};
+   const textual=[
+    ['title',newTitle],['originalTitle',text(original.input.value,240)],
+    ['author',text(author.input.value,240)],
+    ['synopsis',text(synopsis.input.value,2000)]
+   ];
+   for(const [key,value] of textual){
+    if(value!==String(book[key]||''))patch[key]=value;
+   }
+   for(const [key,value] of [
+    ['genres',genres.input.value],['tags',tags.input.value],
+    ['contentWarnings',warnings.input.value]
+   ]){
+    // Critical: other imports may supply more than the admin limit of 24.
+    // Never truncate those tags as a side effect of editing a title.
+    const old=Array.isArray(book[key])?book[key]:[];
+    if(value===old.join('\n'))continue;
+    const revised=list(value);
+    if(revised.length>24){
+     status(feedback,'This editor accepts up to 24 '+key+
+      ' per save. Please reduce the list or use the full editor.',true);
+     return;
+    }
+    if(JSON.stringify(revised)!==JSON.stringify(old))patch[key]=revised;
+   }
+   if(!Object.keys(patch).length){
+    status(feedback,'No changes to save.');
+    return;
+   }
    save.disabled=true;status(feedback,'Saving your editorial changes…');
    try{
     const result=await post('/api/admin/novel',{id:Number(book.id),patch});
