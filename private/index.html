@@ -1169,8 +1169,9 @@ function renderDetail(d){const nu=safeUrl(d.nuUrl),translationSite=safeUrl(d.tra
  }
 
 }
-function openDetail(d){renderDetail(d);$('#overlay').classList.add('on');$('#drawer').classList.add('on');$('#drawer').setAttribute('aria-hidden','false');document.body.style.overflow='hidden';$('#close-drawer').focus()}
-function closeAll(){$('#overlay').classList.remove('on');$('#drawer').classList.remove('on');$('#drawer').setAttribute('aria-hidden','true');$('#modal').classList.remove('on');$('#modal').setAttribute('aria-hidden','true');document.body.style.overflow=''}
+let currentlyOpenedNovel=null;
+function openDetail(d){currentlyOpenedNovel=d;renderDetail(d);$('#overlay').classList.add('on');$('#drawer').classList.add('on');$('#drawer').setAttribute('aria-hidden','false');document.body.style.overflow='hidden';$('#close-drawer').focus()}
+function closeAll(){currentlyOpenedNovel=null;$('#overlay').classList.remove('on');$('#drawer').classList.remove('on');$('#drawer').setAttribute('aria-hidden','true');$('#modal').classList.remove('on');$('#modal').setAttribute('aria-hidden','true');document.body.style.overflow=''}
 function openModal(html){$('#modal-content').innerHTML=html;$('#overlay').classList.add('on');$('#modal').classList.add('on');$('#modal').setAttribute('aria-hidden','false');document.body.style.overflow='hidden'}
 function showLibraryTab(tab,{scroll=true}={}){
  const panelTab=(tab==='shelf')?'covers':tab;
@@ -1325,7 +1326,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshPri
 initTagLibrary();
 loadLiveEditorChanges();
 refreshPrivateEpubAvailability();
-fetch('/api/me',{credentials:'same-origin',cache:'no-store'}).then(r=>r.ok?r.json():null).then(u=>{if(u){window.novelConservatoryRole=u.role;window.novelConservatoryCanReadEpubs=!!u.canReadEpubs;if(['owner','editor'].includes(u.role)){window.novelConservatoryCanEdit=true;document.getElementById('edit-site-nav').style.display='inline-block'}}}).catch(()=>{});
+fetch('/api/me',{credentials:'same-origin',cache:'no-store'}).then(r=>r.ok?r.json():null).then(u=>{if(u){window.novelConservatoryRole=u.role;window.novelConservatoryCanReadEpubs=!!u.canReadEpubs;if(['owner','editor'].includes(u.role)){window.novelConservatoryCanEdit=true;document.getElementById('edit-site-nav').style.display='inline-block';if(currentlyOpenedNovel)renderDetail(currentlyOpenedNovel)}}}).catch(()=>{});
 
 </script>
 <a href="/follows/" style="position:fixed;bottom:14px;right:14px;z-index:999;padding:10px 14px;border-radius:20px;color:white;background:#245c4b;text-decoration:none;box-shadow:0 4px 18px #0004" aria-label="Follow novels and translators">🔔 Follow updates</a>
