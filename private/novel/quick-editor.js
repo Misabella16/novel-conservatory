@@ -167,10 +167,8 @@
   const photo=makeField('Or choose an image from your phone','','input');
   photo.input.type='file';photo.input.accept='image/jpeg,image/png,image/webp,image/gif';
   photo.input.removeAttribute('maxlength');
-  const rights=e('label','novel-cover-rights');
-  const check=e('input');check.type='checkbox';check.checked=false;
-  rights.append(check,e('span','',
-   'I checked that I may display this image publicly (optional; unchecked keeps it a private reference).'));
+  const privacy=e('p','novel-editor-help',
+   'This cover stays private. If you later want it on the public site, use the separate approved cover publication tools.');
   const actions=e('div','novel-editor-actions');
   const save=e('button','novel-editor-save','Save cover');
   save.type='button';
@@ -179,7 +177,7 @@
   actions.append(save,cancel);
   const feedback=e('p','novel-editor-status','');
   feedback.setAttribute('role','status');
-  panel.append(imageUrl.wrap,photo.wrap,rights,actions,feedback);
+  panel.append(imageUrl.wrap,photo.wrap,privacy,actions,feedback);
   slot.append(panel);
   const toggle=force=>{
    const open=typeof force==='boolean'?force:panel.hidden;
@@ -237,9 +235,9 @@
     }
     const result=await post('/api/admin/novel',{
      id:Number(book.id),
-     patch:{cover:newCover,coverRights:!!check.checked}
+     patch:{cover:newCover,coverRights:false,privateCover:true}
     });
-    Object.assign(book,result.patch||{cover:newCover,coverRights:!!check.checked});
+    Object.assign(book,result.patch||{cover:newCover,coverRights:false,privateCover:true});
     onUpdate?.(book,'Cover saved privately.');
    }catch(error){status(feedback,error.message,true);}
    finally{save.disabled=false;}
