@@ -56,10 +56,10 @@
   if(!slot||!canEdit())return;
   slot.replaceChildren();
   const shell=e('section','novel-inline-editor');
-  const toggle=e('button','novel-inline-toggle','✎ Edit novel information');
-  toggle.type='button';toggle.setAttribute('aria-expanded','false');
+  const toggle=e('button','novel-inline-toggle','✎ Edit novel information · collapse');
+  toggle.type='button';toggle.setAttribute('aria-expanded','true');
   const form=e('form','novel-inline-fields');
-  form.hidden=true;
+  form.hidden=false;
   const heading=e('h3','', 'Edit this novel here');
   const hint=e('p','novel-editor-help',
    'Update title, author, synopsis, genres, and tags without leaving the novel page. Private editor changes do not automatically publish private EPUBs or covers.');
@@ -87,6 +87,7 @@
   toggle.addEventListener('click',()=>{
    form.hidden=!form.hidden;
    toggle.setAttribute('aria-expanded',String(!form.hidden));
+   toggle.textContent=form.hidden?'✎ Edit novel information · expand':'✎ Edit novel information · collapse';
    if(!form.hidden)title.input.focus();
   });
   form.addEventListener('submit',async event=>{
