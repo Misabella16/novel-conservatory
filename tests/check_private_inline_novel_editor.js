@@ -16,7 +16,7 @@ assert.ok(infoAt<html.indexOf('${editionCards(d)}',infoAt),'Editor must precede 
 assert.match(html,/ConservatoryQuickEdit\.mount\(d/);
 assert.doesNotMatch(html,/a\.textContent='✎ Edit this book'/);
 assert.match(css,/\.novel-cover-edit-trigger/);
-assert.match(html,/id="novel-cover-edit-trigger"/);
+assert.match(source,/trigger\.id='novel-cover-edit-trigger'/);
 assert.match(css,/inset:0/);
 
 class Element{
@@ -52,12 +52,11 @@ const label=(root,labelText)=>{
 };
 function setup(authorized=true){
  const info=new Element('div'),slot=new Element('div'),cover=new Element('div'),
-  trigger=new Element('button'),drawer=new Element('div');
- trigger.textContent='✎ Edit cover';
+  drawer=new Element('div');
  drawer.querySelector=selector=>selector==='.detail-head .detail-cover'?cover:null;
  const ids=new Map([
   ['novel-inline-info-slot',info],['novel-inline-cover-slot',slot],
-  ['novel-cover-edit-trigger',trigger],['drawer-content',drawer]
+  ['drawer-content',drawer]
  ]);
  const calls=[];
  const root={
@@ -78,7 +77,7 @@ function setup(authorized=true){
   }
  };
  vm.runInNewContext(source,{window:root,URL,console});
- return {root,info,slot,cover,trigger,calls};
+ return {root,info,slot,cover,calls};
 }
 const book=()=>({id:17,title:'Desharow Merman',author:'Shen Hai Xian Sheng',
  synopsis:'Marine biology adventure',originalTitle:'德萨罗人鱼',
@@ -118,8 +117,9 @@ const book=()=>({id:17,title:'Desharow Merman',author:'Shen Hai Xian Sheng',
  assert.equal(current.tags.length,30,'Imported tags must be preserved');
  assert.equal(latest,'Novel information saved.');
 
- const trigger=editor.trigger;
- assert.equal(trigger.textContent,'✎ Edit cover');
+ const trigger=editor.cover.children[0];
+ assert.equal(trigger.tagName,'button');
+ assert.equal(trigger.children[0].textContent,'✎ Edit cover');
  const coverPanel=editor.slot.children[0];
  assert.equal(coverPanel.hidden,true);
  await trigger.fire('click',{target:trigger});
