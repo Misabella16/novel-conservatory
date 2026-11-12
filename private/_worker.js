@@ -233,6 +233,7 @@ function cleanPatch(p){
   for(const k of ['nuUrl','translatorUrl'])if(k in p)r[k]=safeLink(p[k]);
   if('cover' in p){const x=String(p.cover||'');r.cover=isImagePath(x)?x:safeLink(x);}
   if('coverRights' in p)r.coverRights=Boolean(p.coverRights);
+  if('privateCover' in p)r.privateCover=Boolean(p.privateCover);
   if('metadataReview' in p)r.metadataReview=Boolean(p.metadataReview);
   if('metadataOrigin' in p)r.metadataOrigin=p.metadataOrigin==='epub'?'epub':'';
   return r;
