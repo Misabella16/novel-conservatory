@@ -144,7 +144,8 @@
   if(!slot||!canEdit())return;
   const cover=$('drawer-content')?.querySelector('.detail-head .detail-cover');
   if(!cover)return;
-  const trigger=e('button','novel-cover-edit-trigger','✎ Edit cover');
+  const trigger=e('button','novel-cover-edit-trigger');
+  trigger.append(e('span','','✎ Edit cover'));
   trigger.id='novel-cover-edit-trigger';
   trigger.type='button';
   trigger.setAttribute('aria-expanded','false');
@@ -186,11 +187,9 @@
    trigger.setAttribute('aria-label',open?'Close cover editor':'Edit this novel cover');
    if(open)panel.scrollIntoView?.({block:'nearest',behavior:'smooth'});
   };
+  // The button spans the entire cover. Avoid a second parent click handler:
+  // tapping the button's label would otherwise toggle the editor twice.
   trigger.addEventListener('click',()=>toggle());
-  cover.addEventListener('click',event=>{
-   if(event.target===trigger)return;
-   toggle();
-  });
   cancel.addEventListener('click',()=>toggle(false));
   photo.input.addEventListener('change',()=>{
    const selected=photo.input.files?.[0];
