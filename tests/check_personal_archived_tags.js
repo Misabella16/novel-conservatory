@@ -42,7 +42,14 @@ assert(home.includes('function matches(d)'));
 assert(!home.slice(home.indexOf('function matches(d)'),home.indexOf('function renderBooks()')).includes('if(isArchivedTag('),
  'Archiving a label must not hide books');
 assert(novel.includes("json('/api/me/archived-tags').catch"));
-assert(novel.includes('const visibleTags=(d.tags||[]).filter'));
+assert(novel.includes('function renderNovelTagControls()'));
+assert(novel.includes('async function changeNovelTag(name,action)'));
+assert(novel.includes("fetch('/api/me/archived-tags',{method:'POST'"));
+assert(novelHtml.includes('id="hidden-novel-tags-manager"'));
+assert(novelHtml.includes('id="novel-tag-status"'));
+assert(home.includes('<summary>My hidden tags ('));
+assert(home.includes("archive.textContent='Hide'"));
+assert(!home.includes("archive.textContent='🙈'"));
 assert(novelHtml.includes('id="personal-tag-hint"'));
 assert(reader.includes("localStorage.setItem(positionKey(),cfi)"));
 assert(reader.includes("localStorage.getItem(positionKey())"));
@@ -50,6 +57,50 @@ assert(reader.includes("conservatory-position-"));
 assert(reader.includes("rendition.display(resume||undefined)"));
 assert(readerHtml.includes('offline fallback'));
 
+// Exercise the actual novel-page UI functions against a minimal DOM.
+const uiCode=novel.slice(novel.indexOf('function renderNovelTagControls(){'),novel.indexOf('function parseId(){'));
+assert(uiCode.includes('async function changeNovelTag(name,action)'));
+class FakeTagNode {
+ constructor(){this.children=[];this.hidden=false;this.open=false;this.textContent='';this.disabled=false;this.listeners={}}
+ replaceChildren(){this.children=[];this.textContent=''}
+ append(...items){this.children.push(...items)}
+ setAttribute(key,value){this[key]=value}
+ addEventListener(name,handler){this.listeners[name]=handler}
+}
+const uiIds=['tags','hidden-novel-tags','hidden-novel-tags-manager','hidden-novel-tag-count','personal-tag-hint','novel-tag-status'];
+const uiNodes=Object.fromEntries(uiIds.map(id=>[id,new FakeTagNode()]));
+const savedTags=new Set(['black belly']);
+const requests=[];
+const uiCtx={document:{createElement:()=>new FakeTagNode()},
+ $:id=>uiNodes[id],readerTagKey:x=>String(x).trim().toLowerCase(),
+ fetch:async(url,options)=>{
+  assert.equal(url,'/api/me/archived-tags');
+  assert.equal(options.method,'POST');
+  const payload=JSON.parse(options.body);requests.push(payload);
+  if(payload.action==='archive')savedTags.add(payload.tag);
+  else savedTags.delete(payload.tag);
+  return {ok:true,json:async()=>({tags:[...savedTags]})}
+ }};
+vm.createContext(uiCtx);
+vm.runInContext("let novelTagNames=['Black Belly','Childhood Friends','Character Growth'];let archivedReaderTags=new Set(['black belly']);let novelTagChangePending=false;"+uiCode+';renderNovelTagControls()',uiCtx);
+assert.equal(uiNodes.tags.children.length,2,'Only non-hidden tags initially show');
+assert.equal(uiNodes['hidden-novel-tags'].children.length,1,'Previously hidden tag can be restored');
+assert.equal(uiNodes['hidden-novel-tags'].children[0].children[1].textContent,'Restore');
+assert.equal(uiNodes.tags.children[0].children[1].textContent,'Hide');
+assert.equal(uiNodes['hidden-novel-tag-count'].textContent,'1');
+assert.equal(uiNodes['hidden-novel-tags-manager'].hidden,false);
+const uiExercise=(async()=>{
+ await vm.runInContext("changeNovelTag('Character Growth','archive')",uiCtx);
+ assert.equal(uiNodes.tags.children.length,1);
+ assert.equal(uiNodes['hidden-novel-tags'].children.length,2);
+ assert.equal(uiNodes['hidden-novel-tag-count'].textContent,'2');
+ await vm.runInContext("changeNovelTag('Black Belly','restore')",uiCtx);
+ assert.equal(uiNodes.tags.children.length,2);
+ assert.equal(uiNodes['hidden-novel-tags'].children.length,1);
+ assert.equal(requests.length,2);
+ assert.deepEqual(requests.map(x=>x.action),['archive','restore']);
+ assert.equal(uiNodes['novel-tag-status'].textContent,'Tag restored in your personal view.');
+})();
 const values=new Map();
 let denyOrigin=false;
 const DB={prepare(sql){return {bind(...args){return{
@@ -77,6 +128,7 @@ const route=vm.runInContext(
  context);
 const req=(method,payload={})=>({method,payload});
 (async()=>{
+ await uiExercise;
  let result=await route(req('GET'),'reader@example.com');
  assert.deepEqual([...result.body.tags],[]);
  result=await route(req('POST',{tag:'  Character Growth ',action:'archive'}),'reader@example.com');
