@@ -16,6 +16,8 @@ assert.ok(infoAt<html.indexOf('${editionCards(d)}',infoAt),'Editor must precede 
 assert.match(html,/ConservatoryQuickEdit\.mount\(d/);
 assert.doesNotMatch(html,/a\.textContent='✎ Edit this book'/);
 assert.match(css,/\.novel-cover-edit-trigger/);
+assert.match(html,/id="novel-cover-edit-trigger"/);
+assert.match(css,/inset:0/);
 
 class Element{
  constructor(tag){
@@ -50,11 +52,12 @@ const label=(root,labelText)=>{
 };
 function setup(authorized=true){
  const info=new Element('div'),slot=new Element('div'),cover=new Element('div'),
-  drawer=new Element('div');
+  trigger=new Element('button'),drawer=new Element('div');
+ trigger.textContent='✎ Edit cover';
  drawer.querySelector=selector=>selector==='.detail-head .detail-cover'?cover:null;
  const ids=new Map([
   ['novel-inline-info-slot',info],['novel-inline-cover-slot',slot],
-  ['drawer-content',drawer]
+  ['novel-cover-edit-trigger',trigger],['drawer-content',drawer]
  ]);
  const calls=[];
  const root={
@@ -75,7 +78,7 @@ function setup(authorized=true){
   }
  };
  vm.runInNewContext(source,{window:root,URL,console});
- return {root,info,slot,cover,calls};
+ return {root,info,slot,cover,trigger,calls};
 }
 const book=()=>({id:17,title:'Desharow Merman',author:'Shen Hai Xian Sheng',
  synopsis:'Marine biology adventure',originalTitle:'德萨罗人鱼',
@@ -86,7 +89,7 @@ const book=()=>({id:17,title:'Desharow Merman',author:'Shen Hai Xian Sheng',
  const viewer=setup(false);
  viewer.root.ConservatoryQuickEdit.mount(book(),()=>{});
  assert.equal(viewer.info.children.length,0);
- assert.equal(viewer.cover.children.length,0);
+ assert.equal(viewer.slot.children.length,0);
  assert.equal(viewer.calls.length,0);
 
  const editor=setup();
@@ -97,7 +100,10 @@ const book=()=>({id:17,title:'Desharow Merman',author:'Shen Hai Xian Sheng',
  assert.equal(editor.slot.children.length,1);
  const section=editor.info.children[0];
  const toggle=section.children[0],form=section.children[1];
+ assert.equal(form.hidden,false,'Editing controls should be visible beside synopsis by default');
+ await toggle.fire('click');
  assert.equal(form.hidden,true);
+ assert.equal(toggle.attributes['aria-expanded'],'false');
  await toggle.fire('click');
  assert.equal(form.hidden,false);
  assert.equal(toggle.attributes['aria-expanded'],'true');
@@ -112,11 +118,11 @@ const book=()=>({id:17,title:'Desharow Merman',author:'Shen Hai Xian Sheng',
  assert.equal(current.tags.length,30,'Imported tags must be preserved');
  assert.equal(latest,'Novel information saved.');
 
- const trigger=editor.cover.children[0];
+ const trigger=editor.trigger;
  assert.equal(trigger.textContent,'✎ Edit cover');
  const coverPanel=editor.slot.children[0];
  assert.equal(coverPanel.hidden,true);
- await editor.cover.fire('click',{target:editor.cover});
+ await trigger.fire('click',{target:trigger});
  assert.equal(coverPanel.hidden,false,'Tapping cover opens editor');
  assert.equal(trigger.attributes['aria-expanded'],'true');
  const imageUrl=label(coverPanel,'Paste a direct cover image URL');
@@ -126,6 +132,7 @@ const book=()=>({id:17,title:'Desharow Merman',author:'Shen Hai Xian Sheng',
  const urlSave=JSON.parse(editor.calls[1].opts.body);
  assert.equal(urlSave.patch.cover,'https://example.org/cover.jpg');
  assert.equal(urlSave.patch.coverRights,false,'Private cover must not be published automatically');
+ assert.equal(urlSave.patch.privateCover,true,'Owner-selected image must display only in the private catalogue');
  assert.equal(editor.calls.length,2);
 
  const uploadEditor=setup();
@@ -140,6 +147,7 @@ const book=()=>({id:17,title:'Desharow Merman',author:'Shen Hai Xian Sheng',
  assert.equal(uploadEditor.calls[1].url,'/api/admin/novel');
  assert.equal(JSON.parse(uploadEditor.calls[1].opts.body).patch.cover,
   '/media/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jpg');
+ assert.equal(JSON.parse(uploadEditor.calls[1].opts.body).patch.privateCover,true);
 
  const extra=setup();
  extra.root.ConservatoryQuickEdit.mount({...book(),id:100123},()=>{});
