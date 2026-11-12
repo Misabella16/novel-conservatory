@@ -132,6 +132,7 @@ const book=()=>({id:17,title:'Desharow Merman',author:'Shen Hai Xian Sheng',
  const urlSave=JSON.parse(editor.calls[1].opts.body);
  assert.equal(urlSave.patch.cover,'https://example.org/cover.jpg');
  assert.equal(urlSave.patch.coverRights,false,'Private cover must not be published automatically');
+ assert.equal(urlSave.patch.privateCover,true,'Owner-selected image must display only in the private catalogue');
  assert.equal(editor.calls.length,2);
 
  const uploadEditor=setup();
@@ -146,6 +147,7 @@ const book=()=>({id:17,title:'Desharow Merman',author:'Shen Hai Xian Sheng',
  assert.equal(uploadEditor.calls[1].url,'/api/admin/novel');
  assert.equal(JSON.parse(uploadEditor.calls[1].opts.body).patch.cover,
   '/media/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jpg');
+ assert.equal(JSON.parse(uploadEditor.calls[1].opts.body).patch.privateCover,true);
 
  const extra=setup();
  extra.root.ConservatoryQuickEdit.mount({...book(),id:100123},()=>{});
