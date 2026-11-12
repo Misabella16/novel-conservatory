@@ -3,13 +3,17 @@
  cursor:pointer;outline-offset:3px
 }
 #drawer .novel-cover-edit-trigger{
- position:absolute;z-index:5;left:50%;bottom:11px;
- transform:translateX(-50%);border:1px solid #b7cbb7;
- background:#fbfcf4f2;color:#224e3e;border-radius:999px;
- box-shadow:0 4px 16px #122d2340;padding:9px 12px;
- font:700 12px/1.2 system-ui,-apple-system,sans-serif;
+ position:absolute;inset:0;z-index:5;width:100%;height:100%;
+ display:flex;align-items:flex-end;justify-content:center;
+ padding:0 7px 10px;background:transparent;border:0;
+ color:#224e3e;cursor:pointer;touch-action:manipulation
+}
+#drawer .novel-cover-edit-trigger span{
+ display:inline-flex;align-items:center;justify-content:center;
  min-height:39px;min-width:109px;white-space:nowrap;
- cursor:pointer;touch-action:manipulation
+ padding:9px 12px;border:1px solid #b7cbb7;border-radius:999px;
+ background:#fbfcf4f2;box-shadow:0 4px 16px #122d2340;
+ font:700 12px/1.2 system-ui,-apple-system,sans-serif
 }
 #drawer .novel-cover-edit-trigger:focus-visible,
 #drawer .novel-inline-toggle:focus-visible{outline:3px solid #a9834d;outline-offset:3px}
@@ -89,7 +93,8 @@
  #drawer .novel-cover-editor{padding:12px;margin:11px 0}
  #drawer .novel-inline-field input,
  #drawer .novel-inline-field textarea{font-size:16px}
- #drawer .novel-cover-edit-trigger{min-height:37px;font-size:11px;padding:8px}
+ #drawer .novel-cover-edit-trigger{padding-bottom:8px}
+ #drawer .novel-cover-edit-trigger span{min-height:37px;font-size:11px;padding:8px}
  #drawer .novel-editor-actions{display:grid;grid-template-columns:1fr 1fr}
  #drawer .novel-editor-actions .novel-editor-full{grid-column:1/-1}
 }
