@@ -727,7 +727,7 @@ let archivedTags=new Set();
 let archivedTagChangePending=false;
 const isArchivedTag=value=>archivedTags.has(normStoryTag(value));
 function applyPersonalTagShortcutVisibility(){
- $('[data-story-tag]').forEach(el=>{el.hidden=isArchivedTag(el.dataset.storyTag)});
+ $$('[data-story-tag]').forEach(el=>{el.hidden=isArchivedTag(el.dataset.storyTag)});
 }
 function renderPersonalArchivedTags(){
  const host=$('#archived-tag-list'),manager=$('#archived-tags-manager');

@@ -23,6 +23,19 @@ assert(home.includes('filter(t=>!isArchivedTag(t))'),'Tag labels must be suppres
 assert(home.includes('filter(x=>!isArchivedTag(x))'),'Series labels must be suppressed');
 assert(home.includes("renderPersonalArchivedTags()"));
 assert(home.includes('function loadPersonalArchivedTags()'));
+// Regression: hide all archived shortcut chips without invoking single-element $.
+const shortcutFn=home.slice(
+ home.indexOf('function applyPersonalTagShortcutVisibility(){'),
+ home.indexOf('function renderPersonalArchivedTags()')
+);
+assert(shortcutFn.startsWith('function applyPersonalTagShortcutVisibility(){'));
+const chips=[{dataset:{storyTag:'Black Belly'},hidden:false},{dataset:{storyTag:'Childhood Friends'},hidden:false},{dataset:{storyTag:'Character Growth'},hidden:false}];
+vm.runInNewContext(shortcutFn+';applyPersonalTagShortcutVisibility()',{
+ $$:selector=>{assert.equal(selector,'[data-story-tag]');return chips},
+ $:()=>{throw Error('Single-element selector used to iterate story shortcuts')},
+ isArchivedTag:name=>name==='Black Belly'||name==='Character Growth'
+});
+assert.deepEqual(chips.map(chip=>chip.hidden),[true,false,true]);
 assert(home.includes("loadPersonalArchivedTags();"));
 assert(home.includes("makeChecks('#tag-filters',Object.keys(tagCounts).filter(t=>!isArchivedTag(t))"));
 assert(home.includes('function matches(d)'));
