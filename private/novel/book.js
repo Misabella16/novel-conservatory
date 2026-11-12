@@ -5,6 +5,7 @@
 const $=id=>document.getElementById(id);
 let activeNovelId=null,activeNovelUrl='',lastNuImportId=null,isEditor=false;
 let archivedReaderTags=new Set();
+let novelTagNames=[],novelTagChangePending=false;
 const readerTagKey=value=>{
  const s=String(value||'').normalize('NFKC').trim().toLowerCase();
  return ({'enemies to lovers':'enemies become lovers','rivals to lovers':'rivals to lovers',
@@ -276,6 +277,61 @@ function chips(target,values){
   target.append(chip);
  }
 }
+function renderNovelTagControls(){
+ const visibleHost=$('tags'),hiddenHost=$('hidden-novel-tags');
+ const manager=$('hidden-novel-tags-manager'),counter=$('hidden-novel-tag-count');
+ const hint=$('personal-tag-hint');
+ if(!visibleHost||!hiddenHost||!manager||!counter)return;
+ visibleHost.replaceChildren();hiddenHost.replaceChildren();
+ const visible=[],hidden=[],seen=new Set();
+ for(const name of novelTagNames){
+  const key=readerTagKey(name);
+  if(!key||seen.has(key))continue;
+  seen.add(key);
+  (archivedReaderTags.has(key)?hidden:visible).push(name);
+ }
+ function addTagAction(host,name,action){
+  const row=document.createElement('span');row.className='novel-tag-control';
+  const chip=document.createElement('span');chip.className='chip';chip.textContent=name;
+  const button=document.createElement('button');button.type='button';button.className='novel-tag-action';
+  button.textContent=action==='archive'?'Hide':'Restore';
+  button.title=(action==='archive'?'Hide ':'Restore ')+name+' for your account only';
+  button.setAttribute('aria-label',button.title);
+  button.disabled=novelTagChangePending;
+  button.addEventListener('click',()=>changeNovelTag(name,action));
+  row.append(chip,button);host.append(row);
+ }
+ for(const name of visible)addTagAction(visibleHost,name,'archive');
+ if(!visible.length){const empty=document.createElement('span');empty.className='muted';empty.textContent=novelTagNames.length?'All tags for this novel are hidden.':'Not yet catalogued';visibleHost.append(empty)}
+ for(const name of hidden)addTagAction(hiddenHost,name,'restore');
+ counter.textContent=String(hidden.length);
+ manager.hidden=hidden.length===0;
+ if(!hidden.length)manager.open=false;
+ if(hint)hint.hidden=hidden.length===0;
+}
+async function changeNovelTag(name,action){
+ if(novelTagChangePending)return;
+ const tag=readerTagKey(name);
+ if(!tag)return;
+ const status=$('novel-tag-status');
+ novelTagChangePending=true;
+ if(status)status.textContent=action==='archive'?'Hiding tag…':'Restoring tag…';
+ renderNovelTagControls();
+ try{
+  const response=await fetch('/api/me/archived-tags',{method:'POST',credentials:'same-origin',
+   headers:{'content-type':'application/json'},body:JSON.stringify({tag,action})});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(result.error||'Could not save your tag preference.');
+  archivedReaderTags=new Set((Array.isArray(result.tags)?result.tags:[]).map(readerTagKey));
+  if(status)status.textContent=action==='archive'?'Tag hidden in your personal view.':'Tag restored in your personal view.';
+ }catch(error){
+  if(status)status.textContent=error.message||'Could not update your tag preferences.';
+ }finally{
+  novelTagChangePending=false;
+  renderNovelTagControls();
+ }
+}
+
 function parseId(){
  const m=/^\/novel\/([1-9]\d{0,10})\/?$/.exec(location.pathname);
  const value=m?.[1]||new URLSearchParams(location.search).get('id');
@@ -319,10 +375,8 @@ async function start(){
   $('synopsis').textContent=d.synopsis||'This novel does not have a synopsis yet. EPUB and Novel Updates metadata can fill missing information.';
   $('source-info').textContent=d.metadataSource?'Metadata source: '+d.metadataSource:'';
   chips($('genres'),d.genres);
-  const visibleTags=(d.tags||[]).filter(tag=>!archivedReaderTags.has(readerTagKey(tag)));
-  chips($('tags'),visibleTags);
-  const tagNote=$('personal-tag-hint');
-  if(tagNote)tagNote.hidden=visibleTags.length===(d.tags||[]).length;
+  novelTagNames=Array.isArray(d.tags)?d.tags.filter(tag=>typeof tag==='string'&&tag.trim()).slice(0,100):[];
+  renderNovelTagControls();
   $('nu-source-progress').textContent=[d.nuTranslationSourceStatus?'NU translation completion report: '+d.nuTranslationSourceStatus:'',d.nuChapterSourceText?'NU chapter information: '+d.nuChapterSourceText:''].filter(Boolean).join(' · ')||'Novel Updates chapter count and translation completion are not yet verified for this entry.';
   // Preserve original book-cover paths from the root catalogue. Relative
   // "covers/123.png" must not resolve underneath /novel/123.
