@@ -38,7 +38,17 @@ small,.muted{color:#657568}a{color:#23593c} .grid{display:grid;grid-template-col
 <p><small>Uploading only prepares the image. Click Save public website settings afterward to publish it.</small></p>
 </section>
 <button id="save" type="submit">Save public website settings</button>
-</form><p><small>Website created by Momo</small></p>
+</form>
+<section class="panel" id="safe-metadata-sync" hidden>
+<h2>Sync existing private editorial metadata to public</h2>
+<p>New edits to the original 962 public novels publish safe text and tags automatically. Use this owner-only, review-first tool to bring older saved editorial edits into the public catalogue. <strong>Private EPUBs, notes, reading history, member data and private cover images never transfer.</strong> Additional unpublished novels remain unpublished.</p>
+<div class="grid"><div><label for="sync-cursor">Resume after novel ID</label><input id="sync-cursor" type="number" min="0" max="962" value="0"></div><div><label for="sync-limit">Entries per batch</label><input id="sync-limit" type="number" min="1" max="20" value="15"></div></div>
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:15px">
+<button type="button" id="sync-preview">Preview next batch, no changes</button>
+<button type="button" id="sync-apply" disabled>Publish previewed safe metadata</button>
+</div>
+<p id="sync-report" role="status" class="muted">No batch reviewed yet.</p>
+</section><p><small>Website created by Momo</small></p>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
@@ -48,7 +58,44 @@ const status=s=>$('status').textContent=s;
 function preview(key){const img=$('banner-preview');if(key){img.src='/api/admin/public-banner-preview?key='+encodeURIComponent(key);img.style.display='block';}else{img.removeAttribute('src');img.style.display='none';}}
 (async()=>{try{const me=await fetch('/api/me',{cache:'no-store'});if(!me.ok)throw Error('Log in to the private Conservatory.');const m=await me.json();if(m.role!=='owner')throw Error('Only the owner can edit the public site.');
 const r=await fetch('/api/admin/site-config',{cache:'no-store'});const j=await r.json();if(!r.ok)throw Error(j.error||'Could not read public settings');current=j.public||{};for(const k of keys)$(k).value=current[k]??'';pendingBannerKey=current.publicBannerKey||'';if(pendingBannerKey){const p=await fetch('/api/admin/public-banner-preview?key='+encodeURIComponent(pendingBannerKey));if(p.ok){$('banner-preview').src=p.url;$('banner-preview').style.display='block';}}
-$('form').hidden=false;status('Ready. Your private settings are separate and will not change.');}catch(e){status(e.message)}})();
+$('form').hidden=false;$('safe-metadata-sync').hidden=false;status('Ready. Public-safe editorial changes can sync without exposing private books or EPUBs.');}catch(e){status(e.message)}})();
+let syncPreview=null;
+$('sync-preview').addEventListener('click',async()=>{
+ const cursor=Number($('sync-cursor').value),limit=Number($('sync-limit').value);
+ $('sync-apply').disabled=true;syncPreview=null;
+ try{
+  const r=await fetch('/api/admin/public-metadata-sync',{
+   method:'POST',headers:{'content-type':'application/json'},
+   body:JSON.stringify({cursor,limit,apply:false})
+  });
+  const j=await r.json();if(!r.ok)throw Error(j.error||'Preview failed');
+  syncPreview={cursor,limit,items:j.preview||[],nextCursor:j.nextCursor,hasMore:j.hasMore};
+  $('sync-report').textContent=(j.preview?.length||0)+' private editorial records checked. '+
+   (j.preview||[]).map(x=>'#'+x.id+': '+x.fields.join(', ')).join('; ')+
+   '. Only these public-safe text fields can transfer. No covers or EPUBs.';
+  $('sync-apply').disabled=!(j.preview||[]).some(x=>x.fields.length);
+  if(!j.preview?.length&&j.hasMore)$('sync-cursor').value=j.nextCursor;
+ }catch(e){$('sync-report').textContent=e.message}
+});
+$('sync-apply').addEventListener('click',async()=>{
+ if(!syncPreview)return;
+ if(!confirm('Publish only the previewed public-safe titles, descriptions, genres and tags? This excludes private EPUBs, private images and all unpublished books.'))return;
+ $('sync-apply').disabled=true;
+ try{
+  const r=await fetch('/api/admin/public-metadata-sync',{
+   method:'POST',headers:{'content-type':'application/json'},
+   body:JSON.stringify({cursor:syncPreview.cursor,limit:syncPreview.limit,
+    apply:true,confirmation:'PUBLISH SAFE METADATA'})
+  });
+  const j=await r.json();if(!r.ok)throw Error(j.error||'Could not sync batch');
+  const failed=(j.results||[]).filter(x=>x.publicSynced===false);
+  $('sync-report').textContent=(j.results?.length||0)+' records processed; '+
+   failed.length+' require review.'+(failed.length?' Failed IDs: '+failed.map(x=>'#'+x.id).join(', '):'')+
+   (j.hasMore?' Preview the next batch to continue.':' End of saved editorial edits.');
+  $('sync-cursor').value=j.nextCursor;syncPreview=null;
+ }catch(e){$('sync-report').textContent='Sync status uncertain: '+e.message+
+  '. Preview the same batch before retrying.';}
+});
 $('upload-banner').addEventListener('click',async()=>{const f=$('banner').files[0];if(!f){$('banner-result').textContent='Choose an image first.';return;}if(f.size>3000000){$('banner-result').textContent='Maximum 3 MB.';return;}const b=$('upload-banner');b.disabled=true;$('banner-result').textContent='Uploading…';try{const r=await fetch('/api/admin/public-banner',{method:'POST',headers:{'Content-Type':f.type},body:f});const j=await r.json();if(!r.ok)throw Error(j.error||'Upload failed');pendingBannerKey=j.key;$('banner-preview').src='/api/admin/public-banner-preview?key='+encodeURIComponent(j.key);$('banner-preview').style.display='block';$('banner-result').textContent='Ready to publish. Click Save below.';}catch(e){$('banner-result').textContent=e.message}finally{b.disabled=false}});
 $('form').addEventListener('submit',async e=>{e.preventDefault();const b=$('save');b.disabled=true;status('Saving public settings…');try{const settings={...current};for(const k of keys)settings[k]=['publicBannerX','publicBannerY'].includes(k)?Number($(k).value):$(k).value;settings.publicBannerKey=pendingBannerKey||'';const r=await fetch('/api/admin/site-config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:'public',settings})});const j=await r.json();if(!r.ok)throw Error(j.error||'Could not save');current=j.settings;status('Saved! Refresh the public website to see the new wording or banner. Private site unchanged.');}catch(e){status(e.message)}finally{b.disabled=false}});
 </script></main></body></html>
