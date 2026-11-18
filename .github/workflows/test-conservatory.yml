@@ -30,6 +30,11 @@ jobs:
         run: |
           node --check private/novel/quick-editor.js
           node tests/check_private_inline_novel_editor.js
+      - name: Verify public reader tags, bookmarklet and safe editorial public sync
+        run: |
+          node --check public/reader-tools/reader-tools.js
+          node --check tests/check_public_reader_contributions.js
+          node tests/check_public_reader_contributions.js
       - name: Verify public-only D1 caching and privacy safeguards
         run: node tests/check_public_d1_cache.cjs
       - name: Verify personal archiving and EPUB metadata auto-enrichment

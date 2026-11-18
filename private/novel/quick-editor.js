@@ -129,7 +129,9 @@
    try{
     const result=await post('/api/admin/novel',{id:Number(book.id),patch});
     Object.assign(book,result.patch||patch);
-    onUpdate?.(book,'Novel information saved.');
+    onUpdate?.(book,result.publicSynced?
+     'Novel saved. Public-safe fields have also synced to the public catalogue.':
+     'Novel saved privately. Public-safe sync needs review in Admin → Edit Public Conservatory.');
    }catch(error){status(feedback,error.message,true);}
    finally{save.disabled=false;}
   });

@@ -868,6 +868,38 @@ async function routes(request,env,ctx,email,role){
         }else return respond({error:'Unknown reader action'},400);
         return respond({ok:true,email:target,action:body.action});
       }
+      if(path==='/api/admin/public-metadata-sync'){
+        if(role!=='owner'||!strictOrigin(request))return respond({error:'Owner access required'},403);
+        if(!env.COMMUNITY_DB||!env.DB)return respond({error:'Both databases are required'},503);
+        const body=await getJson(request);
+        const start=Number(body.cursor||0),limit=Number(body.limit||15);
+        if(!Number.isSafeInteger(start)||start<0||start>962||
+           !Number.isSafeInteger(limit)||limit<1||limit>20)
+         return respond({error:'Invalid safe sync range'},400);
+        const rows=await env.DB.prepare(
+         'SELECT id,patch FROM novel_edits WHERE id>? AND id<=962 ORDER BY id LIMIT ?'
+        ).bind(start,limit).all();
+        const previews=(rows.results||[]).map(row=>{
+         let patch={};try{patch=JSON.parse(row.patch||'{}')}catch{}
+         return {id:row.id,fields:Object.keys(publicEditorialFields(patch))};
+        });
+        if(body.apply!==true)return respond({preview:previews,readOnly:true,
+         nextCursor:rows.results?.at(-1)?.id||start,hasMore:(rows.results||[]).length===limit});
+        if(body.confirmation!=='PUBLISH SAFE METADATA')
+         return respond({error:'Explicit public metadata confirmation required'},403);
+        const results=[];
+        for(const row of rows.results||[]){
+         let patch;try{patch=JSON.parse(row.patch||'{}')}catch{results.push({id:row.id,status:'review'});continue}
+         const fields=publicEditorialFields(patch);
+         if(!Object.keys(fields).length)continue;
+         try{
+          const sync=await syncPublicEditorialPatch(env,row.id,fields,email);
+          results.push({id:row.id,publicSynced:sync.synced,reason:sync.reason||''});
+         }catch(error){results.push({id:row.id,publicSynced:false,reason:'Shared catalogue write failed'});}
+        }
+        return respond({results,nextCursor:rows.results?.at(-1)?.id||start,
+         hasMore:(rows.results||[]).length===limit});
+      }
       if(path==='/api/admin/novel'){
         const body=await getJson(request),id=Number(body.id);
         if(!Number.isSafeInteger(id)||id<1||id>100000)return respond({error:'Invalid novel ID'},400);
@@ -879,7 +911,14 @@ async function routes(request,env,ctx,email,role){
           .bind(id,JSON.stringify(combined)).run();
         await audit(env,email,'novel.update',id,Object.keys(patch).join(','));
         try {if(editionBook(id))await followersNotice(env,id,(combined.translations||[])[0]?.name||combined.translator||'',`Novel #${id} received an editorial update.`,'novel');}catch{}
-        return respond({ok:true,id,patch:combined});
+        let publicSynced=false,publicSyncReason='';
+        if(id<=962){
+         try{
+          const sync=await syncPublicEditorialPatch(env,id,publicEditorialFields(patch),email);
+          publicSynced=sync.synced;publicSyncReason=sync.reason||'';
+         }catch{publicSyncReason='Public metadata sync requires retry';}
+        }
+        return respond({ok:true,id,patch:combined,publicSynced,publicSyncReason});
       }
       if(path==='/api/admin/homepage'){
         const body=await getJson(request);
@@ -1139,6 +1178,56 @@ async function followRoutes(request,env,email){
  }
  return editionJson({error:'Not found'},404);
 }
+// Public catalogue sync is deliberately a metadata allowlist. No EPUB objects,
+// private member data, cover URLs, site settings, or private-source fields cross
+// into the public project. This is called only after an authenticated EDITOR save.
+const PUBLIC_EDITOR_FIELDS=new Set([
+ 'title','originalTitle','author','synopsis','genres','tags',
+ 'contentWarnings','translation','nuUrl','translatorUrl'
+]);
+function publicEditorialFields(patch){
+ const result={};
+ if(!patch||typeof patch!=='object'||Array.isArray(patch))return result;
+ for(const [key,value] of Object.entries(patch)){
+  if(!PUBLIC_EDITOR_FIELDS.has(key))continue;
+  if(['genres','tags','contentWarnings'].includes(key)){
+   if(Array.isArray(value))result[key]=textArray(value);
+  }else if(['nuUrl','translatorUrl'].includes(key)){
+   if(value===''||value==null){result[key]='';continue;}
+   const url=safeLink(value);
+   if(url&&(!key.startsWith('nu')||/^https:\/\/(?:www\.)?novelupdates\.com\/series\/[a-z0-9-]+\/?$/i.test(url)))
+    result[key]=url;
+  }else if(key==='translation'){
+   if(translationStatuses.has(value))result[key]=value;
+  }else if(typeof value==='string')result[key]=textField(value,key==='synopsis'?2000:240);
+ }
+ return result;
+}
+async function syncPublicEditorialPatch(env,id,patch,actor){
+ const fields=publicEditorialFields(patch);
+ if(!Number.isSafeInteger(Number(id))||id<1||id>962)
+  return {synced:false,reason:'Not a public seed novel'};
+ if(!Object.keys(fields).length)return {synced:true,reason:'No public-safe changes'};
+ if(!env.COMMUNITY_DB)return {synced:false,reason:'Shared community database unavailable'};
+ for(let attempt=0;attempt<4;attempt++){
+  const row=await env.COMMUNITY_DB.prepare(
+   'SELECT patch_json FROM published_catalogue_overrides WHERE novel_id=?'
+  ).bind(id).first();
+  let previous={};try{previous=JSON.parse(row?.patch_json||'{}')}catch{return {synced:false,reason:'Unreadable public record'};}
+  // Never erase communityTags/communitySynopsis or owner-selected public art.
+  const after=JSON.stringify({...previous,...fields});
+  if(row?.patch_json===after)return {synced:true,reason:'Already current'};
+  const write=row?await env.COMMUNITY_DB.prepare(
+   'UPDATE published_catalogue_overrides SET patch_json=?,updated_at=CURRENT_TIMESTAMP WHERE novel_id=? AND patch_json=?'
+  ).bind(after,id,row.patch_json).run():
+   await env.COMMUNITY_DB.prepare(
+    "INSERT INTO published_catalogue_overrides(novel_id,patch_json,source_entry_id,published_by) VALUES (?,?,'private-editor-sync',?) ON CONFLICT DO NOTHING"
+   ).bind(id,after,actor).run();
+  if((write.meta?.changes||0)===1)return {synced:true};
+ }
+ return {synced:false,reason:'Public catalogue updated concurrently. Retry sync'};
+}
+
 const PUBLISH_FIELDS=new Set(['tags','nuUrl','translatorUrl','translatorLinks','synopsis','translation','title','cover']);
 // Extracted artwork transfer is strictly one-way: image bytes only. An editor
 // selects images locally in the browser. The EPUB file is never sent here.

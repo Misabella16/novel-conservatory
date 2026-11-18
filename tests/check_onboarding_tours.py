@@ -27,13 +27,13 @@ for site in ('public','private'):
     assert 'data-site="'+site+'"' in home
     assert 'let selectedStatus=new Set()' in home
     assert 'excludedTags=new Set()' in home
-    assert "if(excludedTags.size&&(d.tags||[]).some" in home
+    assert ("if(excludedTags.size&&browseTags(d).some" if site=='public' else "if(excludedTags.size&&(d.tags||[]).some") in home
     assert "excludedTags.clear();$('#exclude-tag-search').value=''" in home
     assert 'renderExcludedTagFilters();' in home
     assert 'input[data-excluded-tag]' in home
     assert "data-excluded-tag=" in home
     # A book without known tags should not be hidden by an exclusion filter.
-    assert "if(excludedTags.size&&(d.tags||[]).some" in home
+    assert ("if(excludedTags.size&&browseTags(d).some" if site=='public' else "if(excludedTags.size&&(d.tags||[]).some") in home
     for item in ('conservatory-tour-launch','conservatory-tour-card','conservatory-tour-target'):
         assert item in css
     for item in ('setTimeout(start,650)','localStorage.getItem(key)','Skip tutorial','ArrowRight','ArrowLeft','Exclude story tags you dislike','Tags and reader contributions'):

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Reader tags & Novel Updates bookmarklet | Novel Conservatory</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;background:#f9f6ef;color:#294938}
+*{box-sizing:border-box}body{margin:0}header{background:#284c3b;color:#fff;padding:25px max(18px,calc((100vw - 980px)/2))}
+header a{color:#e4d3af}h1,h2{font-family:Georgia,serif;font-weight:500}h1{font-size:clamp(26px,4vw,40px)}h2{font-size:25px}
+main{max-width:980px;margin:24px auto;padding:0 18px 60px}.panel{background:#fffdf8;border:1px solid #d7dfd2;border-radius:12px;padding:24px;margin:18px 0}
+p,li{line-height:1.65}label{display:block;font-weight:650;font-size:13px;margin:14px 0 7px}
+input,textarea,button,select{font:inherit}input[type=search],input[type=text],textarea,select{display:block;width:100%;border:1px solid #bdcebd;border-radius:7px;padding:12px;background:white;color:#243d30}textarea{min-height:120px}
+button,.bookmarklet{display:inline-block;padding:11px 16px;border:1px solid #285a40;background:#285a40;border-radius:8px;color:#fff;font-weight:700;cursor:pointer;text-decoration:none}
+button:disabled{opacity:.48;cursor:default}button.secondary{background:#fff;color:#285a40}
+.actions{display:flex;gap:12px;flex-wrap:wrap;margin:15px 0}.muted{color:#637767;font-size:13px}
+#matched{border:1px solid #cad9cb;border-radius:8px;background:#ecf5ed;padding:12px;margin-top:12px}
+.results{max-height:250px;overflow:auto;border:1px solid #d8e0d8;border-radius:8px}
+.results button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #d9e2d6;border-radius:0;background:white;color:#274b38}
+.results button:hover{background:#e9f2ea}#turnstile{min-height:65px;margin-top:16px}
+#status{white-space:pre-wrap;font-weight:650;color:#295b41}
+@media(max-width:640px){.panel{padding:16px}header{padding:21px}}
+body.embedded{background:#fffdf8}body.embedded header{display:none}
+body.embedded main{padding:0;margin:0;max-width:none}
+body.embedded .panel{padding:14px;margin:0 0 12px;border-radius:8px}
+body.embedded .panel h2{font-size:20px;margin:0 0 10px}
+body.embedded #search,body.embedded label[for="search"],body.embedded #results{display:none}
+body.embedded .panel:first-child p:first-of-type{font-size:12px}
+body.embedded .panel:first-child{background:#fbf9f2}
+</style></head>
+<body><header><a href="/">← Public Conservatory</a><h1>Contribute story tags</h1><p>Anyone can suggest tags from the original Novel Updates listing, without an admin account. Contributions appear as reader tags, separate from editorial tags.</p></header>
+<main>
+<section class="panel"><h2>1 · Capture an existing Novel Updates page</h2>
+<p>On a desktop browser, drag this bookmarklet to your bookmarks bar. Open a Novel Updates <em>series</em> page normally, then click the bookmark. It copies the visible title, author, genres and tags. It never collects your cookies, login, or book files.</p>
+<div class="actions"><a id="bookmarklet" class="bookmarklet" href="#">Capture NU tags</a><button id="copy-bookmarklet" type="button" class="secondary">Copy bookmarklet code</button></div>
+<p class="muted">On mobile, use Novel Updates' regular Share/Copy controls, or enter the tags below manually. This is not an automated crawler and does not bypass Novel Updates access rules.</p>
+<label for="capture-json">Paste the captured metadata here (auto-fills the tags)</label><textarea id="capture-json" maxlength="16000" placeholder="Paste the JSON copied by Capture NU tags"></textarea>
+<button id="review-capture" type="button" class="secondary">Read pasted metadata</button>
+<p class="muted" id="capture-preview" aria-live="polite">No source metadata reviewed yet.</p></section>
+<section class="panel"><h2>2 · Choose the exact public novel</h2>
+<p>Search by title or author, then choose the existing published entry. This never creates a duplicate novel.</p>
+<label for="search">Find a novel</label><input id="search" type="search" placeholder="Title, author or novel ID" autocomplete="off">
+<div id="results" class="results"></div><p id="matched" hidden></p>
+<label for="tags">Story tags (comma or new-line separated)</label><textarea id="tags" maxlength="700" placeholder="Found family, Time travel, Slow burn" required></textarea>
+<label for="display-name">Name or nickname to credit</label><input id="display-name" type="text" minlength="2" maxlength="64" placeholder="Reader" value="Reader">
+<label for="note">Optional context for your tags</label><textarea id="note" maxlength="2200" placeholder="These tags appear in the Novel Updates listing, or I have read the novel and can confirm them."></textarea>
+<div id="turnstile"></div>
+<div class="actions"><button id="submit" type="button" disabled>Add tags to public novel</button><a href="/community/" id="community-link" hidden>See reader contributions</a></div>
+<p role="status" id="status">Loading published catalogue and security check…</p></section>
+</main><script defer src="/reader-tools/reader-tools.js"></script></body></html>

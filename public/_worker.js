@@ -133,7 +133,18 @@ const COMMUNITY_HEADERS={
 };
 const communityJson=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:COMMUNITY_HEADERS});
 const communityText=(v,max=2000)=>String(v??'').trim().slice(0,max);
-const communityBook=v=>Number.isSafeInteger(Number(v))&&Number(v)>=1&&Number(v)<=962?Number(v):null;
+const communityBook=v=>Number.isSafeInteger(Number(v))&&Number(v)>=1&&
+ (Number(v)<=962||Number(v)>=100000)?Number(v):null;
+async function publicCommunityBook(env,raw){
+ const id=communityBook(raw);if(!id)return null;
+ if(id<=962)return id;
+ const row=await env.COMMUNITY_DB.prepare(
+  "SELECT visibility,source_submission_id FROM additional_catalogue_novels WHERE id=?"
+ ).bind(id).first();
+ if(!row||row.visibility!=='published'||
+  /^(?:merged-into:|reverted-create:)/.test(String(row.source_submission_id||'')))return null;
+ return id;
+}
 const communityOrigin=request=>{
  const origin=request.headers.get('Origin');
  // Browsers send Origin on form POST. Reject non-browser and cross-site posts.
@@ -181,7 +192,7 @@ async function communityDispatch(request,env,scope,identity){
  if(!env.COMMUNITY_DB)return communityJson({error:'Community database is not configured'},503);
  try{
   if(path==='/api/community/book'&&method==='GET'){
-   const id=communityBook(u.searchParams.get('id'));
+   const id=scope==='public'?await publicCommunityBook(env,u.searchParams.get('id')):communityBook(u.searchParams.get('id'));
    if(!id)return communityJson({error:'Invalid book'},400);
    const r=await env.COMMUNITY_DB.prepare('SELECT * FROM community_entries WHERE scope=? AND novel_id=? AND status=? ORDER BY created_at DESC LIMIT 100')
     .bind(scope,id,'approved').all();
@@ -250,7 +261,8 @@ async function communityDispatch(request,env,scope,identity){
    const fd=await new Response(new Blob(pieces),{headers:{'content-type':request.headers.get('content-type')}}).formData();
    const token=communityText(fd.get('turnstile'),1800);
    if(scope==='public'&&!await communityVerifyTurnstile(request,env,token))return communityJson({error:'Security check failed. Please retry the challenge.'},403);
-   const id=crypto.randomUUID(),book=communityBook(fd.get('novel_id'));
+   const id=crypto.randomUUID(),book=scope==='public'?
+     await publicCommunityBook(env,fd.get('novel_id')):communityBook(fd.get('novel_id'));
    const kind=communityText(fd.get('kind'),30),name=communityText(fd.get('display_name'),64);
    const body=communityText(fd.get('body'),2200),url=communityUrl(fd.get('external_url'));
    const imageCredit=communityText(fd.get('image_credit'),150),spoiler=fd.get('spoiler')==='on'?1:0;
@@ -822,6 +834,28 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
      let data;try{data=JSON.parse(row.payload_json)}catch{continue}
      visible.push(extraDecorate({...row,title:data.title},'public'));
      ids.add(Number(row.id));
+    }
+   }
+   if(scope==='public'&&visible.length){
+    // Reader tags are public overlays, not edits to private catalogue data.
+    const ids=new Set(visible.map(book=>Number(book.id)));
+    const rows=await env.COMMUNITY_DB.prepare(
+     "SELECT novel_id,tags_json FROM community_entries WHERE scope='public' "+
+     "AND status='approved' AND kind='tags' AND novel_id>=100000 "+
+     "ORDER BY created_at ASC LIMIT 5000").all();
+    const additions=new Map();
+    for(const row of rows.results||[]){
+     const id=Number(row.novel_id);if(!ids.has(id))continue;
+     let values=[];try{values=JSON.parse(row.tags_json||'[]')}catch{}
+     if(!additions.has(id))additions.set(id,new Map());
+     for(const value of values){
+      const label=communityText(value,70);
+      if(label)additions.get(id).set(label.toLowerCase(),label);
+     }
+    }
+    for(const book of visible){
+     const extra=additions.get(Number(book.id));
+     if(extra)book.communityTags=[...extra.values()];
     }
    }
    return extraJson({novels:visible,configured:true});

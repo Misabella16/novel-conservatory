@@ -115,7 +115,7 @@ const book=()=>({id:17,title:'Desharow Merman',author:'Shen Hai Xian Sheng',
  assert.deepEqual(Object.keys(payload.patch),['title']);
  assert.equal(payload.patch.title,'Desharow Merman: Updated');
  assert.equal(current.tags.length,30,'Imported tags must be preserved');
- assert.equal(latest,'Novel information saved.');
+ assert.match(latest,/Novel saved privately\. Public-safe sync needs review/);
 
  const trigger=editor.cover.children[0];
  assert.equal(trigger.tagName,'button');
