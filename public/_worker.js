@@ -836,6 +836,28 @@ async function additionalRoutes(request,env,scope,email='',role='reader'){
      ids.add(Number(row.id));
     }
    }
+   if(scope==='public'&&visible.length){
+    // Reader tags are public overlays, not edits to private catalogue data.
+    const ids=new Set(visible.map(book=>Number(book.id)));
+    const rows=await env.COMMUNITY_DB.prepare(
+     "SELECT novel_id,tags_json FROM community_entries WHERE scope='public' "+
+     "AND status='approved' AND kind='tags' AND novel_id>=100000 "+
+     "ORDER BY created_at ASC LIMIT 5000").all();
+    const additions=new Map();
+    for(const row of rows.results||[]){
+     const id=Number(row.novel_id);if(!ids.has(id))continue;
+     let values=[];try{values=JSON.parse(row.tags_json||'[]')}catch{}
+     if(!additions.has(id))additions.set(id,new Map());
+     for(const value of values){
+      const label=communityText(value,70);
+      if(label)additions.get(id).set(label.toLowerCase(),label);
+     }
+    }
+    for(const book of visible){
+     const extra=additions.get(Number(book.id));
+     if(extra)book.communityTags=[...extra.values()];
+    }
+   }
    return extraJson({novels:visible,configured:true});
   }
   if(path==='/api/additional/cover'&&method==='GET'){
