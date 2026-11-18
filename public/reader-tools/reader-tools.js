@@ -71,7 +71,7 @@ function find(){
  }
 }
 $('search').addEventListener('input',find);
-$('review-capture').addEventListener('click',()=>{
+function reviewCapture(){
  try{
   const input=$('capture-json').value.trim();
   if(!input||input.length>16000)throw Error('Paste the copied JSON (maximum 16,000 characters).');
@@ -90,6 +90,11 @@ $('review-capture').addEventListener('click',()=>{
   if(captured.author)$('note').value='Reader-supplied from '+captured.nuUrl+'; attributed author: '+captured.author;
   say('Select the exact matching published novel below, check the tags, and submit.');
  }catch(error){say('Capture rejected: '+error.message);}
+}
+$('review-capture').addEventListener('click',reviewCapture);
+$('capture-json').addEventListener('paste',()=>{
+ // Pasting inside the novel page immediately pre-fills tag proposals.
+ setTimeout(()=>{if($('capture-json').value.trim())reviewCapture();},0);
 });
 async function loadTurnstile(){
  const script=document.createElement('script');
@@ -126,6 +131,11 @@ async function init(){
   const requested=Number(query.get('book'));
   const found=novels.find(book=>Number(book.id)===requested);
   if(found)selectNovel(found);
+  if(query.get('embedded')==='1'){
+   document.body.classList.add('embedded');
+   // The surrounding detail page already identifies the target novel.
+   $('search').value=found?.title||'';
+  }
   await loadTurnstile();
   say('Ready. No admin login required. Choose a novel and submit reader tags.');
  }catch(error){say(error.message);}
