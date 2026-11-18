@@ -793,7 +793,7 @@ function matches(d){
  if(selectedThemes.size&&![...selectedThemes].every(x=>(d.titleCues||[]).includes(x)))return false;
  if((selectedGenres.size||selectedTags.size||excludedWarnings.size||richOnly)&&!isReviewed(d))return false;
  if(selectedGenres.size&&![...selectedGenres].every(x=>(d.genres||[]).some(g=>normalizeGenre(g)===normalizeGenre(x))))return false;
- if(selectedTags.size&&!(tagMatchMode==='any'?[...selectedTags].some(x=>browseTags(d).some(t=>normStoryTag(t)===normStoryTag(x))):[...selectedTags].every(x=>(d.tags||[]).some(t=>normStoryTag(t)===normStoryTag(x)))))return false;
+ if(selectedTags.size&&!(tagMatchMode==='any'?[...selectedTags].some(x=>browseTags(d).some(t=>normStoryTag(t)===normStoryTag(x))):[...selectedTags].every(x=>browseTags(d).some(t=>normStoryTag(t)===normStoryTag(x)))))return false;
  if(excludedTags.size&&browseTags(d).some(t=>excludedTags.has(normStoryTag(t))))return false;
  if(excludedWarnings.size&&[...excludedWarnings].some(x=>(d.contentWarnings||[]).includes(x)))return false;
  const search=searchTerm.trim().toLocaleLowerCase();
@@ -803,7 +803,7 @@ function matches(d){
 function hoverTags(d){
  const verified=isReviewed(d);
  const genreItems=verified?(d.genres||[]).map(t=>({t,kind:'genre'})):[];
- const tropeItems=verified?(d.tags||[]).map(t=>({t,kind:'trope'})):[];
+ const tropeItems=(verified||!!(d.communityTags||[]).length)?browseTags(d).map(t=>({t,kind:'trope'})):[];
  const items=[...genreItems.slice(0,2),...tropeItems.slice(0,1)];
  for(const candidate of [...tropeItems.slice(1),...genreItems.slice(2)]){
    if(items.length>=3)break;
