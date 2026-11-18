@@ -59,12 +59,13 @@
 <button type="button" class="btn primary" id="nu-segment-continue">Continue to change preview</button>
 </div>
 </details>
-<details class="nu-capture" id="nu-advanced-capture">
-<summary>💻 On a computer: Use the original Capture Novel Updates bookmarklet</summary>
+<section class="nu-capture" id="nu-advanced-capture" aria-label="Paste bookmarklet metadata directly into this novel">
+<h3 style="margin:0 0 8px;font:600 19px Georgia,serif">💻 Paste bookmarklet information right here</h3>
+<p class="nu-help">On the Novel Updates series page, run your Capture Novel Updates bookmarklet, copy its JSON, and paste it below. Review the proposed changes here on this novel, without opening the admin importer.</p>
 <p class="nu-help">Your original desktop capture method is still available. <a href="/admin/novel-updates.html#nu-browser-import"><strong>Open the Capture Novel Updates bookmarklet instructions</strong></a>, capture this series on Novel Updates, then paste the resulting JSON below. Nothing about the computer workflow has been removed.</p>
 <label for="nu-capture-json"><strong>JSON from the desktop bookmarklet</strong></label>
 <textarea id="nu-capture-json" placeholder="Paste the JSON copied by the Capture Novel Updates bookmarklet"></textarea>
-<button type="button" class="btn" id="nu-apply-capture">Preview bookmarklet results</button>
-</details>
+<button type="button" class="btn primary" id="nu-apply-capture">Review bookmarklet information for this novel</button>
+</section>
 <div class="buttons"><button type="button" class="btn" id="nu-undo" hidden>↶ Reverse this update</button></div><details class="nu-capture" id="nu-history"><summary>Previous changes and restoration options</summary><p class="nu-help">Changes are recorded so editors can restore earlier information if needed.</p><a href="/admin/resolve-duplicates.html">Open change and merge history</a></details>
 </section><section class="panel"><h2>Private reading editions</h2><p class="muted tiny">Private EPUB files are available only to accounts with reading permission.</p><div id="editions"></div></section></div></div></main><script src="/novel/nu-labels.js" defer></script><script src="/novel/nu-segments.js" defer></script><script src="/novel/nu-source.js" defer></script><script src="/novel/book.js" defer></script></body></html>
