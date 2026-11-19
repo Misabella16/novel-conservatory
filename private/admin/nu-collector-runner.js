@@ -80,14 +80,23 @@
  const isChallenge=html=>/<title>\s*(?:Just a moment|Attention Required)/i.test(html)||
   /challenge-platform|cf-turnstile|verify you are human/i.test(html.slice(0,20000));
  const done=()=>LIST.filter(b=>store.items[b.id]&&store.items[b.id].capture).length;
+ const hasCover=b=>{const c=store.items[b.id]&&store.items[b.id].capture;return !!(c&&c.novel&&c.novel.coverUrl)};
+ const covers=()=>LIST.filter(hasCover).length;
  // Failed pages are retried on the next run; collected ones are kept.
  const todo=LIST.filter(b=>!store.items[b.id]||!store.items[b.id].capture);
- status(done()+' of '+LIST.length+' collected. '+todo.length+' to go (about '+
-  Math.ceil(todo.length*(DELAY_MS+1000)/60000)+' min).');
+ // Pages read before covers were recognised are read once more for the cover.
+ const recheck=LIST.filter(b=>store.items[b.id]&&store.items[b.id].capture&&!hasCover(b)&&
+  !store.items[b.id].coverChecked);
+ const queue=todo.concat(store.coverGaveUp?[]:recheck);
+ status(done()+' of '+LIST.length+' collected. '+todo.length+' to go'+
+  (store.coverGaveUp||!recheck.length?'':', plus '+recheck.length+' re-read for a cover')+' (about '+
+  Math.ceil(queue.length*(DELAY_MS+1000)/60000)+' min).');
 
- let emptyStreak=0,halted='';
- for(const book of todo){
+ let emptyStreak=0,coverTries=0,coverHits=0,halted='',hint=false;
+ for(const book of queue){
   if(stop)break;
+  const again=!!(store.items[book.id]&&store.items[book.id].capture);
+  if(again&&store.coverGaveUp)continue;
   let path;
   try{path=new URL(book.nuUrl).pathname}catch{path=''}
   if(!/^\/series\/[a-z0-9][a-z0-9-]{0,190}\/$/i.test(path)){
@@ -102,15 +111,28 @@
    halted='Novel Updates asked for a check (or is slowing requests).';
    break;
   }
-  if(!res.ok){
+  const capture=res.ok?window.ConservatoryNUSource.parseHtml(html,book.nuUrl):null;
+  if(again){
+   // Keep the earlier capture; only take a newer one that has the cover.
+   coverTries++;
+   if(capture&&capture.novel.coverUrl){store.items[book.id]={capture};coverHits++}
+   store.items[book.id].coverChecked=true;
+   if(coverTries>=8&&!coverHits){
+    store.coverGaveUp=true;
+    console.warn('[NC] No cover found on 8 pages in a row; skipping the cover re-read.');
+   }
+  }else if(!res.ok){
    store.items[book.id]={error:'HTTP '+res.status};
-  }else{
-   const capture=window.ConservatoryNUSource.parseHtml(html,book.nuUrl);
-   if(capture){store.items[book.id]={capture};emptyStreak=0}
-   else{store.items[book.id]={error:'No metadata found on the page'};emptyStreak++}
+  }else if(capture){store.items[book.id]={capture};emptyStreak=0}
+  else{store.items[book.id]={error:'No metadata found on the page'};emptyStreak++}
+  if(capture&&!capture.novel.coverUrl&&!hint){
+   hint=true;
+   console.warn('[NC] No cover recognised for “'+book.title+'”. Images on that page:',
+    [...new DOMParser().parseFromString(html,'text/html').querySelectorAll('img,meta[property="og:image"]')]
+     .slice(0,6).map(x=>x.getAttribute('src')||x.getAttribute('content')));
   }
   save();
-  status(done()+' of '+LIST.length+' collected · last: '+book.title);
+  status(done()+' of '+LIST.length+' collected, '+covers()+' with a cover · last: '+book.title);
   console.log('[NC]',done()+'/'+LIST.length,book.title,store.items[book.id]);
   if(emptyStreak>=5){
    halted='5 pages in a row had no metadata. Novel Updates may have changed its page layout.';
@@ -128,7 +150,7 @@
  }else if(stop){
   status('Paused at '+n+' of '+LIST.length+'. Paste the script again to resume, or click Download file.');
  }else{
-  status('Finished: '+n+' collected'+(failed?', '+failed+' failed (they are listed in the file)':'')+
+  status('Finished: '+n+' collected ('+covers()+' with a cover)'+(failed?', '+failed+' failed (they are listed in the file)':'')+
    '. Downloading the file…'+(saveWarned?' (Progress could not be saved in this browser.)':''));
   download();
  }

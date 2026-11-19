@@ -30,12 +30,30 @@ function parseHtml(html,url){
   }
   return result.slice(0,100);
  };
+ // Cover: the classic series image first, then the page's share image, then
+ // any Novel Updates cover image (layouts change; placeholders are skipped).
+ const coverOf=element=>{
+  if(!element)return '';
+  for(const name of ['data-src','data-lazy-src','src','content']){
+   const raw=String(element.getAttribute(name)||'').trim();
+   if(!raw||/^data:/i.test(raw))continue;
+   try{
+    const u=new URL(raw,url);
+    if(u.protocol==='https:'&&!/noimagefound|no-image|placeholder|avatar|logo|favicon/i.test(u.pathname))return u.href;
+   }catch{}
+  }
+  return '';
+ };
  let coverUrl='';
- const cover=doc.querySelector('#seriesimg img,.seriesimg img,.series-image img');
- try{
-  const raw=cover?.getAttribute('data-src')||cover?.getAttribute('src');
-  if(raw){const u=new URL(raw,url);if(u.protocol==='https:')coverUrl=u.href}
- }catch{}
+ for(const selector of ['#seriesimg img','.seriesimg img','.series-image img',
+  'meta[property="og:image"]','meta[name="twitter:image"]']){
+  coverUrl=coverOf(doc.querySelector(selector));
+  if(coverUrl)break;
+ }
+ if(!coverUrl)for(const img of doc.querySelectorAll('img')){
+  const found=coverOf(img);
+  if(/^https:\/\/cdn\.novelupdates\.com\/images\//i.test(found)){coverUrl=found;break}
+ }
  const translated=first(['#showtranslated','#seriestranslated']).slice(0,80);
  const originalStatus=first(['#showstatus','#seriesstatus']).slice(0,100);
  const chapters=first(['#showchapters','#serieschapters']).slice(0,120);

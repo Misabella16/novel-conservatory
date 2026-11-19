@@ -16,6 +16,7 @@ Novel Updates answers server requests (the Worker, GitHub Actions, scripts) with
    - It saves progress in that browser.
    - It stops at once on any challenge, 403, 429 or 503. Reload, complete the check, wait a minute and paste again to resume. Pages that failed are retried, and collected ones are kept.
    - It also stops after 5 pages in a row with no metadata, which suggests a layout change.
+   - The cover is taken from the series image, else the page's share image (`og:image`), else any `cdn.novelupdates.com/images/` picture; placeholders are skipped. Pages collected earlier without a cover are read once more for it. If 8 re-reads in a row find no cover, it stops re-reading and logs the page's image links in the console.
    - At the end it downloads `nu-bulk-<date>.json`. **Download file** in its panel gives a partial file at any time.
 3. **Preview.** Back on the bulk page, choose the file, pick the details to fill and use **Preview changes**. This calls the importer with `preview: true`, so nothing is written.
 4. **Fill.** Use **Fill missing details**. Each novel is sent to the existing `/api/admin/nu/book-import` with its capture, which:
