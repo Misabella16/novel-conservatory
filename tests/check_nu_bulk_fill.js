@@ -65,7 +65,8 @@ assert.throws(()=>B.importPayload(read.ready[0],['bogus'],false),/at least one/)
 // ---- collector run in a fake Novel Updates tab ---------------------------------
 // DOMParser stub: the "HTML" is JSON mapping selectors to text values.
 function fakeDoc(spec){
- const node=v=>({textContent:v,getAttribute:k=>k==='src'?v:null});
+ // A value is page text (also used as an img src), or {attr:value} for attributes.
+ const node=v=>v&&typeof v==='object'?{textContent:'',getAttribute:k=>v[k]??null}:{textContent:v,getAttribute:k=>k==='src'?v:null};
  return {
   querySelector:s=>{for(const part of s.split(','))if(spec[part.trim()]!==undefined){const v=spec[part.trim()];return node(Array.isArray(v)?v[0]:v)}return null},
   querySelectorAll:s=>{const out=[];for(const part of s.split(','))for(const v of [].concat(spec[part.trim()]||[]))out.push(node(v));return out}
@@ -134,6 +135,46 @@ const res=(status,body)=>({status,ok:status>=200&&status<300,text:async()=>body}
  e.tab.fetch=async()=>{count++;return res(200,'{}')};
  await vm.runInContext(B.buildCollector(sourceJs,runnerJs,many,3),e.tab);
  assert.equal(count,5,'stops after 5 pages without metadata');
+
+ // ---- covers: newer layouts, share image, placeholders -------------------------
+ const P=makeTab(()=>res(200,'{}'));vm.runInContext(sourceJs,P.tab);
+ const parse=spec=>P.tab.ConservatoryNUSource.parseHtml(JSON.stringify(Object.assign(
+  {'.seriestitlenu':'T','#editdescription':'S'},spec)),'https://www.novelupdates.com/series/t/');
+ assert.equal(parse({'.seriesimg img':'https://cdn.novelupdates.com/images/a.jpg'}).novel.coverUrl,
+  'https://cdn.novelupdates.com/images/a.jpg','classic series image');
+ assert.equal(parse({'.seriesimg img':{'data-src':'https://cdn.novelupdates.com/images/lazy.jpg',src:'data:image/gif;base64,R0'}}).novel.coverUrl,
+  'https://cdn.novelupdates.com/images/lazy.jpg','lazy-loaded image');
+ assert.equal(parse({'.seriesimg img':'https://www.novelupdates.com/img/noimagefound.jpg',
+  'meta[property="og:image"]':{content:'https://cdn.novelupdates.com/images/og.jpg'}}).novel.coverUrl,
+  'https://cdn.novelupdates.com/images/og.jpg','placeholder skipped, share image used');
+ assert.equal(parse({img:[{src:'/favicon.ico'},{src:'https://ads.example/x.jpg'},{src:'https://cdn.novelupdates.com/images/2026/01/b.jpg'}]}).novel.coverUrl,
+  'https://cdn.novelupdates.com/images/2026/01/b.jpg','any Novel Updates cover image on a new layout');
+ assert.equal(parse({img:[{src:'https://ads.example/x.jpg'}]}).novel.coverUrl,'','never takes an unrelated image');
+
+ // Pages collected without a cover are read once more; the old capture is kept.
+ const two=three.slice(0,2);
+ const r=makeTab(()=>res(200,'{}'));const reqs=[];
+ r.storage.set('novelConservatoryNUBulk',JSON.stringify({items:{
+  1:{capture:{source:'novelupdates-browser-v1',novel:{nuUrl:'https://www.novelupdates.com/series/a/',title:'A',tags:['Old']}}},
+  2:{capture:{source:'novelupdates-browser-v1',novel:{nuUrl:'https://www.novelupdates.com/series/b/',title:'B',tags:['Keep']}}}}}));
+ r.tab.fetch=async p=>{reqs.push(p);return p==='/series/a/'?res(200,page('a',['New'])):res(200,JSON.stringify({'.seriestitlenu':'b','#editdescription':'x'}))};
+ await vm.runInContext(B.buildCollector(sourceJs,runnerJs,two,3),r.tab);
+ assert.deepEqual(reqs,['/series/a/','/series/b/'],'both coverless captures re-read once');
+ let st=JSON.parse(r.storage.get('novelConservatoryNUBulk'));
+ assert.equal(st.items[1].capture.novel.coverUrl,'https://cdn.novelupdates.com/images/a.jpg');
+ assert.deepEqual(st.items[2].capture.novel.tags,['Keep'],'capture kept when the re-read has no cover');
+ reqs.length=0;
+ await vm.runInContext(B.buildCollector(sourceJs,runnerJs,two,3),r.tab);
+ assert.deepEqual(reqs,[],'a page is re-read for its cover only once');
+
+ // If no cover is recognised 8 times running, the re-read stops.
+ const ten=Array.from({length:10},(_,i)=>({id:i+1,title:'Q'+i,nuUrl:'https://www.novelupdates.com/series/q'+i+'/'}));
+ const g=makeTab(()=>res(200,'{}'));let hits=0;
+ g.storage.set('novelConservatoryNUBulk',JSON.stringify({items:Object.fromEntries(ten.map(b=>[b.id,
+  {capture:{source:'novelupdates-browser-v1',novel:{nuUrl:b.nuUrl,title:b.title,tags:['t']}}}]))}));
+ g.tab.fetch=async()=>{hits++;return res(200,JSON.stringify({'.seriestitlenu':'q','#editdescription':'x'}))};
+ await vm.runInContext(B.buildCollector(sourceJs,runnerJs,ten,3),g.tab);
+ assert.equal(hits,8,'gives up on cover re-reads after 8 misses');
 
  // ---- page, navigation and importer contract ----------------------------------
  for(const id of ['nu-bulk-app','collect-build','collect-copy','collect-script','apply-file','apply-preview','apply-run','apply-stop','apply-results','undo-run'])
