@@ -67,6 +67,11 @@ jobs:
           node --check private/novel/nu-source.js
           node --check private/novel/book.js
           node tests/check_mobile_nu_refresh.js
+      - name: Verify bulk Novel Updates fill (browser collector and per-novel importer)
+        run: |
+          node --check private/admin/nu-bulk.js
+          node --check private/admin/nu-collector-runner.js
+          node tests/check_nu_bulk_fill.js
       - name: Verify personal tag archiving and existing EPUB reading position
         run: |
           node --check tests/check_personal_archived_tags.js

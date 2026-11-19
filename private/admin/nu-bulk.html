@@ -1,0 +1,68 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Bulk Fill from Novel Updates | Conservatory</title><style>
+:root{font-family:system-ui;color:#263b33;background:#f8f6f0}body{margin:0}header{background:#263b33;color:white;padding:25px 5%}header a{color:#e5cfac}
+main{max-width:1000px;margin:auto;padding:24px 16px}h1,h2{font-family:Georgia,serif;font-weight:400}h1{margin:.2em 0}
+.panel{background:white;border:1px solid #ddd;border-radius:12px;margin:15px 0;padding:20px}.muted{color:#697b70}
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}
+input,select,textarea,button{padding:10px;border-radius:6px;border:1px solid #b9c8bb;font:inherit}
+button{background:#315b47;color:white;cursor:pointer}button.quiet{background:#eef3ec;color:#263b33}button:disabled{opacity:.45;cursor:default}
+.steps{line-height:1.7;padding-left:22px}.status{white-space:pre-wrap;padding:10px 12px;background:#f0f7ed;border-radius:8px;margin:10px 0}
+.status.bad{background:#fbeceb;color:#7a2a24}textarea{width:100%;box-sizing:border-box;min-height:110px;font:12px/1.4 ui-monospace,monospace}
+.fields{display:flex;flex-wrap:wrap;gap:6px 18px;margin:8px 0}.fields label{display:flex;gap:6px;align-items:center}.fields input{width:auto;padding:0}
+.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid #eee;vertical-align:top}
+tr.ok td:nth-child(3){color:#2e6b3c}tr.err td:nth-child(3){color:#9a3b2f}tr.skip td:nth-child(3),tr.same td:nth-child(3){color:#7c8a80}
+.note{font-size:13px;background:#fbf6ea;border:1px solid #eadfc6;border-radius:8px;padding:10px 12px}kbd{background:#eee;border-radius:4px;padding:1px 5px;font-size:12px}
+</style></head><body>
+<header><a href="/admin/">← Editor</a><h1>Bulk fill from Novel Updates</h1><p>Fill in missing tags, genres, synopses and covers for many novels at once.</p></header>
+<main id="nu-bulk-app">
+
+<section class="panel" id="collect">
+<h2>Step 1 · Collect from Novel Updates in your own browser</h2>
+<p>Novel Updates blocks automatic requests from servers, so this happens in a Novel Updates tab you open yourself. The script reads one series page every few seconds. If Novel Updates asks you to verify you are human, the script stops; you complete the check yourself and paste the script again to continue where it left off.</p>
+<div class="controls">
+<label><input type="checkbox" id="collect-all"> Include novels that already have tags, genres, synopsis and cover</label>
+<label>Seconds between pages <select id="collect-delay"><option>4</option><option selected>5</option><option>8</option><option>12</option></select></label>
+</div>
+<p class="status" id="collect-status">Loading…</p>
+<div class="controls"><button type="button" id="collect-build" disabled>Build script for <span id="collect-count">0</span> novels</button></div>
+<div id="collect-output" hidden>
+<div class="controls"><button type="button" id="collect-copy">Copy script</button><button type="button" class="quiet" id="collect-download">Download as file</button></div>
+<ol class="steps">
+<li>In Chrome, Safari or Firefox on a computer, open <strong>https://www.novelupdates.com/</strong> in a new tab. Complete the “verify you are human” check if it appears.</li>
+<li>Open the developer console in that tab: Chrome <kbd>⌘ ⌥ J</kbd>, Firefox <kbd>⌘ ⌥ K</kbd>, Safari <kbd>⌘ ⌥ C</kbd> (turn on Settings › Advanced › Show features for web developers first). If the browser asks you to type “allow pasting”, do that.</li>
+<li>Paste the script and press Return. A small green panel shows progress. Leave the tab open; you can use other tabs meanwhile.</li>
+<li>When it finishes, it downloads a <strong>nu-bulk-<em>date</em>.json</strong> file. Use <em>Download file</em> in the panel at any time to take what has been collected so far.</li>
+</ol>
+<p class="note">Only paste scripts you built on this page into a console. This one only reads Novel Updates series pages in that tab and saves its progress in that browser; it sends nothing anywhere.</p>
+<textarea id="collect-script" readonly aria-label="Collector script"></textarea>
+</div>
+</section>
+
+<section class="panel" id="apply">
+<h2>Step 2 · Fill your catalogue from the file</h2>
+<p>Each novel goes through the same importer as the Novel Updates option on a novel’s page: only <strong>empty</strong> fields are filled, tags and genres are added without removing yours, everything stays private, and every novel gets its own Undo.</p>
+<div class="controls"><input type="file" id="apply-file" accept=".json,application/json"></div>
+<div class="fields" role="group" aria-label="Details to fill">
+<label><input type="checkbox" name="bulk-field" value="tags" checked> Tags</label>
+<label><input type="checkbox" name="bulk-field" value="genres" checked> Genres</label>
+<label><input type="checkbox" name="bulk-field" value="synopsis" checked> Synopsis</label>
+<label><input type="checkbox" name="bulk-field" value="cover" checked> Cover (linked from Novel Updates, private)</label>
+<label><input type="checkbox" name="bulk-field" value="author"> Author, if empty</label>
+<label><input type="checkbox" name="bulk-field" value="nuChapterSourceText"> NU chapter count</label>
+<label><input type="checkbox" name="bulk-field" value="nuTranslationSourceStatus"> NU translation status</label>
+<label><input type="checkbox" name="bulk-field" value="nuOriginalSourceStatus"> NU original status</label>
+</div>
+<p class="status" id="apply-status">Choose the file the collector downloaded.</p>
+<div class="controls"><button type="button" class="quiet" id="apply-preview" disabled>Preview changes</button><button type="button" id="apply-run" disabled>Fill missing details</button><button type="button" class="quiet" id="apply-stop" hidden>Stop</button></div>
+<div class="table-wrap"><table><thead><tr><th>Novel</th><th>Title</th><th>Result</th><th>Details</th></tr></thead><tbody id="apply-results"></tbody></table></div>
+</section>
+
+<section class="panel" id="undo-box" hidden>
+<h2>Undo</h2>
+<p id="undo-info"></p>
+<div class="controls"><button type="button" class="quiet" id="undo-run">Undo this batch</button></div>
+<p class="status" id="undo-status">Single novels can also be undone from their own page.</p>
+</section>
+
+</main>
+<script src="/admin/nu-bulk.js"></script>
+</body></html>
